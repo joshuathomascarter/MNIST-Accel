@@ -1,7 +1,10 @@
 # test_csr_pack.py - Byte-exact parity test for csr_map.py
-# Verifies field packing/unpacking matches RTL
+# Verifies field packing/unpacking matches RTL implementation
 import pytest
-from python.host_uart.csr_map import *
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from host_uart.csr_map import *
 
 def test_CTRL():
     v = pack_CTRL(1,0,1)
@@ -36,9 +39,9 @@ def test_STATUS():
     assert unpack_STATUS(v) == (0,1,1)
 
 def test_Config_to_bytes_from_bytes():
-    from python.host_uart.csr_map import Config, DIMS_M, 
+    from host_uart.csr_map import (Config, DIMS_M, 
     DIMS_N, DIMS_K, TILES_Tm, TILES_Tn, TILES_Tk, INDEX_m, 
-    INDEX_n, INDEX_k, BUFF, SCALE_Sa, SCALE_Sw, pack_u32, pack_f32
+    INDEX_n, INDEX_k, BUFF, SCALE_Sa, SCALE_Sw, pack_u32, pack_f32)
     cfg = Config(M=7, N=11, K=22, Tm=1, Tn=2, Tk=3, m_idx=5, n_idx=9, 
                  k_idx=13, Sa=0.5, Sw=2.0, wrA=1, wrB=0)
     reg_img = cfg.to_bytes()

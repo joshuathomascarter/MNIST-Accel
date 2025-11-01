@@ -1,38 +1,29 @@
 #!/usr/bin/env python3
 """
-run_gemm.py - Host RS (Row-Stationary) Tiler for ACCEL-v1
-========================================================
+run_gemm.py - Host Row-Stationary Tiler for ACCEL-v1
 
 This implements the host-side matrix tiling and orchestration for GEMM operations
-on the ACCEL-v1 systolic array accelerator. It handles:
-
-- Matrix partitioning into tiles that fit the systolic array
-- UART-based communication with the accelerator
-- Row-stationary dataflow orchestration
-- Result accumulation and verification
+on the ACCEL-v1 systolic array accelerator.
 
 Matrix Multiplication: C = A × B
-- A: [M×K] activation matrix (left operand)
-- B: [K×N] weight matrix (right operand)  
-- C: [M×N] result matrix (output)
+- A: [M×K] activation matrix
+- B: [K×N] weight matrix  
+- C: [M×N] result matrix
 
-Row-Stationary (RS) Dataflow:
-- A matrix flows vertically (rows stay stationary in PEs)
-- B matrix flows horizontally (columns broadcast across)
+Row-Stationary Dataflow:
+- A matrix flows vertically (rows stay in PEs)
+- B matrix flows horizontally (columns broadcast)
 - Partial products accumulate in place
-- Minimizes memory bandwidth for weight reuse
 
 Tiling Strategy:
-- Split large matrices into smaller tiles that fit systolic array
+- Split large matrices into tiles that fit the systolic array
 - Process tiles in nested loops: for m_tile, n_tile, k_tile
 - Each k_tile contributes partial products to final result
-- Final C tile = sum over all k_tiles of A[m,k] × B[k,n]
 
 UART Protocol:
 - Packet-based communication with CRC validation
 - CSR programming for tile configuration
 - Bulk data transfer for matrix tiles
-- Status polling for completion detection
 """
 
 import argparse

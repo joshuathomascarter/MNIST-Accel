@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 """
 test_integration.py - Integration Tests for ACCEL-v1 Host RS Tiler
-================================================================
 
-Comprehensive integration testing suite for the ACCEL-v1 systolic array
-accelerator and Host RS Tiler. Tests end-to-end functionality including:
+Integration testing suite for the ACCEL-v1 systolic array accelerator
+and Host RS Tiler. Tests end-to-end functionality including:
 
 - UART communication protocol
 - CSR register programming  
 - Matrix tiling algorithms
 - Row-stationary dataflow execution
 - Result verification and error handling
-- Performance characterization
 
 Test Categories:
 1. Unit Tests - Individual component testing

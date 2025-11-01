@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// uart_tx.v — Robust UART Transmitter (Accel v1 style)
+// uart_tx.v — UART Transmitter (Accel v1 style)
 //  - Parallel byte -> async serial (idle=1), start(0), 8 data (LSB first),
 //    optional parity, STOP_BITS (1/2)
 //  - Integer divider or fractional NCO for oversample tick (same as RX)

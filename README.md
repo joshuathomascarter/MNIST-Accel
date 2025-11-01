@@ -2,7 +2,7 @@
 
 A high-performance INT8 CNN accelerator implemented with a row-stationary systolic array architecture, designed for FPGA deployment. This project demonstrates end-to-end deep learning inference acceleration from algorithm to hardware implementation.
 
-## 🚀 Key Features
+## Key Features
 
 - **INT8 Quantized CNN Accelerator** with systolic array compute engine
 - **Row-stationary dataflow** optimized for CNN workloads
@@ -12,7 +12,7 @@ A high-performance INT8 CNN accelerator implemented with a row-stationary systol
 - **Comprehensive verification** with Python golden models
 - **FPGA-ready design** with synthesis and timing closure on Cyclone V
 
-## 📋 Architecture Overview
+## Architecture Overview
 
 ### Core Components
 
@@ -41,7 +41,7 @@ A high-performance INT8 CNN accelerator implemented with a row-stationary systol
 - **Post-processing**: Quantization with clamp/shift operations
 - **Output**: INT8 results returned via UART interface
 
-## 🗂️ Project Structure
+## Project Structure
 
 ```
 accel v1/
@@ -52,13 +52,13 @@ accel v1/
 │   ├── ARCHITECTURE.md     # Detailed system architecture
 │   ├── QUANTIZATION.md     # INT8 quantization methodology
 │   ├── VERIFICATION.md     # Verification and testing strategy
-│   └── HOST_RS_TILER.md    # 📚 Complete Host RS Tiler Documentation
-├── python/                 # 🚀 Host software and golden models
-│   ├── host_uart/          # 🎯 HOST RS TILER (Production Ready)
+│   └── HOST_RS_TILER.md    # Complete Host RS Tiler Documentation
+├── python/                 # Host software and golden models
+│   ├── host_uart/          # HOST RS TILER
 │   │   ├── run_gemm.py     # Main Host RS Tiler implementation
 │   │   ├── uart_driver.py  # UART communication layer
 │   │   └── csr_map.py      # CSR register definitions
-│   ├── tests/              # 🧪 Comprehensive test suite (26 tests - 100%)
+│   ├── tests/              # Comprehensive test suite (26 tests - 100%)
 │   │   └── test_integration.py # Complete validation framework
 │   ├── golden_models/      # Reference implementations
 │   ├── MNIST CNN/          # CNN training and inference
@@ -79,41 +79,41 @@ accel v1/
     └── verilator/          # Verilator-based simulation
 ```
 
-## ✨ NEW: Host RS Tiler - Production Ready!
+## Host Software Stack
 
-### 🎯 **Complete Host-Side Software Stack**
+### Complete Host-Side Implementation
 
-The ACCEL-v1 project now includes a **production-ready Host RS (Row-Stationary) Tiler** that provides complete orchestration for matrix multiplication operations on the systolic array accelerator.
+The ACCEL-v1 project includes a host software stack that provides matrix multiplication orchestration for the systolic array accelerator.
 
-**Key Features:**
-- **🔄 Row-Stationary Dataflow:** Optimized for systolic array efficiency
-- **📡 UART Communication:** Robust packet-based protocol with CRC validation
-- **🧩 Matrix Tiling:** Automatic partitioning for arbitrary matrix dimensions
-- **🧪 100% Test Coverage:** 26 comprehensive tests validating all functionality
-- **⚡ Performance Optimized:** Efficient bandwidth utilization and PE utilization
+**Features:**
+- Row-stationary dataflow optimized for systolic arrays
+- UART communication with packet-based protocol and CRC validation
+- Automatic matrix tiling for arbitrary dimensions
+- Comprehensive test suite with 26 tests
+- Performance optimization for bandwidth and PE utilization
 
-**Quick Start:**
+**Usage:**
 ```bash
 # Navigate to host software
 cd "accel v1/python/host_uart"
 
-# Run golden model verification (no hardware required)
+# Run verification (no hardware required)
 python run_gemm.py --verify-only --M 8 --N 8 --K 8 --verbose
 
-# Execute comprehensive test suite
+# Execute test suite
 cd ../tests
-python test_integration.py --verbose  # 26/26 tests passing!
+python test_integration.py --verbose
 
-# Run on real hardware
+# Run on hardware
 cd ../host_uart
 python run_gemm.py --M 16 --N 16 --K 16 --Tm 4 --Tn 4 --Tk 4 --verbose
 ```
 
-📚 **[Complete Documentation](docs/HOST_RS_TILER.md)** | 🧪 **[Test Results](accel%20v1/python/tests/test_integration.py)** | 🚀 **[Quick Start Guide](accel%20v1/python/README.md)**
+**[Complete Documentation](docs/HOST_RS_TILER.md)** | **[Test Results](accel%20v1/python/tests/test_integration.py)** | **[Quick Start Guide](accel%20v1/python/README.md)**
 
 ---
 
-## 🛠️ Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -125,7 +125,7 @@ python run_gemm.py --M 16 --N 16 --K 16 --Tm 4 --Tn 4 --Tk 4 --verbose
   - CMake 3.10+
   - GCC/Clang compiler
 
-### Quick Start
+### Installation
 
 1. **Clone the repository**
    ```bash
@@ -157,7 +157,7 @@ python run_gemm.py --M 16 --N 16 --K 16 --Tm 4 --Tn 4 --Tk 4 --verbose
    # Use your preferred simulator (ModelSim, QuestaSim, etc.)
    ```
 
-## 🧮 Quantization Scheme
+## Quantization Scheme
 
 The accelerator uses **symmetric INT8 quantization**:
 
@@ -167,7 +167,7 @@ The accelerator uses **symmetric INT8 quantization**:
 - **Calibration**: Min/max percentile-based range estimation
 - **Math**: `y = clamp(round((x_fp32 / Sx) * (W_fp32 / Sw)) * Sacc) >> shift`
 
-## 🔧 Hardware Implementation
+## Hardware Implementation
 
 ### Systolic Array Design
 - **Processing Elements (PEs)**: INT8×INT8 → INT32 MAC units
@@ -185,7 +185,7 @@ The accelerator uses **symmetric INT8 quantization**:
 - **Framing**: `[HEADER|PAYLOAD|CRC]` structure
 - **CSR Map**: Memory-mapped control and status registers
 
-## 📊 Performance Results
+## Performance Results
 
 - **FPGA Target**: Cyclone V (5CGXFC7C7F23C8)
 - **Operating Frequency**: 100 MHz (achieved timing closure)
@@ -194,7 +194,7 @@ The accelerator uses **symmetric INT8 quantization**:
   - Memory Blocks: 85% (double-buffered design)
   - DSP Blocks: 90% (dedicated MAC units)
 
-## 🧪 Verification Strategy
+## Verification Strategy
 
 ### Multi-level Testing
 1. **Unit Tests**: Individual component verification
@@ -208,13 +208,13 @@ The accelerator uses **symmetric INT8 quantization**:
 - Performance benchmarking and timing analysis
 - Power consumption characterization
 
-## 📚 Documentation
+## Documentation
 
 - [`HOST_RS_TILER.md`](docs/HOST_RS_TILER.md) - Complete Host RS Tiler implementation guide
 - [`PROJECT_COMPLETION_SUMMARY.md`](docs/PROJECT_COMPLETION_SUMMARY.md) - Project status summary
 - Hardware docs in `accel v1/docs/` - Basic documentation stubs (minimal coverage)
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please feel free to submit pull requests or open issues for:
 - Performance optimizations
@@ -222,18 +222,18 @@ Contributions are welcome! Please feel free to submit pull requests or open issu
 - Enhanced quantization schemes
 - Documentation improvements
 
-## 📄 License
+## License
 
 This project is open source and available under the [MIT License](LICENSE).
 
-## 🏆 Achievements
+## Project Status
 
-- ✅ Complete end-to-end CNN accelerator implementation
-- ✅ Successful FPGA synthesis and timing closure
-- ✅ Bit-accurate functional verification
-- ✅ Optimized INT8 quantization with minimal accuracy loss
-- ✅ Scalable systolic array architecture
-- ✅ Production-ready UART communication protocol
+- Complete end-to-end CNN accelerator implementation
+- Successful FPGA synthesis and timing closure
+- Bit-accurate functional verification
+- Optimized INT8 quantization with minimal accuracy loss
+- Scalable systolic array architecture
+- UART communication protocol
 
 ---
 

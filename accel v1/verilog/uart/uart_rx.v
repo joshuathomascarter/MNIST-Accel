@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// uart_rx.v — Robust UART Receiver (Accel v1 style)
+// uart_rx.v — UART Receiver (Accel v1 style)
 //  - Async serial -> synchronous bytes with oversampling
 //  - Start-bit qualification at mid, LSB-first data, optional parity, stop check
 //  - Integer divider or fractional NCO for oversample tick

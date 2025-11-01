@@ -1,13 +1,12 @@
 """
-uart_driver.py — Host-side UART driver with packet framing (Accel v1 style)
+uart_driver.py - Host-side UART driver with packet framing
 
-Frame: SYNC0(0xA5) SYNC1(0x5A) | LEN (0..255) | CMD | PAYLOAD[LEN] | CRC8
+Frame format: SYNC0(0xA5) SYNC1(0x5A) | LEN | CMD | PAYLOAD[LEN] | CRC8
 - CRC covers: LEN, CMD, PAYLOAD
 - Provides: make_packet(), parse_stream_incremental(), send_packet(), recv_packet()
-- Includes: LoopbackSerial for in-process tests, and a self-test.
+- Includes: LoopbackSerial for testing
 
-Notes:
-- For real hardware, replace LoopbackSerial with pyserial.Serial-like object:
+For real hardware, replace LoopbackSerial with pyserial.Serial:
     ser = serial.Serial('/dev/ttyUSB0', baudrate=115200, timeout=0)
     driver = UARTDriver(ser)
 """

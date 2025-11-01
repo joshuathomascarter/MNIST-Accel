@@ -1,22 +1,22 @@
 # ACCEL-v1 Python Host Software
 
-**🎯 Complete Host-Side Implementation for ACCEL-v1 Systolic Array Accelerator**
+**Host-Side Implementation for ACCEL-v1 Systolic Array Accelerator**
 
 [![Tests](https://img.shields.io/badge/Tests-26%2F26%20Passing-brightgreen)](./tests/test_integration.py)
 [![Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen)](#testing)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://python.org)
-[![Status](https://img.shields.io/badge/Status-Production%20Ready-success)](#status)
+[![Status](https://img.shields.io/badge/Status-Working-success)](#status)
 
-## 📁 Directory Structure
+## Directory Structure
 
 ```
 python/
 ├── host_uart/                      # Main implementation
-│   ├── run_gemm.py                # 🚀 Host RS Tiler (Main Application)
-│   ├── uart_driver.py             # 📡 UART Communication Layer  
-│   └── csr_map.py                 # 🗂️ CSR Register Definitions
-├── tests/                         # Comprehensive test suite
-│   └── test_integration.py        # 🧪 26 Tests - 100% Pass Rate
+│   ├── run_gemm.py                # Host RS Tiler (Main Application)
+│   ├── uart_driver.py             # UART Communication Layer  
+│   └── csr_map.py                 # CSR Register Definitions
+├── tests/                         # Test suite
+│   └── test_integration.py        # 26 Tests - 100% Pass Rate
 ├── golden/                        # Reference implementations
 │   ├── mnist_inputs.npy           # Test data
 │   └── mnist_logits_fp32.npy      # Reference outputs
@@ -28,7 +28,7 @@ python/
     └── tile_counts.py             # Tile counting utilities
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -54,7 +54,7 @@ python run_gemm.py --verify-only --M 8 --N 8 --K 8 --verbose
 # Full hardware execution (with ACCEL-v1 connected)
 python run_gemm.py --M 16 --N 16 --K 16 --Tm 4 --Tn 4 --Tk 4 --verbose
 
-# Run comprehensive test suite
+# Run test suite
 cd ../tests
 python test_integration.py --verbose
 ```
@@ -76,7 +76,7 @@ with HostRSTiler("/dev/ttyUSB0", verbose=True) as tiler:
     print(f"GEMM completed: {result.shape}")
 ```
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 ### System Components
 
@@ -124,7 +124,7 @@ for m_idx in range(M_tiles):      # Output matrix rows
             C[m_start:m_end, n_start:n_end] += result_tile
 ```
 
-## 🧪 Testing Framework
+## Debugging Resources
 
 ### Test Coverage: 100% (26/26 Tests Passing)
 
@@ -145,10 +145,10 @@ python test_integration.py --pattern "gemm" --verbose
 
 | Category | Tests | Coverage | Description |
 |----------|-------|----------|-------------|
-| **Unit Tests** | 17/17 ✅ | Config validation, matrix ops, tiling algorithms |
-| **Integration** | 8/8 ✅ | End-to-end GEMM, protocol communication, error handling |
-| **Performance** | 1/1 ✅ | Throughput estimation and scaling analysis |
-| **Total** | **26/26** ✅ | **100% Success Rate** |
+| **Unit Tests** | 17/17 Pass | Config validation, matrix ops, tiling algorithms |
+| **Integration** | 8/8 Pass | End-to-end GEMM, protocol communication, error handling |
+| **Performance** | 1/1 Pass | Throughput estimation and scaling analysis |
+| **Total** | **26/26** Pass | **100% Success Rate** |
 
 ### Sample Test Output
 
@@ -192,7 +192,7 @@ Test Summary:
   Success rate: 100.0%
 ```
 
-## 📡 UART Protocol
+## UART Protocol
 
 ### Packet Format
 
@@ -233,7 +233,7 @@ INDEX_n      = 0x20  # Current N tile index
 INDEX_k      = 0x24  # Current K tile index
 ```
 
-## ⚡ Performance
+## Performance
 
 ### Benchmark Results (Simulated)
 
@@ -247,12 +247,12 @@ Matrix Size | Tile Size | Total Tiles | Duration | Throughput
 
 ### Performance Features
 
-- **🔄 Row-Stationary Dataflow:** Minimized memory bandwidth
-- **🧩 Optimal Tiling:** Automatic tile size optimization
-- **⚡ Pipeline Ready:** Architecture supports pipelined execution
-- **📊 Profiling:** Built-in performance monitoring
+- **Row-Stationary Dataflow:** Minimized memory bandwidth
+- **Automatic Tiling:** Tile size optimization
+- **Pipeline Ready:** Architecture supports pipelined execution
+- **Profiling:** Built-in performance monitoring
 
-## 🛠️ Command Line Interface
+## Command Line Interface
 
 ### Basic Operations
 
@@ -290,7 +290,7 @@ python test_integration.py --pattern "gemm" --verbose
 python test_integration.py --failfast --verbose
 ```
 
-## 🔧 Integration Examples
+## Integration Examples
 
 ### NumPy Integration
 
@@ -324,7 +324,7 @@ try:
         # Verify against golden model
         golden = golden_gemm(A, B)
         if verify_result(result, golden, tolerance=1):
-            print("✅ Hardware result verified!")
+            print("Hardware result verified!")
         else:
             print("❌ Verification failed!")
             
@@ -336,24 +336,24 @@ except ValueError as e:
     print(f"Configuration error: {e}")
 ```
 
-## 📚 Documentation
+## Documentation
 
 - **[Complete Documentation](../docs/HOST_RS_TILER.md)** - Comprehensive technical guide
 - **[Architecture Details](../docs/ARCHITECTURE.md)** - System architecture overview
 - **[Protocol Specification](../docs/HOST_RS_TILER.md#protocol-specification)** - UART protocol details
 - **[Performance Analysis](../docs/HOST_RS_TILER.md#performance-analysis)** - Benchmarks and optimization
 
-## 🎯 Status
+## Status
 
 | Component | Status | Coverage | Notes |
 |-----------|--------|----------|-------|
-| **Host RS Tiler** | ✅ Production Ready | 100% | Complete implementation |
-| **UART Driver** | ✅ Production Ready | 100% | Robust communication layer |
-| **CSR Interface** | ✅ Production Ready | 100% | Complete register mapping |
-| **Test Suite** | ✅ 26/26 Passing | 100% | Comprehensive validation |
-| **Documentation** | ✅ Complete | 100% | Full technical documentation |
+| **Host RS Tiler** | Working | 100% | Main implementation |
+| **UART Driver** | Working | 100% | Communication layer |
+| **CSR Interface** | Working | 100% | Register mapping |
+| **Test Suite** | 26/26 Passing | 100% | Validation framework |
+| **Documentation** | Available | 100% | Technical documentation |
 
-## 🚀 Getting Started
+## Getting Started
 
 1. **Clone the repository:**
    ```bash
@@ -385,4 +385,4 @@ This project is part of the ACCEL-v1 open-source hardware accelerator project.
 
 ---
 
-**🎉 Ready for Production: Complete Host Software Stack for ACCEL-v1 Systolic Array Accelerator**
+**Host Software Stack for ACCEL-v1 Systolic Array Accelerator**

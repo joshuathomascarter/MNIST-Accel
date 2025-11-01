@@ -439,3 +439,7 @@ endmodule
 ---
 
 *This quantization methodology document provides the theoretical foundation and practical implementation details for INT8 quantization in ACCEL-v1. For software implementation, refer to the quantization utilities in `python/INT8 quantization/`.*
+
+## See also
+
+- Practical, runnable examples and CSR programming tips: `QUANTIZATION_PRACTICAL.md` (same docs folder)
