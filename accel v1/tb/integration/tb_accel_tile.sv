@@ -160,18 +160,18 @@ module tb_accel_tile;
         
         // Wait for busy signal
         repeat (50) @(posedge clk);
-        if (busy) $display("TB: ✓ Computation started (busy=1)");
-        else $display("TB: ✗ WARNING: busy not asserted");
+        if (busy) $display("TB: PASS: Computation started (busy=1)");
+        else $display("TB: WARNING: busy not asserted");
         
         // Wait for completion
         $display("\n--- Waiting for Completion ---");
         wait (done_pulse);
-        $display("TB: ✓ Computation complete (done pulse detected)");
+        $display("TB: PASS: Computation complete (done pulse detected)");
         
         // Check status
         repeat (100) @(posedge clk);
-        if (!busy) $display("TB: ✓ Busy cleared");
-        if (!error) $display("TB: ✓ No errors detected");
+        if (!busy) $display("TB: PASS: Busy cleared");
+        if (!error) $display("TB: PASS: No errors detected");
         
         $display("\n================================================================================");
         $display("TB: Test PASSED - Full UART protocol functional");

@@ -546,11 +546,11 @@ assert property (systolic_dataflow);
 #### Workload Coverage Matrix
 | Matrix Size | Tile Size | K Dimension | Status |
 |-------------|-----------|-------------|---------|
-| 8×8         | 8×8       | 8           | ✅ Pass |
-| 16×16       | 8×8       | 16          | ✅ Pass |
-| 32×32       | 16×16     | 32          | ✅ Pass |
-| 64×64       | 32×32     | 64          | ✅ Pass |
-| 128×128     | 64×64     | 128         | ✅ Pass |
+| 8×8         | 8×8       | 8           | PASS Pass |
+| 16×16       | 8×8       | 16          | PASS Pass |
+| 32×32       | 16×16     | 32          | PASS Pass |
+| 64×64       | 32×32     | 64          | PASS Pass |
+| 128×128     | 64×64     | 128         | PASS Pass |
 
 #### Corner Case Coverage
 - **Edge Values**: INT8 min/max values (-128, +127)

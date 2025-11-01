@@ -498,10 +498,10 @@ def verify_result(C_hw: np.ndarray, C_golden: np.ndarray, tolerance: int = 0) ->
     max_diff = np.max(diff)
     
     if max_diff <= tolerance:
-        print(f"✓ Results match (max diff: {max_diff})")
+        print(f"PASS: Results match (max diff: {max_diff})")
         return True
     else:
-        print(f"✗ Results differ (max diff: {max_diff}, tolerance: {tolerance})")
+        print(f"FAIL: Results differ (max diff: {max_diff}, tolerance: {tolerance})")
         
         # Show first few mismatches
         mismatches = np.where(diff > tolerance)
@@ -583,7 +583,7 @@ def main():
             end_time = time.time()
             
             if C_hw is None:
-                print("✗ Hardware GEMM failed")
+                print("FAIL: Hardware GEMM failed")
                 return 1
             
             print(f"Hardware GEMM completed in {end_time - start_time:.2f}s")
@@ -591,10 +591,10 @@ def main():
             # Verify results
             print("Verifying results...")
             if verify_result(C_hw, C_golden, args.tolerance):
-                print("✓ GEMM verification PASSED")
+                print("PASS: GEMM verification PASSED")
                 return 0
             else:
-                print("✗ GEMM verification FAILED")
+                print("FAIL: GEMM verification FAILED")
                 return 1
                 
     except KeyboardInterrupt:

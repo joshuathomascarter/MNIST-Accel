@@ -112,9 +112,9 @@ module mac8 #(parameter SAT = 0)(
     // Sequential logic
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            acc_r <= 32'sd0;  // ✅ This works - assigns to acc_r
+            acc_r <= 32'sd0;  // Clear on reset
         end else if (clr) begin
-            acc_r <= 32'sd0;  // ✅ This works - assigns to acc_r
+            acc_r <= 32'sd0;  // Clear on command
         end else if (en) begin
             if (SAT && pos_oflow)
                 acc_r <= 32'sh7FFFFFFF;

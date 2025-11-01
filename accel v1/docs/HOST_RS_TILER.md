@@ -2,31 +2,30 @@
 
 ## Overview
 
-The Host RS Tiler is a Python-based tiling system that partitions large matrix multiplication operations into smaller tiles suitable for the ACCEL-v1 hardware accelerator. This document provides a comprehensive guide to the implementation, protocol specification, and performance analysis.
+The Host RS Tiler is a conceptual Python-based tiling system for partitioning matrix multiplication operations into tiles suitable for hardware accelerators. This document describes the intended implementation and protocol.
 
 ## System Architecture
 
-The Host RS Tiler consists of several key components:
+The Host RS Tiler consists of several components:
 
 ### 1. Tiling Engine (`python/utils/tile_counts.py`)
-- Calculates optimal tile dimensions based on matrix sizes and hardware constraints
-- Supports configurable tile sizes (TM, TN, TK) for different workloads
-- Implements ceiling division for proper tile count calculation
+- Calculates tile dimensions based on matrix sizes and hardware constraints
+- Supports configurable tile sizes (TM, TN, TK)
+- Implements ceiling division for tile count calculation
 
 ### 2. UART Communication Interface (`python/host_uart/uart_driver.py`)
-- Provides low-level UART communication with the ACCEL-v1 hardware
-- Implements packet-based protocol for command and data transfer
-- Supports configurable baud rates and error detection
+- Conceptual UART communication driver
+- Packet-based protocol design for command and data transfer
+- Configurable baud rates
 
-### 3. CSR (Control/Status Register) Management (`python/host_uart/csr_map.py`)
+### 3. CSR Management (`python/host_uart/csr_map.py`)
 - Maps software configuration to hardware control registers
-- Provides high-level API for setting matrix dimensions, tile sizes, and control flags
-- Handles address mapping and data formatting
+- API for setting matrix dimensions, tile sizes, and control flags
+- Address mapping and data formatting
 
 ### 4. Matrix Operation Engine (`python/host_uart/run_gemm.py`)
-- Orchestrates complete GEMM operations using the tiled approach
+- Orchestrates GEMM operations using the tiled approach
 - Manages data upload, computation scheduling, and result retrieval
-- Implements double-buffering for overlapped computation and communication
 
 ## Protocol Specification
 
@@ -65,33 +64,66 @@ All communication between the host and ACCEL-v1 uses a structured packet format:
 | 0x18 | TN_SIZE | Tile N size |
 | 0x1C | TK_SIZE | Tile K size |
 
-## Performance Analysis
+## Protocol Specification
 
-### Throughput Optimization
+### UART Packet Format
 
-The tiling system achieves optimal performance through:
+Communication between host and ACCEL-v1 uses a 7-byte packet format:
 
-1. **Overlapped Execution**: Double-buffering allows simultaneous data transfer and computation
-2. **Optimal Tile Sizing**: Tiles are sized to maximize systolic array utilization
-3. **Batch Processing**: Multiple tiles are processed in sequence to amortize setup costs
+```
+| CMD (1 byte) | ADDR_L (1 byte) | ADDR_H (1 byte) | DATA_0-3 (4 bytes) |
+```
 
-### Measured Performance
+#### Command Types
 
-On the target FPGA platform:
-- Peak throughput: ~50 GOPS for INT8 operations
-- Sustained throughput: ~35 GOPS with realistic workloads
-- Memory bandwidth utilization: ~80% of theoretical maximum
+- `0x0X`: CSR register access
+- `0x1X`: CSR read
+- `0x2X`: Activation buffer write
+- `0x3X`: Weight buffer write
+- `0x5X`: Start computation
+- `0x6X`: Abort computation
+- `0x7X`: Status query
 
-### Scaling Characteristics
+#### Data Format
 
-Performance scales linearly with:
-- Systolic array dimensions (N_ROWS × N_COLS)
-- Operating frequency (up to memory bandwidth limits)
-- Problem size (for large matrices that benefit from tiling)
+- Data transmitted in little-endian format
+- 32-bit values sent as 4 sequential bytes
+- Matrix data quantized to INT8 format before transmission
+
+### Register Map
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00 | CTRL | Control register |
+| 0x04 | STATUS | Status register |
+| 0x08 | M_DIM | Matrix M dimension |
+| 0x0C | N_DIM | Matrix N dimension |
+| 0x10 | K_DIM | Matrix K dimension |
+| 0x14 | TM_SIZE | Tile M size |
+| 0x18 | TN_SIZE | Tile N size |
+| 0x1C | TK_SIZE | Tile K size |
+
+## Performance Considerations
+
+### Throughput Factors
+
+Performance depends on:
+
+1. Tile sizing relative to array dimensions
+2. UART baud rate and protocol overhead
+3. Memory bandwidth constraints
+4. Computation vs communication overlap
+
+### Theoretical Analysis
+
+For the 2×2 systolic array implementation:
+- 4 INT8 MACs per cycle
+- Clock-dependent throughput
+- Memory bandwidth limits sustained performance
 
 ## Usage Examples
 
-### Basic GEMM Operation
+### Basic GEMM Operation (Conceptual)
 
 ```python
 from python.host_uart.run_gemm import run_gemm_operation
@@ -110,65 +142,46 @@ result = run_gemm_operation(
 )
 ```
 
-### Advanced Configuration
-
-```python
-from python.host_uart.csr_map import CSRMap
-
-# Configure hardware parameters
-csr = CSRMap(uart_driver)
-csr.set_dimensions(M=128, N=128, K=128)
-csr.set_tile_sizes(TM=16, TN=16, TK=16)
-csr.enable_interrupts(True)
-csr.start_computation()
-```
-
 ## Error Handling
 
-The system includes comprehensive error detection and recovery:
+The system design includes error detection:
 
-### UART Layer Errors
-- Framing errors: Detected by hardware UART receiver
-- Parity errors: Optional parity bit checking
-- Timeout errors: Configurable timeout for response packets
+### UART Layer
+- Framing errors detected by hardware UART receiver
+- Optional parity bit checking
+- Timeout handling for response packets
 
-### Protocol Layer Errors
-- Invalid command codes: Rejected with error response
-- Buffer overflow: Prevented by address range checking
-- CRC mismatches: Optional packet-level error detection
-
-### Recovery Mechanisms
-- Automatic retry for transient errors
-- Hardware reset capability for unrecoverable states
-- Graceful degradation for partial failures
+### Protocol Layer
+- Command validation
+- Address range checking
+- Optional CRC for data integrity
 
 ## Implementation Notes
 
-### Hardware Dependencies
-- Requires ACCEL-v1 hardware with UART interface
-- Minimum 64KB on-chip memory for buffer storage
+### Hardware Requirements
+- ACCEL-v1 hardware with UART interface
+- On-chip memory for buffer storage
 - Systolic array dimensions must match software configuration
 
 ### Software Requirements
 - Python 3.7+ with NumPy
 - PySerial for UART communication
-- Optional: Matplotlib for performance visualization
 
-### Performance Tuning
-- Adjust tile sizes based on available memory and computation requirements
-- Optimize UART baud rate for system throughput
-- Consider double-buffering patterns for high-performance applications
+### Configuration
+- Tile sizes configured based on available memory
+- UART baud rate set to 115200
+- Consider memory constraints when sizing tiles
 
-## Future Enhancements
+## Future Work
 
-Planned improvements include:
-- DMA support for higher bandwidth data transfer
-- Advanced scheduling algorithms for multi-tile operations
-- Hardware acceleration for quantization and dequantization
-- Support for additional data types (FP16, BF16)
+Potential enhancements:
+- DMA support for higher bandwidth
+- Advanced scheduling for multi-tile operations
+- Hardware quantization acceleration
+- Additional data type support
 
 ## References
 
 - [ACCEL-v1 Architecture Overview](ARCHITECTURE.md)
-- [Quantization Implementation Guide](../accel%20v1/docs/QUANTIZATION.md)
-- [Performance Verification Results](../accel%20v1/docs/VERIFICATION.md)
+- [Quantization Implementation](QUANTIZATION.md)
+- [Verification Results](VERIFICATION.md)
