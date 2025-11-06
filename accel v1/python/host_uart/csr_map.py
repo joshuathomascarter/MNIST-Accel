@@ -30,6 +30,11 @@ UART_len_max = 0x34  #: UART max packet length
 UART_crc_en  = 0x38  #: UART CRC enable
 STATUS       = 0x3C  #: Status register
 
+# Performance monitor registers (Read-Only)
+PERF_TOTAL   = 0x40  #: Total cycles from start to done
+PERF_ACTIVE  = 0x44  #: Cycles where busy was high
+PERF_IDLE    = 0x48  #: Cycles where busy was low
+
 # CTRL bits
 CTRL_START = 1 << 0  #: Start pulse (W1P)
 CTRL_ABORT = 1 << 1  #: Abort pulse (W1P)
@@ -65,6 +70,9 @@ CSR_LAYOUT = [
     (UART_len_max, "UART_len_max", "u32", "UART max packet length"),
     (UART_crc_en,  "UART_crc_en",  "u32", "UART CRC enable"),
     (STATUS,       "STATUS",       "u32", "Status register"),
+    (PERF_TOTAL,   "PERF_TOTAL",   "u32", "Total cycles from start to done (RO)"),
+    (PERF_ACTIVE,  "PERF_ACTIVE",  "u32", "Cycles where busy was high (RO)"),
+    (PERF_IDLE,    "PERF_IDLE",    "u32", "Cycles where busy was low (RO)"),
 ]
 
 FIELD_TYPES = {

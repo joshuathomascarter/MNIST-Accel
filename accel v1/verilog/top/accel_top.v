@@ -49,9 +49,15 @@ module accel_top #(
     
     // Systolic array signals
     wire array_en, array_clr;
-    wire [N_ROWS*8-1:0] a_in_flat;
-    wire [N_COLS*8-1:0] b_in_flat;
-    wire [N_ROWS*N_COLS*32-1:0] c_out_flat;
+    wire [(N_ROWS*8)-1:0] a_in_flat;
+    wire [(N_COLS*8)-1:0] b_in_flat;
+    wire [(N_ROWS*N_COLS*32)-1:0] c_out_flat;
+    
+    // Performance monitor signals
+    wire [31:0] perf_total_cycles;
+    wire [31:0] perf_active_cycles;
+    wire [31:0] perf_idle_cycles;
+    wire perf_measurement_done;
     
     // Buffer signals
     wire act_we, wgt_we, out_we;
@@ -328,7 +334,10 @@ module accel_top #(
         .Sa_bits(Sa_bits), 
         .Sw_bits(Sw_bits),
         .uart_len_max(uart_len_max),
-        .uart_crc_en(uart_crc_en)
+        .uart_crc_en(uart_crc_en),
+        .perf_total_cycles(perf_total_cycles),
+        .perf_active_cycles(perf_active_cycles),
+        .perf_idle_cycles(perf_idle_cycles)
     );
 
     // Systolic Array
@@ -345,6 +354,21 @@ module accel_top #(
         .a_in_flat(a_in_flat),
         .b_in_flat(b_in_flat),
         .c_out_flat(c_out_flat)
+    );
+
+    // Performance Monitor
+    perf #(
+        .COUNTER_WIDTH(32)
+    ) perf_inst (
+        .clk(clk),
+        .rst_n(rst_n),
+        .start_pulse(start_pulse),
+        .done_pulse(done_pulse),
+        .busy_signal(busy),
+        .total_cycles_count(perf_total_cycles),
+        .active_cycles_count(perf_active_cycles),
+        .idle_cycles_count(perf_idle_cycles),
+        .measurement_done(perf_measurement_done)
     );
 
     // Activation Buffer

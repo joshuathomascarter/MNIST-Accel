@@ -26,6 +26,10 @@ module csr #(
   input  wire              core_bank_sel_rd_B,
   input  wire              rx_crc_error,
   input  wire              rx_illegal_cmd,
+  // Performance monitor inputs
+  input  wire [31:0]       perf_total_cycles,
+  input  wire [31:0]       perf_active_cycles,
+  input  wire [31:0]       perf_idle_cycles,
   // Pulses / config to core (snapshots consumed by core FSM)
   output wire              start_pulse,
   output wire              abort_pulse,
@@ -58,6 +62,10 @@ module csr #(
   localparam UART_len_max = 8'h34; // uint32
   localparam UART_crc_en  = 8'h38; // [0]=crc_en
   localparam STATUS       = 8'h3C; // [0]=busy(RO), [1]=done_tile(R/W1C), [8]=err_crc(R/W1C), [9]=err_illegal(R/W1C)
+  // Performance monitor registers (Read-Only)
+  localparam PERF_TOTAL   = 8'h40; // Total cycles from start to done
+  localparam PERF_ACTIVE  = 8'h44; // Cycles where busy was high  
+  localparam PERF_IDLE    = 8'h48; // Cycles where busy was low
 
   // Backing regs
   reg        r_irq_en;
@@ -230,6 +238,10 @@ module csr #(
                                  6'b0,
                                  st_err_illegal, st_err_crc,
                                  st_done_tile, core_busy};
+      // Performance monitor registers (Read-Only)
+      PERF_TOTAL:   csr_rdata = perf_total_cycles;
+      PERF_ACTIVE:  csr_rdata = perf_active_cycles;
+      PERF_IDLE:    csr_rdata = perf_idle_cycles;
       default:      csr_rdata = 32'hDEAD_BEEF;
     endcase
   end
