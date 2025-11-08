@@ -124,8 +124,8 @@ module scheduler #(
   reg [K_W+TK_W:0] k_off; // k_tile*Tk
 
   // Ping/pong selects (simple policy: bank = k_tile[0])
-  wire bank_sel_k;      // 0 ping / 1 pong for this k_tile
-  wire A_ready, B_ready;
+  reg bank_sel_k;      // 0 ping / 1 pong for this k_tile
+  reg A_ready, B_ready;
 
   // Latches
   reg start_latched;
@@ -151,27 +151,45 @@ module scheduler #(
   // ------------------------
 
   // Ceil-div helper (be aware: synthesizes a divider if use_csr_counts=0)
-  function [M_W-1:0] ceil_div_M (input wire [M_W-1:0] a, input wire [TM_W-1:0] b);
-    ceil_div_M = (b==0) ? {M_W{1'b0}} : (a + b - 1) / b;
+  function [M_W-1:0] ceil_div_M;
+    input [M_W-1:0] a;
+    input [TM_W-1:0] b;
+    begin
+      ceil_div_M = (b==0) ? {M_W{1'b0}} : (a + b - 1) / b;
+    end
   endfunction
-  function [N_W-1:0] ceil_div_N (input wire [N_W-1:0] a, input wire [TN_W-1:0] b);
-    ceil_div_N = (b==0) ? {M_W{1'b0}} : (a + b - 1) / b;
+  
+  function [N_W-1:0] ceil_div_N;
+    input [N_W-1:0] a;
+    input [TN_W-1:0] b;
+    begin
+      ceil_div_N = (b==0) ? {M_W{1'b0}} : (a + b - 1) / b;
+    end
   endfunction
-  function [K_W-1:0] ceil_div_K (input wire [K_W-1:0] a, input wire [TK_W-1:0] b);
-    ceil_div_K = (b==0) ? {M_W{1'b0}} : (a + b - 1) / b;
+  
+  function [K_W-1:0] ceil_div_K;
+    input [K_W-1:0] a;
+    input [TK_W-1:0] b;
+    begin
+      ceil_div_K = (b==0) ? {M_W{1'b0}} : (a + b - 1) / b;
+    end
   endfunction
 
   // Compute effective sizes for edge tiles: eff = min(T*, remaining)
   always @(*) begin
+    reg [M_W-1:0] m_rem;
+    reg [N_W-1:0] n_rem;
+    reg [K_W-1:0] k_rem;
+    
     // Offsets in full dims
     m_off  = m_tile_r * Tm;
     n_off  = n_tile_r * Tn;
     k_off  = k_tile_r * Tk;
 
     // Remaining
-    wire [M_W-1:0] m_rem = (M > m_off[M_W-1:0]) ? (M - m_off[M_W-1:0]) : {M_W{1'b0}};
-    wire [N_W-1:0] n_rem = (N > n_off[N_W-1:0]) ? (N - n_off[N_W-1:0]) : {M_W{1'b0}};
-    wire [K_W-1:0] k_rem = (K > k_off[K_W-1:0]) ? (K - k_off[K_W-1:0]) : {M_W{1'b0}};
+    m_rem = (M > m_off[M_W-1:0]) ? (M - m_off[M_W-1:0]) : {M_W{1'b0}};
+    n_rem = (N > n_off[N_W-1:0]) ? (N - n_off[N_W-1:0]) : {M_W{1'b0}};
+    k_rem = (K > k_off[K_W-1:0]) ? (K - k_off[K_W-1:0]) : {M_W{1'b0}};
 
     // Effective sizes (clamp to tile sizes)
     Tm_eff = (m_rem > Tm) ? Tm : m_rem[TM_W-1:0];
@@ -182,12 +200,13 @@ module scheduler #(
   // Row/col masks: bit i/j set if within eff sizes
   // Masks are packed LSB=row0/col0..; consumer can AND with 'en' per PE
   always @(*) begin
+    integer i, j;
     en_mask_row = {M_W{1'b0}};
     en_mask_col = {M_W{1'b0}};
-    for (int i = 0; i < MAX_TM; i++) begin
+    for (i = 0; i < MAX_TM; i = i + 1) begin
       if (i < Tm_eff) en_mask_row[i] = 1'b1;
     end
-    for (int j = 0; j < MAX_TN; j++) begin
+    for (j = 0; j < MAX_TN; j = j + 1) begin
       if (j < Tn_eff) en_mask_col[j] = 1'b1;
     end
   end
@@ -202,7 +221,7 @@ module scheduler #(
   // ------------------------
   // Start latch & tile counts
   // ------------------------
-  always_ff @(posedge clk or negedge rst_n) begin
+  always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       start_latched   <= 1'b0;
     end else begin
@@ -214,11 +233,11 @@ module scheduler #(
 
   // Compute or load tile counts once per session (could also be latched in PREP_TILE)
   always @(*) begin
-    // Compute fallback counts (safe combinational helpers)
-    wire [M_W-1:0] mt_calc;
-    wire [N_W-1:0] nt_calc;
-    wire [K_W-1:0] kt_calc;
+    reg [M_W-1:0] mt_calc;
+    reg [N_W-1:0] nt_calc;
+    reg [K_W-1:0] kt_calc;
 
+    // Compute fallback counts (safe combinational helpers)
     mt_calc = ceil_div_M(M, Tm);
     nt_calc = ceil_div_N(N, Tn);
     kt_calc = ceil_div_K(K, Tk);
@@ -240,7 +259,7 @@ module scheduler #(
   // Tile indices & counters
   // ------------------------
   // m_tile, n_tile, k_tile advance in TILE_DONE / PREP next k
-  always_ff @(posedge clk or negedge rst_n) begin
+  always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       m_tile_r <= {M_W{1'b0}};
       n_tile_r <= {M_W{1'b0}};
@@ -402,7 +421,7 @@ module scheduler #(
   // ------------------------
   // State / perf registers
   // ------------------------
-  always_ff @(posedge clk or negedge rst_n) begin
+  always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       state           <= S_IDLE;
       cycles_tile_r   <= {M_W{1'b0}};
