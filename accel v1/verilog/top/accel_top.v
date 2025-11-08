@@ -48,7 +48,7 @@ module accel_top #(
     wire uart_crc_en;
     
     // Systolic array signals
-    wire array_en, array_clr;
+    wire array_en, array_clr, load_weight;  // Added load_weight for row-stationary
     wire [(N_ROWS*8)-1:0] a_in_flat;
     wire [(N_COLS*8)-1:0] b_in_flat;
     wire [(N_ROWS*N_COLS*32)-1:0] c_out_flat;
@@ -351,6 +351,7 @@ module accel_top #(
         .rst_n(rst_n),
         .en(array_en),
         .clr(array_clr),
+        .load_weight(load_weight),  // NEW: row-stationary weight loading
         .a_in_flat(a_in_flat),
         .b_in_flat(b_in_flat),
         .c_out_flat(c_out_flat)
@@ -446,6 +447,7 @@ module accel_top #(
         .bank_sel_rd_B(bank_sel_rd_B),
         .clr(array_clr),
         .en(array_en),
+        .load_weight(load_weight),  // NEW: row-stationary weight loading control
         .en_mask_row(en_mask_row),
         .en_mask_col(en_mask_col)
     );
@@ -502,10 +504,6 @@ module accel_top #(
     assign wgt_rd_en = act_rd_en;
     assign act_k_idx = k_idx_sched[ADDR_WIDTH-1:0];
     assign wgt_k_idx = k_idx_sched[ADDR_WIDTH-1:0];
-
-endmodule
-
-`default_nettype wire
 
 endmodule
 

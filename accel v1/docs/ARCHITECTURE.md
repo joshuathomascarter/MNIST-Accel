@@ -41,27 +41,32 @@ The ACCEL-v1 is an INT8 CNN accelerator built around a systolic array architectu
 
 ### 1. Systolic Array
 - **Configuration**: N×M Processing Elements (PEs)
-- **Dataflow**: Row-Stationary (weights stationary, activations flow)
+- **Dataflow**: TRUE Row-Stationary (weights loaded once and stored stationary, activations stream)
 - **Precision**: INT8 inputs, INT32 internal accumulators
 - **Throughput**: N×M MAC operations per cycle
+- **Weight Reuse**: Maximum - each weight loaded once per K-tile, reused for all M×N computations
 
 ### 2. Processing Element (PE)
 ```verilog
 module pe (
     input clk, rst_n,
-    input [7:0] act_in, wgt_in,
-    input [31:0] acc_in,
-    output [7:0] act_out,
-    output [31:0] acc_out,
-    output reg [7:0] wgt_stored
+    input [7:0] a_in,           // Activation (flows horizontally)
+    input [7:0] b_in,           // Weight (loaded once)
+    input load_weight,          // Control to load weight
+    input en, clr,
+    output [7:0] a_out,         // Forward activation to next PE
+    output [31:0] acc           // Local partial sum accumulator
 );
+    reg [7:0] weight_reg;       // STATIONARY weight storage
+    // Weight stays put, activation flows through
+endmodule
 ```
 
-**PE Operation:**
-- Stores weight value locally
-- Performs MAC: `acc_out = acc_in + (act_in * wgt_stored)`
-- Forwards activation to next PE in row
-- Maintains weight for multiple activation streams
+**PE Operation (Row-Stationary):**
+1. **Weight Loading Phase**: Captures `b_in` into `weight_reg` when `load_weight` is high
+2. **Compute Phase**: Performs MAC using stationary weight: `acc += a_in * weight_reg`
+3. **Activation Flow**: Forwards `a_in` to next PE horizontally (a_out)
+4. **NO Weight Forwarding**: Weight stays in register (not passed to neighbors)
 
 ### 3. Buffer Architecture
 
@@ -128,37 +133,57 @@ The CSR module (`csr.v`) provides software-visible configuration:
 
 ## Dataflow Architecture
 
-### Row-Stationary Dataflow
+### TRUE Row-Stationary Dataflow
 
-The ACCEL-v1 implements Row-Stationary (RS) dataflow for optimal weight reuse:
+The ACCEL-v1 implements **TRUE Row-Stationary (RS) dataflow** with stationary weight storage:
 
 ```
-Weights (stationary):     Activations (flowing):
-┌─────┬─────┬─────┐      ┌─────┐ ┌─────┐ ┌─────┐
-│ W00 │ W01 │ W02 │ ←──  │ A00 │→│ A01 │→│ A02 │
-├─────┼─────┼─────┤      ├─────┤ ├─────┤ ├─────┤
-│ W10 │ W11 │ W12 │ ←──  │ A10 │→│ A11 │→│ A12 │
-├─────┼─────┼─────┤      ├─────┤ ├─────┤ ├─────┤
-│ W20 │ W21 │ W22 │ ←──  │ A20 │→│ A21 │→│ A22 │
-└─────┴─────┴─────┘      └─────┘ └─────┘ └─────┘
-                             ↓       ↓       ↓
-                        [Partial Sums Flow Down]
+Phase 1: WEIGHT LOADING (weights broadcast to columns, stored in PEs)
+        
+        W_col0   W_col1   W_col2   ← Weights broadcast from top
+           ↓        ↓        ↓
+        ┌─────┐  ┌─────┐  ┌─────┐
+Row 0:  │ W00 │  │ W01 │  │ W02 │  ← ALL PEs in column receive same weight
+        └─────┘  └─────┘  └─────┘
+        ┌─────┐  ┌─────┐  ┌─────┐
+Row 1:  │ W00 │  │ W01 │  │ W02 │  ← Same weights (broadcast)
+        └─────┘  └─────┘  └─────┘
+
+Phase 2: ACTIVATION STREAMING (weights stay put, activations flow)
+
+        Weights STAY STATIONARY in PEs
+           
+A_row0 →│ W00 │→│ W01 │→│ W02 │  ← A_row0 flows right
+        └─────┘ └─────┘ └─────┘
+A_row1 →│ W00 │→│ W01 │→│ W02 │  ← A_row1 flows right  
+        └─────┘ └─────┘ └─────┘
+           ↓       ↓       ↓
+      [Partial Sums accumulate LOCALLY in each PE]
 ```
+
+**Key Row-Stationary Properties:**
+- ✅ Weights loaded ONCE and stored stationary in PE registers
+- ✅ Activations stream horizontally through the array
+- ✅ NO weight movement during computation (maximum reuse)
+- ✅ Partial sums accumulate locally (not forwarded between PEs)
+- ✅ Each PE computes one output element of result matrix
 
 **Advantages:**
-- Maximum weight reuse (each weight used for full activation column)
-- Minimal weight memory bandwidth
-- Natural tiling for large matrices
-- Efficient for CNN convolution layers
+- **Maximum weight reuse**: Each weight loaded once, used for all M activations
+- **Minimal weight bandwidth**: Weights loaded in burst, then stationary
+- **Energy efficient**: No weight movement during main compute phase
+- **Natural tiling**: Perfect for large matrix multiplication with K-tiling
 
 ### Data Movement Patterns
 
-#### 1. Weight Loading Phase
+#### 1. Weight Loading Phase (NEW in Row-Stationary)
 ```verilog
-for (int row = 0; row < N; row++) begin
-    for (int col = 0; col < M; col++) begin
-        pe_array[row][col].load_weight(weights[row][col]);
-    end
+// Load weights into ALL PEs - broadcast to columns
+// Scheduler enters S_LOAD_WEIGHT state
+for (int k = 0; k < Tk; k++) begin
+    load_weight = 1;  // Enable weight capture
+    b_in = weight_buffer[k];  // Broadcast to all PEs in same column
+    @(posedge clk);  // Weights now stationary in PEs
 end
 ```
 
