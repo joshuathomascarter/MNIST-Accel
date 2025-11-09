@@ -1,0 +1,106 @@
+{
+  "conv1.weight": {
+    "shape": [
+      32,
+      1,
+      3,
+      3
+    ],
+    "quantization": "per_channel",
+    "error": {
+      "max_error": 0.0019835233688354492,
+      "mean_error": 0.0006378882681019604,
+      "mse": 6.334136060104356e-07,
+      "snr_db": 53.645992279052734
+    }
+  },
+  "conv1.bias": {
+    "shape": [
+      32
+    ],
+    "quantization": "per_tensor",
+    "error": {
+      "max_error": 0.0015733838081359863,
+      "mean_error": 0.0006817097892053425,
+      "mse": 6.951275963729131e-07,
+      "snr_db": 49.134666442871094
+    }
+  },
+  "conv2.weight": {
+    "shape": [
+      64,
+      32,
+      3,
+      3
+    ],
+    "quantization": "per_channel",
+    "error": {
+      "max_error": 0.0019393861293792725,
+      "mean_error": 0.000636671669781208,
+      "mse": 5.649698096021893e-07,
+      "snr_db": 47.154754638671875
+    }
+  },
+  "conv2.bias": {
+    "shape": [
+      64
+    ],
+    "quantization": "per_tensor",
+    "error": {
+      "max_error": 0.00034411996603012085,
+      "mean_error": 0.00019763913587667048,
+      "mse": 4.806198461437816e-08,
+      "snr_db": 52.43916320800781
+    }
+  },
+  "fc1.weight": {
+    "shape": [
+      128,
+      9216
+    ],
+    "quantization": "per_channel",
+    "error": {
+      "max_error": 0.0018961727619171143,
+      "mean_error": 0.00048767562839202583,
+      "mse": 4.0287750380230136e-07,
+      "snr_db": 41.960140228271484
+    }
+  },
+  "fc1.bias": {
+    "shape": [
+      128
+    ],
+    "quantization": "per_tensor",
+    "error": {
+      "max_error": 0.0003903205506503582,
+      "mean_error": 0.00020043030963279307,
+      "mse": 5.1210669482770754e-08,
+      "snr_db": 49.55246353149414
+    }
+  },
+  "fc2.weight": {
+    "shape": [
+      10,
+      128
+    ],
+    "quantization": "per_channel",
+    "error": {
+      "max_error": 0.0011493489146232605,
+      "mean_error": 0.0005006646970286965,
+      "mse": 3.3734417570485675e-07,
+      "snr_db": 49.72795486450195
+    }
+  },
+  "fc2.bias": {
+    "shape": [
+      10
+    ],
+    "quantization": "per_tensor",
+    "error": {
+      "max_error": 0.00038328301161527634,
+      "mean_error": 0.00020545124425552785,
+      "mse": 6.165948462921733e-08,
+      "snr_db": 50.766109466552734
+    }
+  }
+}

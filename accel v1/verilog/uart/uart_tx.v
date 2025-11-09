@@ -24,22 +24,22 @@ module uart_tx #(
   // Byte input handshake
   input  wire [DATA_BITS-1:0]  i_data,
   input  wire        i_valid,      // assert with i_data to request send
-  output logic       i_ready,      // high when TX can accept a new byte
+  output reg       i_ready,      // high when TX can accept a new byte
 
   // Serial line out (idle=1)
-  output logic       o_tx
+  output reg       o_tx
 );
 
   // ----------------------------
   // Oversample clock-enable
   // ----------------------------
   localparam int unsigned BAUDxOSR = BAUD * OVERSAMPLE;
-  logic ce_ovr;
+  reg ce_ovr;
 
   generate
     if (!USE_NCO) begin : g_div
       localparam int unsigned TICKS_PER_OSR = (CLK_HZ / BAUDxOSR > 0) ? (CLK_HZ / BAUDxOSR) : 1;
-      logic [$clog2(TICKS_PER_OSR)-1:0] cnt_osr;
+      reg [$clog2(TICKS_PER_OSR)-1:0] cnt_osr;
       always_ff @(posedge i_clk) begin
         if (!i_rst_n) begin
           cnt_osr <= '0;
@@ -56,7 +56,7 @@ module uart_tx #(
       end
     end else begin : g_nco
       localparam int unsigned NCO_INC = (((BAUDxOSR << ACCW) + (CLK_HZ/2)) / CLK_HZ);
-      logic [ACCW-1:0] acc;
+      reg [ACCW-1:0] acc;
       always_ff @(posedge i_clk) begin
         if (!i_rst_n) begin
           acc   <= '0;
@@ -72,23 +72,23 @@ module uart_tx #(
   // Bit timing/phase
   // ----------------------------
   localparam int unsigned MID = OVERSAMPLE/2;
-  logic [$clog2(OVERSAMPLE)-1:0] phase;
+  reg [$clog2(OVERSAMPLE)-1:0] phase;
 
   // ----------------------------
   // Shift register + control
   // ----------------------------
-  typedef enum logic [2:0] { IDLE, START, DATA, PARITY_S, STOP } state_t;
+  typedef enum reg [2:0] { IDLE, START, DATA, PARITY_S, STOP } state_t;
   state_t state;
 
-  logic [DATA_BITS-1:0]  shifter;
-  logic [$clog2(DATA_BITS)-1:0]  bit_idx;     // 0..DATA_BITS-1
-  logic [0:0]  stop_cnt;    // 0 or 1
-  logic        parity_bit;  // computed if PARITY!=0
-  logic        load_byte;   // handshake fire
+  reg [DATA_BITS-1:0]  shifter;
+  reg [$clog2(DATA_BITS)-1:0]  bit_idx;     // 0..DATA_BITS-1
+  reg [0:0]  stop_cnt;    // 0 or 1
+  reg        parity_bit;  // computed if PARITY!=0
+  reg        load_byte;   // handshake fire
 
   // Expected parity helpers
-  function automatic logic exp_even(input logic [DATA_BITS-1:0] d); exp_even = ^d; endfunction
-  function automatic logic exp_odd (input logic [DATA_BITS-1:0] d); exp_odd  = ~(^d); endfunction
+  function automatic reg exp_even(input reg [DATA_BITS-1:0] d); exp_even = ^d; endfunction
+  function automatic reg exp_odd (input reg [DATA_BITS-1:0] d); exp_odd  = ~(^d); endfunction
 
   // Ready/valid handshake
   assign load_byte = i_valid & i_ready;

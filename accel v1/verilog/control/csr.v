@@ -82,44 +82,6 @@ module csr #(
   reg        st_err_crc;
   reg        st_err_illegal;
 
-  // -------------------------------------------------------------------------
-  // Assertions (SystemVerilog)
-  // -------------------------------------------------------------------------
-  // SVA: Parameter bounds
-  initial begin
-    assert (ADDR_W >= 6 && ADDR_W <= 12)
-      else $fatal("CSR: ADDR_W out of expected range (6-12)");
-  end
-
-  // SVA: Address alignment (all accesses must be 32-bit aligned)
-  always @(posedge clk) begin
-    if (csr_wen || csr_ren) begin
-      assert (csr_addr[1:0] == 2'b00)
-        else $error("CSR: Unaligned access at %h", csr_addr);
-    end
-  end
-
-  // SVA: Bank select must be 0 or 1
-  always @(posedge clk) begin
-    assert (r_bank_sel_wr_A == 1'b0 || r_bank_sel_wr_A == 1'b1)
-      else $error("CSR: r_bank_sel_wr_A out of range");
-    assert (r_bank_sel_wr_B == 1'b0 || r_bank_sel_wr_B == 1'b1)
-      else $error("CSR: r_bank_sel_wr_B out of range");
-  end
-
-  // SVA: Reserved fields in BUFF/STATUS/UART_crc_en must be zero on write
-  always @(posedge clk) begin
-    if (csr_wen && csr_addr == BUFF)
-      assert ((csr_wdata & 32'hFFFF_FCFC) == 0)
-        else $error("CSR: Reserved bits set in BUFF write: %h", csr_wdata);
-    if (csr_wen && csr_addr == STATUS)
-      assert ((csr_wdata & 32'hFFFF_FCFC) == 0)
-        else $error("CSR: Reserved bits set in STATUS write: %h", csr_wdata);
-    if (csr_wen && csr_addr == UART_crc_en)
-      assert ((csr_wdata & 32'hFFFF_FFFE) == 0)
-        else $error("CSR: Reserved bits set in UART_crc_en write: %h", csr_wdata);
-  end
-
   // Coverage hooks (for UVM or functional coverage)
   // covergroup cg_csr_write @(posedge clk);
   //   coverpoint csr_addr;

@@ -1,0 +1,115 @@
+name: Python CI
+
+on:
+  push:
+    branches: [ main, dev ]
+    paths:
+      - 'accel v1/python/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [ main, dev ]
+    paths:
+      - 'accel v1/python/**'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install black flake8 isort
+      
+      - name: Black formatting check
+        run: |
+          black --check --line-length 120 "accel v1/python/"
+      
+      - name: Flake8 linting
+        run: |
+          flake8 "accel v1/python/" --max-line-length=120 --ignore=E203,W503,E501 --count --statistics
+      
+      - name: isort import sorting check
+        run: |
+          isort --check-only --profile black --line-length 120 "accel v1/python/"
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10']
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov numpy torch scipy
+      
+      - name: Run exporter tests
+        run: |
+          cd "accel v1"
+          pytest python/tests/test_exporters.py -v --cov=python/exporters --cov-report=term
+      
+      - name: Run golden model tests
+        run: |
+          cd "accel v1"
+          pytest python/tests/test_golden_models.py -v --cov=python/golden --cov-report=term
+      
+      - name: Run edge case tests
+        run: |
+          cd "accel v1"
+          python python/tests/test_edges.py
+
+  generate-fixtures:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy torch scipy
+      
+      - name: Generate Transformer fixtures
+        run: |
+          cd "accel v1"
+          python python/exporters/export_transformer.py
+      
+      - name: Generate MLP fixtures
+        run: |
+          cd "accel v1"
+          python python/exporters/export_mlp.py
+      
+      - name: Generate Conv fixtures
+        run: |
+          cd "accel v1"
+          python python/exporters/export_conv.py
+      
+      - name: Upload fixtures as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bsr-fixtures
+          path: |
+            accel v1/data/fixtures/
+          retention-days: 30

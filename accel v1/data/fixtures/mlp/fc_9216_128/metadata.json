@@ -1,0 +1,7 @@
+{
+  "input_dim": 9216,
+  "output_dim": 128,
+  "target_sparsity": 90.0,
+  "actual_sparsity": 89.99565972222221,
+  "block_size": 8
+}

@@ -1,0 +1,57 @@
+{
+  "layer_name": "conv_1_32",
+  "shape": [
+    32,
+    9
+  ],
+  "padded_shape": [
+    32,
+    12
+  ],
+  "blocksize": [
+    4,
+    4
+  ],
+  "num_blocks": 12,
+  "num_block_rows": 8,
+  "num_block_cols": 3,
+  "density": 0.5,
+  "sparsity_pct": 50.0,
+  "row_ptr": [
+    0,
+    0,
+    2,
+    4,
+    5,
+    6,
+    8,
+    10,
+    12
+  ],
+  "col_idx": [
+    0,
+    1,
+    0,
+    1,
+    1,
+    2,
+    0,
+    2,
+    1,
+    2,
+    1,
+    2
+  ],
+  "tiles_per_row": [
+    0,
+    2,
+    2,
+    1,
+    1,
+    2,
+    2,
+    2
+  ],
+  "max_tiles_per_row": 2,
+  "avg_tiles_per_row": 1.5
+}

@@ -33,23 +33,23 @@
 `default_nettype none
 
 module uart_rx #(
-  parameter int unsigned DATA_BITS    = 8,
-  parameter int unsigned CLK_HZ       = 50_000_000,
-  parameter int unsigned BAUD         = 115_200,
-  parameter int unsigned OVERSAMPLE   = 16,
-  parameter int unsigned PARITY       = 0,   // 0:none, 1:even, 2:odd
-  parameter int unsigned STOP_BITS    = 1,   // 1 or 2
-  parameter bit           USE_NCO     = 0,   // 0:int divider, 1:NCO
-  parameter int unsigned  ACCW        = 32,  // NCO accumulator width
-  parameter bit           MAJORITY3   = 0    // 0:single mid, 1:3-point vote
+  parameter DATA_BITS    = 8,
+  parameter CLK_HZ       = 50_000_000,
+  parameter BAUD         = 115_200,
+  parameter OVERSAMPLE   = 16,
+  parameter PARITY       = 0,   // 0:none, 1:even, 2:odd
+  parameter STOP_BITS    = 1,   // 1 or 2
+  parameter USE_NCO      = 0,   // 0:int divider, 1:NCO
+  parameter ACCW         = 32,  // NCO accumulator width
+  parameter MAJORITY3    = 0    // 0:single mid, 1:3-point vote
 )(
   input  wire        i_clk,
   input  wire        i_rst_n,
   input  wire        i_rx,
-  output logic [DATA_BITS-1:0] o_data,
-  output logic       o_valid,
-  output logic       o_frm_err,
-  output logic       o_par_err
+  output reg [DATA_BITS-1:0] o_data,
+  output reg         o_valid,
+  output reg         o_frm_err,
+  output reg         o_par_err
 );
 
   // ----------------------------
@@ -65,8 +65,8 @@ module uart_rx #(
   // ----------------------------
   // 1) CDC: 2-FF synchronizer
   // ----------------------------
-  (* ASYNC_REG = "TRUE" *) logic rx_meta;
-  (* ASYNC_REG = "TRUE" *) logic rx_sync;
+  (* ASYNC_REG = "TRUE" *) reg rx_meta;
+  (* ASYNC_REG = "TRUE" *) reg rx_sync;
 
   always_ff @(posedge i_clk) begin
     rx_meta <= i_rx;
@@ -81,12 +81,12 @@ module uart_rx #(
   // - NCO path uses accumulator with increment ~= (BAUD*OVERSAMPLE)/CLK_HZ * 2^ACCW
   localparam int unsigned BAUDxOSR = BAUD * OVERSAMPLE;
 
-  logic ce_ovr;
+  reg ce_ovr;
 
   generate
     if (!USE_NCO) begin : g_div
       localparam int unsigned TICKS_PER_OSR = (CLK_HZ / BAUDxOSR > 0) ? (CLK_HZ / BAUDxOSR) : 1;
-      logic [$clog2(TICKS_PER_OSR)-1:0] cnt_osr;
+      reg [$clog2(TICKS_PER_OSR)-1:0] cnt_osr;
 
       always_ff @(posedge i_clk) begin
         if (!i_rst_n) begin
@@ -106,7 +106,7 @@ module uart_rx #(
       // Fractional NCO
       // INC = round( (BAUD*OVERSAMPLE / CLK_HZ) * 2^ACCW )
       localparam int unsigned NCO_INC = ( ( (BAUDxOSR << ACCW) + (CLK_HZ/2) ) / CLK_HZ );
-      logic [ACCW-1:0] acc;
+      reg [ACCW-1:0] acc;
 
       always_ff @(posedge i_clk) begin
         if (!i_rst_n) begin
@@ -125,28 +125,28 @@ module uart_rx #(
   // ----------------------------
   localparam int unsigned MID = OVERSAMPLE/2;
 
-  logic [$clog2(OVERSAMPLE)-1:0] phase;
-  logic [$clog2(DATA_BITS)-1:0]  bit_idx;    // 0..DATA_BITS-1
-  logic [DATA_BITS-1:0]          shift_reg;
-  logic [0:0]                    stop_cnt;   // 0 or 1 to count stop bits
+  reg [$clog2(OVERSAMPLE)-1:0] phase;
+  reg [$clog2(DATA_BITS)-1:0]  bit_idx;    // 0..DATA_BITS-1
+  reg [DATA_BITS-1:0]          shift_reg;
+  reg [0:0]                    stop_cnt;   // 0 or 1 to count stop bits
 
   // For majority-3 around MID
-  logic samp_m1, samp_0, samp_p1;
-  logic use_sample; // final sampled bit
+  reg samp_m1, samp_0, samp_p1;
+  reg use_sample; // final sampled bit
 
   // ----------------------------
   // 4) FSM
   // ----------------------------
-  typedef enum logic [2:0] { IDLE, START, DATA, PARITY_S, STOP, DONE } state_t;
+  typedef enum reg [2:0] { IDLE, START, DATA, PARITY_S, STOP, DONE } state_t;
   state_t state;
 
   // ----------------------------
   // 5) Parity calc helper
   // ----------------------------
-  function automatic logic expected_parity_even(input logic [DATA_BITS-1:0] d);
+  function automatic reg expected_parity_even(input reg [DATA_BITS-1:0] d);
     expected_parity_even = ^d; // even parity bit should make total ones even
   endfunction
-  function automatic logic expected_parity_odd(input logic [DATA_BITS-1:0] d);
+  function automatic reg expected_parity_odd(input reg [DATA_BITS-1:0] d);
     expected_parity_odd = ~(^d);
   endfunction
 

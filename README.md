@@ -24,7 +24,7 @@ A complete INT8 CNN accelerator with systolic array architecture and full UART-b
                                                          │
                                                          ▼
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│  Weight Buffer  │──►│  Systolic Array  │◄──►│ Activation Buf  │
+│  Weight Buffer  │──► │  Systolic Array  │◄──►│ Activation Buf  │
 │ (Dual Bank INT8)│    │  (2×2 INT8 MACs) │    │ (Dual Bank INT8)│
 └─────────────────┘    └──────────────────┘    └─────────────────┘
                                 │
@@ -65,7 +65,7 @@ accel v1/
 │   │   ├── run_gemm.py     # Main Host RS Tiler implementation
 │   │   ├── uart_driver.py  # UART communication layer
 │   │   └── csr_map.py      # CSR register definitions
-│   ├── tests/              # Comprehensive test suite (26 tests - 100%)
+│   ├── tests/              # Comprehensive test suite (36 tests - 100%)
 │   │   └── test_integration.py # Complete validation framework
 │   ├── golden_models/      # Reference implementations
 │   ├── MNIST CNN/          # CNN training and inference
