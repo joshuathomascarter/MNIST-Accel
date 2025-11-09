@@ -1,6 +1,0 @@
-# MNIST QAT Checkpoint Placeholder
-# Quantization-Aware Training checkpoint
-# Implements per-channel QAT with <0.5% accuracy drop
-
-# TODO: This will contain the QAT trained model
-# File will be created after QAT training is implemented
