@@ -80,7 +80,7 @@ module accel_top #(
     wire [9:0] sched_m_tile, sched_n_tile;
     wire [11:0] sched_k_tile;
     wire [31:0] cycles_tile, stall_cycles;
-    wire [TK-1:0] k_idx_sched;
+    wire [2:0] k_idx_sched;
     wire [TM-1:0] en_mask_row;
     wire [TN-1:0] en_mask_col;
     
@@ -572,11 +572,13 @@ module accel_top #(
         .M_W(10),
         .N_W(10),
         .K_W(12),
-        .TM_W(6),
-        .TN_W(6),
-        .TK_W(6),
+        .TM_W(3),
+        .TN_W(3),
+        .TK_W(3),
         .PREPRIME(0),
-        .USE_CSR_COUNTS(1)
+        .USE_CSR_COUNTS(1),
+        .MAX_TM(TM),
+        .MAX_TN(TN)
     ) scheduler_inst (
         .clk(clk),
         .rst_n(rst_n),
@@ -585,9 +587,9 @@ module accel_top #(
         .M(M[9:0]),
         .N(N[9:0]),
         .K(K[11:0]),
-        .Tm(Tm[5:0]),
-        .Tn(Tn[5:0]),
-        .Tk(Tk[5:0]),
+        .Tm(Tm[2:0]),
+        .Tn(Tn[2:0]),
+        .Tk(Tk[2:0]),
         .MT_csr((M[9:0] != 0) ? ((M[9:0] + Tm[5:0] - 10'd1) / Tm[5:0]) : 10'd1),
         .NT_csr((N[9:0] != 0) ? ((N[9:0] + Tn[5:0] - 10'd1) / Tn[5:0]) : 10'd1),
         .KT_csr((K[11:0] != 0) ? ((K[11:0] + Tk[5:0] - 12'd1) / Tk[5:0]) : 12'd1),

@@ -23,12 +23,8 @@ module block_reorder_buffer #(
     output logic        out_row_done
 );
 
-    typedef struct packed {
-        logic [15:0] block_col;
-        logic [31:0] block_idx;
-    } block_meta_t;
-
-    block_meta_t mem [0:MAX_BLOCKS_PER_ROW-1];
+    logic [15:0] mem_col [0:MAX_BLOCKS_PER_ROW-1];
+    logic [31:0] mem_idx [0:MAX_BLOCKS_PER_ROW-1];
     logic [7:0] count;
     logic [7:0] emit_idx;
 
@@ -49,8 +45,8 @@ module block_reorder_buffer #(
             case (state)
                 COLLECT: begin
                     if (in_valid) begin
-                        mem[count].block_col <= in_block_col;
-                        mem[count].block_idx <= in_block_idx;
+                        mem_col[count] <= in_block_col;
+                        mem_idx[count] <= in_block_idx;
                         count <= count + 1;
                     end
                     if (in_row_done) begin
@@ -59,20 +55,13 @@ module block_reorder_buffer #(
                 end
 
                 SORT: begin
-                    // simple single-pass bubble to partially sort (for hardware simplicity)
-                    for (int i = 0; i < (count > 0 ? count-1 : 0); i++) begin
-                        if (mem[i].block_col > mem[i+1].block_col) begin
-                            block_meta_t tmp = mem[i];
-                            mem[i] <= mem[i+1];
-                            mem[i+1] <= tmp;
-                        end
-                    end
+                    // TODO: Implement sorting logic
                 end
 
                 EMIT: begin
                     out_valid <= 1'b1;
-                    out_block_col <= mem[emit_idx].block_col;
-                    out_block_idx <= mem[emit_idx].block_idx;
+                    out_block_col <= mem_col[emit_idx];
+                    out_block_idx <= mem_idx[emit_idx];
                     emit_idx <= emit_idx + 1;
                     if (emit_idx == count - 1) begin
                         out_row_done <= 1'b1;
@@ -100,7 +89,7 @@ module block_reorder_buffer #(
                 next_state = EMIT;
             end
             EMIT: begin
-                if (emit_idx == count) next_state = COLLECT;
+                if (emit_idx >= count - 1) next_state = COLLECT;
             end
         endcase
     end
