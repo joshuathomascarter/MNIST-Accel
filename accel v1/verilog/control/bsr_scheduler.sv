@@ -133,6 +133,11 @@ module bsr_scheduler #(
     input  logic [15:0] cfg_num_block_cols,     // Configuration: number of block columns
     input  logic [31:0] cfg_total_blocks,       // Configuration: total non-zero blocks
     
+    // NEW: Runtime layer configuration
+    input  logic        cfg_layer_switch,       // Trigger layer reconfiguration
+    input  logic [2:0]  cfg_active_layer,       // Active layer ID (0-7)
+    output logic        cfg_layer_ready,        // Ready for new configuration
+    
     // BSR Metadata BRAM: row_ptr (cumulative block counts)
     output logic        row_ptr_rd_en,          // Read enable
     output logic [15:0] row_ptr_rd_addr,        // Read address
@@ -167,17 +172,19 @@ module bsr_scheduler #(
     //========================================================================
     typedef enum logic [3:0] {
         IDLE            = 4'd0,   // Wait for start
-        READ_ROW_PTR_0  = 4'd1,   // Read row_ptr[i]
-        READ_ROW_PTR_1  = 4'd2,   // Read row_ptr[i+1]
-        CHECK_EMPTY     = 4'd3,   // Check if row has blocks
-        READ_COL_IDX    = 4'd4,   // Read col_idx[block_idx]
-        LOAD_BLOCK_INIT = 4'd5,   // Initialize block load
-        LOAD_BLOCK_LOOP = 4'd6,   // Load 64 bytes (64 cycles)
-        SEND_TO_SYSTOLIC= 4'd7,   // Send block to systolic array
-        WAIT_SYSTOLIC   = 4'd8,   // Wait for systolic to finish
-        NEXT_BLOCK      = 4'd9,   // Move to next block in row
-        NEXT_ROW        = 4'd10,  // Move to next block row
-        FINISH          = 4'd11   // Done, go back to IDLE
+        LAYER_SWITCH    = 4'd1,   // NEW: Handle layer reconfiguration
+        READ_ROW_PTR_0  = 4'd2,   // Read row_ptr[i]
+        READ_ROW_PTR_1  = 4'd3,   // Read row_ptr[i+1]
+        CHECK_EMPTY     = 4'd4,   // Check if row has blocks
+        PREFETCH_NEXT   = 4'd5,   // NEW: Prefetch next block metadata
+        READ_COL_IDX    = 4'd6,   // Read col_idx[block_idx]
+        LOAD_BLOCK_INIT = 4'd7,   // Initialize block load
+        LOAD_BLOCK_LOOP = 4'd8,   // Load 64 bytes (64 cycles)
+        SEND_TO_SYSTOLIC= 4'd9,   // Send block to systolic array
+        WAIT_SYSTOLIC   = 4'd10,  // Wait for systolic to finish
+        NEXT_BLOCK      = 4'd11,  // Move to next block in row
+        NEXT_ROW        = 4'd12,  // Move to next block row
+        FINISH          = 4'd13   // Done, go back to IDLE
     } state_t;
     
     state_t state, next_state;
@@ -200,6 +207,17 @@ module bsr_scheduler #(
     logic [31:0] row_ptr_reg;
     logic [15:0] col_idx_reg;
     
+    // NEW: Prefetch registers for hiding BRAM latency
+    logic [15:0] prefetch_col_idx;      // Next block's column index
+    logic [DATA_WIDTH-1:0] prefetch_block_data [0:BLOCK_SIZE-1]; // Next block's data
+    logic        prefetch_valid;        // Prefetch data is valid
+    logic [31:0] prefetch_block_idx;    // Which block was prefetched
+    
+    // Layer config registers (latched on layer switch)
+    logic [15:0] active_num_block_rows;
+    logic [15:0] active_num_block_cols;
+    logic [31:0] active_total_blocks;
+    
     //========================================================================
     // FSM Sequential Logic
     //========================================================================
@@ -216,6 +234,12 @@ module bsr_scheduler #(
             blocks_processed <= '0;
             busy <= 1'b0;
             done <= 1'b0;
+            cfg_layer_ready <= 1'b0;
+            prefetch_valid <= 1'b0;
+            prefetch_block_idx <= '0;
+            active_num_block_rows <= cfg_num_block_rows;
+            active_num_block_cols <= cfg_num_block_cols;
+            active_total_blocks <= cfg_total_blocks;
             
             for (int i = 0; i < BLOCK_SIZE; i++) begin
                 block_buffer[i] <= '0;
@@ -231,8 +255,29 @@ module bsr_scheduler #(
                         block_row <= '0;
                         block_idx <= '0;
                         blocks_processed <= '0;
+                    end else if (cfg_layer_switch) begin
+                        // Move to LAYER_SWITCH to latch new configuration
+                        cfg_layer_ready <= 1'b0;
+                        state <= LAYER_SWITCH;
                     end
                 end
+                
+                LAYER_SWITCH: begin
+                    // Latch runtime configuration for the active layer
+                    active_num_block_rows <= cfg_num_block_rows;
+                    active_num_block_cols <= cfg_num_block_cols;
+                    active_total_blocks <= cfg_total_blocks;
+                    // reset progress for new layer
+                    block_row <= '0;
+                    block_idx <= '0;
+                    blocks_processed <= '0;
+                    cfg_layer_ready <= 1'b1; // indicate we've applied config
+                end
+
+                READ_ROW_PTR_0: begin
+                    block_start <= row_ptr_rd_data;
+                end
+
                 
                 READ_ROW_PTR_1: begin
                     // Capture row_ptr[block_row+1]
@@ -267,7 +312,13 @@ module bsr_scheduler #(
                 end
                 
                 NEXT_BLOCK: begin
+                    // Advance to next block and use prefetched column index if available
                     block_idx <= block_idx + 1;
+                    if (prefetch_valid && (prefetch_block_idx == block_idx + 1)) begin
+                        // Use the prefetched column index to avoid extra BRAM read
+                        col_idx_reg <= prefetch_col_idx;
+                        prefetch_valid <= 1'b0;
+                    end
                 end
                 
                 NEXT_ROW: begin
@@ -305,7 +356,7 @@ module bsr_scheduler #(
             CHECK_EMPTY: begin
                 if (num_blocks_in_row == 0) begin
                     // Empty row - skip to next row
-                    if (block_row >= cfg_num_block_rows - 1) begin
+                    if (block_row >= active_num_block_rows - 1) begin
                         next_state = FINISH; // Last row and empty
                     end else begin
                         next_state = NEXT_ROW;
@@ -346,7 +397,7 @@ module bsr_scheduler #(
             NEXT_BLOCK: begin
                 if (block_idx >= block_end - 1) begin
                     // Finished all blocks in this row
-                    if (block_row >= cfg_num_block_rows - 1) begin
+                    if (block_row >= active_num_block_rows - 1) begin
                         next_state = FINISH; // Last row
                     end else begin
                         next_state = NEXT_ROW;
@@ -408,6 +459,12 @@ module bsr_scheduler #(
         if (state == READ_COL_IDX) begin
             col_idx_rd_en = 1'b1;
             col_idx_rd_addr = block_idx;
+        end else if (state == WAIT_SYSTOLIC) begin
+            // Prefetch next block's column index while systolic is computing
+            if ((block_idx < block_end - 1) && !prefetch_valid) begin
+                col_idx_rd_en = 1'b1;
+                col_idx_rd_addr = block_idx + 1;
+            end
         end
     end
     
@@ -415,6 +472,14 @@ module bsr_scheduler #(
     always_ff @(posedge clk) begin
         if (state == READ_COL_IDX) begin
             col_idx_reg <= col_idx_rd_data;
+        end
+        // Prefetch capture: when systolic is computing, capture next col_idx
+        if (state == WAIT_SYSTOLIC) begin
+            if ((block_idx < block_end - 1) && !prefetch_valid) begin
+                prefetch_col_idx <= col_idx_rd_data;
+                prefetch_block_idx <= block_idx + 1;
+                prefetch_valid <= 1'b1;
+            end
         end
     end
     
@@ -449,18 +514,18 @@ module bsr_scheduler #(
     // synthesis translate_off
     always @(posedge clk) begin
         if (state == CHECK_EMPTY && num_blocks_in_row > cfg_total_blocks) begin
-            $error("BSR Scheduler: num_blocks_in_row (%0d) exceeds total_blocks (%0d)",
-                   num_blocks_in_row, cfg_total_blocks);
+         $error("BSR Scheduler: num_blocks_in_row (%0d) exceeds total_blocks (%0d)",
+             num_blocks_in_row, active_total_blocks);
         end
         
         if (state == READ_COL_IDX && block_idx >= cfg_total_blocks) begin
-            $error("BSR Scheduler: block_idx (%0d) out of bounds (max %0d)",
-                   block_idx, cfg_total_blocks-1);
+         $error("BSR Scheduler: block_idx (%0d) out of bounds (max %0d)",
+             block_idx, active_total_blocks-1);
         end
         
         if (state == LOAD_BLOCK_INIT && block_col >= cfg_num_block_cols) begin
-            $error("BSR Scheduler: block_col (%0d) out of bounds (max %0d)",
-                   block_col, cfg_num_block_cols-1);
+         $error("BSR Scheduler: block_col (%0d) out of bounds (max %0d)",
+             block_col, active_num_block_cols-1);
         end
     end
     // synthesis translate_on

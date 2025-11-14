@@ -106,16 +106,58 @@ module systolic_array_sparse #(
     // Activation buffer (sliding window)
     logic [DATA_WIDTH-1:0] act_buffer [0:BLOCK_H-1];
     
-    // PE accumulators (2 PEs × 8 outputs each = 16 accumulators)
-    logic signed [ACC_WIDTH-1:0] pe_acc [0:PE_ROWS-1][0:BLOCK_W-1];
-    
     // Computation counters
     logic [3:0] compute_cycle;      // 0-7 for 8 cycles
-    logic [2:0] pe_row_idx;         // Which PE row (0-1)
+    logic [1:0] pe_tile_row;        // Which 2-row tile (0-3 for 8 rows)
+    logic [1:0] pe_tile_col;        // Which 2-col tile (0-3 for 8 cols)
     
     // Block position tracking
     logic [15:0] current_block_row;
     logic [15:0] current_block_col;
+    
+    //========================================================================
+    // Systolic Array Interface Signals
+    //========================================================================
+    logic                    systolic_en;
+    logic                    systolic_clr;
+    logic                    systolic_load_weight;
+    logic [PE_ROWS*8-1:0]    systolic_a_in_flat;    // 2 rows × 8 bits
+    logic [PE_COLS*8-1:0]    systolic_b_in_flat;    // 2 cols × 8 bits
+    logic [PE_ROWS*PE_COLS*32-1:0] systolic_c_out_flat; // 4 × 32 bits
+    
+    // Unpack systolic output
+    logic signed [ACC_WIDTH-1:0] systolic_acc [0:PE_ROWS-1][0:PE_COLS-1];
+    
+    // Final accumulated results (multiple tiles → full 2×8 output)
+    logic signed [ACC_WIDTH-1:0] pe_acc [0:PE_ROWS-1][0:BLOCK_W-1];
+    
+    //========================================================================
+    // Instantiate Base Systolic Array
+    //========================================================================
+    systolic_array #(
+        .N_ROWS(PE_ROWS),
+        .N_COLS(PE_COLS),
+        .PIPE(1),
+        .SAT(0)
+    ) u_systolic (
+        .clk(clk),
+        .rst_n(rst_n),
+        .en(systolic_en),
+        .clr(systolic_clr),
+        .load_weight(systolic_load_weight),
+        .a_in_flat(systolic_a_in_flat),
+        .b_in_flat(systolic_b_in_flat),
+        .c_out_flat(systolic_c_out_flat)
+    );
+    
+    // Unpack systolic array outputs
+    always_comb begin
+        for (int i = 0; i < PE_ROWS; i++) begin
+            for (int j = 0; j < PE_COLS; j++) begin
+                systolic_acc[i][j] = systolic_c_out_flat[(i*PE_COLS+j)*32 +: 32];
+            end
+        end
+    end
     
     //========================================================================
     // FSM State Machine
@@ -124,7 +166,8 @@ module systolic_array_sparse #(
         if (!rst_n) begin
             state <= IDLE;
             compute_cycle <= '0;
-            pe_row_idx <= '0;
+            pe_tile_row <= '0;
+            pe_tile_col <= '0;
             busy <= 1'b0;
             done <= 1'b0;
             current_block_row <= '0;
@@ -147,7 +190,8 @@ module systolic_array_sparse #(
                         current_block_row <= block_row;
                         current_block_col <= block_col;
                         compute_cycle <= '0;
-                        pe_row_idx <= '0;
+                        pe_tile_row <= '0;
+                        pe_tile_col <= '0;
                         
                         // Clear accumulators for new block
                         for (int i = 0; i < PE_ROWS; i++) begin
@@ -165,29 +209,37 @@ module systolic_array_sparse #(
                             weight_buffer[i][j] <= block_data[i * BLOCK_W + j];
                         end
                     end
-                end
-                
-                COMPUTE: begin
-                    // MAC operations: PE[i][j] += act[k] * weight[i][k]
-                    // Process 2 rows (PE_ROWS) in parallel
                     
+                    // Also load activations
                     if (act_valid) begin
-                        // Load activation slice
                         for (int k = 0; k < BLOCK_H; k++) begin
                             act_buffer[k] <= act_data[k];
                         end
-                        
-                        // Compute for 2 PE rows
-                        for (int pe_r = 0; pe_r < PE_ROWS; pe_r++) begin
-                            // Each PE computes dot product with 8 weights
-                            for (int out_col = 0; out_col < BLOCK_W; out_col++) begin
-                                // MAC: accumulator += activation * weight
-                                pe_acc[pe_r][out_col] <= pe_acc[pe_r][out_col] + 
-                                    ($signed(act_buffer[compute_cycle]) * 
-                                     $signed(weight_buffer[pe_r * 4 + compute_cycle][out_col]));
+                    end
+                end
+                
+                COMPUTE: begin
+                    // Feed systolic array cycle-by-cycle
+                    // Process 2×2 tile at a time, need 16 iterations for 8×8 block
+                    
+                    if (compute_cycle == BLOCK_H - 1) begin
+                        // Accumulate results from systolic array
+                        for (int i = 0; i < PE_ROWS; i++) begin
+                            for (int j = 0; j < PE_COLS; j++) begin
+                                pe_acc[i][pe_tile_col * PE_COLS + j] <= 
+                                    pe_acc[i][pe_tile_col * PE_COLS + j] + systolic_acc[i][j];
                             end
                         end
                         
+                        // Move to next tile
+                        compute_cycle <= '0;
+                        if (pe_tile_col == (BLOCK_W / PE_COLS) - 1) begin
+                            pe_tile_col <= '0;
+                            // Done with this row tile
+                        end else begin
+                            pe_tile_col <= pe_tile_col + 1;
+                        end
+                    end else begin
                         compute_cycle <= compute_cycle + 1;
                     end
                 end
@@ -197,6 +249,32 @@ module systolic_array_sparse #(
                     done <= 1'b1;
                 end
             endcase
+        end
+    end
+    
+    //========================================================================
+    // Systolic Array Control Logic
+    //========================================================================
+    always_comb begin
+        systolic_en = (state == COMPUTE);
+        systolic_clr = (state == IDLE);
+        systolic_load_weight = (state == LOAD_BLOCK);
+        
+        // Pack activation inputs (different activation for each PE row)
+        // Cycle 0: act[0], act[1]
+        // Cycle 1: act[2], act[3]
+        // Cycle 2: act[4], act[5]
+        // Cycle 3: act[6], act[7]
+        systolic_a_in_flat[0*8 +: 8] = act_buffer[compute_cycle * PE_ROWS + 0];
+        systolic_a_in_flat[1*8 +: 8] = act_buffer[compute_cycle * PE_ROWS + 1];
+        
+        // Pack weight inputs (indexed by output row, K dimension)
+        // weight_buffer[output_row][k_idx]
+        // For tile processing output rows [tile_row*2, tile_row*2+1]
+        // Each column gets weights from its corresponding output row
+        // Cycle advances through K dimension in pairs (0-1, 2-3, 4-5, 6-7)
+        for (int j = 0; j < PE_COLS; j++) begin
+            systolic_b_in_flat[j*8 +: 8] = weight_buffer[pe_tile_col * PE_COLS + j][compute_cycle * PE_ROWS + 0];
         end
     end
     
@@ -216,7 +294,9 @@ module systolic_array_sparse #(
             end
             
             COMPUTE: begin
-                if (compute_cycle == BLOCK_H - 1) begin
+                // Check if we've completed all tiles
+                if (compute_cycle == BLOCK_H - 1 && 
+                    pe_tile_col == (BLOCK_W / PE_COLS) - 1) begin
                     next_state = OUTPUT;
                 end
             end
