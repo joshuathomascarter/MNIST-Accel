@@ -341,8 +341,52 @@ module accel_top #(
     );
 
     // ========================================================================
+    // BSR DMA Engine (loads sparse matrix data via UART)
+    // ========================================================================
+    bsr_dma #(
+        .DATA_WIDTH(8),
+        .ADDR_WIDTH(16),
+        .MAX_LAYERS(8),
+        .MAX_BLOCKS(65536),
+        .BLOCK_SIZE(64),
+        .ROW_PTR_DEPTH(256),
+        .COL_IDX_DEPTH(65536),
+        .ENABLE_CRC(0)
+    ) bsr_dma_inst (
+        .clk(clk),
+        .rst_n(rst_n),
+        .uart_rx_data(uart_rx_data),
+        .uart_rx_valid(uart_rx_valid),
+        .uart_rx_ready(),  // Can be connected to flow control if needed
+        .uart_tx_data(),   // Status responses (optional)
+        .uart_tx_valid(),
+        .uart_tx_ready(uart_tx_ready),
+        .csr_addr(csr_addr),
+        .csr_wen(csr_wen),
+        .csr_wdata(csr_wdata),
+        .csr_rdata(),  // Can mux into CSR read path if needed
+        .row_ptr_we(dma_row_ptr_we),
+        .row_ptr_waddr(dma_row_ptr_waddr),
+        .row_ptr_wdata(dma_row_ptr_wdata),
+        .col_idx_we(dma_col_idx_we),
+        .col_idx_waddr(dma_col_idx_waddr),
+        .col_idx_wdata(dma_col_idx_wdata),
+        .block_we(dma_block_we),
+        .block_waddr(dma_block_waddr),
+        .block_wdata(dma_block_wdata),
+        .dma_busy(dma_busy),
+        .dma_done(dma_done),
+        .dma_error(dma_error),
+        .blocks_written(dma_blocks_written)
+    );
+
+    // ========================================================================
     // SPARSE ACCELERATION MODULES (BSR Format)
     // ========================================================================
+    
+    // DMA interface signals for BSR metadata loading
+    wire dma_busy, dma_done, dma_error;
+    wire [31:0] dma_blocks_written;
     
     // BSR Scheduler signals
     wire bsr_start, bsr_done, bsr_busy;
@@ -351,6 +395,19 @@ module accel_top #(
     wire bsr_layer_switch;
     wire [2:0] bsr_active_layer;
     wire bsr_layer_ready;
+    
+    // DMA write interfaces for BSR metadata BRAMs
+    wire dma_row_ptr_we;
+    wire [15:0] dma_row_ptr_waddr;
+    wire [31:0] dma_row_ptr_wdata;
+    
+    wire dma_col_idx_we;
+    wire [31:0] dma_col_idx_waddr;
+    wire [15:0] dma_col_idx_wdata;
+    
+    wire dma_block_we;
+    wire [22:0] dma_block_waddr;
+    wire [7:0] dma_block_wdata;
     
     // BSR Metadata BRAMs (row_ptr, col_idx)
     wire row_ptr_rd_en;
@@ -490,10 +547,36 @@ module accel_top #(
     // TODO: Add multi_layer_buffer instantiation for multi-layer neural networks
     // TODO: Add BSR metadata BRAMs (row_ptr, col_idx, blocks) - currently stubbed
     
-    // Stub: BSR Metadata BRAMs (replace with actual BRAM instantiations)
-    assign row_ptr_rd_data = 32'h0;  // TODO: Connect to BRAM
-    assign col_idx_rd_data = 16'h0;  // TODO: Connect to BRAM
-    assign block_rd_data = 8'h0;     // TODO: Connect to BRAM
+    // BSR Metadata Memory (simple dual-port RAM simulation)
+    // In real design, use FPGA BRAMs with separate read/write ports
+    reg [31:0] row_ptr_mem [0:255];      // row_ptr: 256 entries × 32 bits
+    reg [15:0] col_idx_mem [0:65535];   // col_idx: 64K entries × 16 bits
+    reg [7:0]  block_mem [0:4194303];   // blocks:  4M entries × 8 bits (64K blocks × 64 bytes)
+    
+    // row_ptr BRAM (DMA writes, scheduler reads)
+    always @(posedge clk) begin
+        if (dma_row_ptr_we) begin
+            row_ptr_mem[dma_row_ptr_waddr] <= dma_row_ptr_wdata;
+        end
+    end
+    assign row_ptr_rd_data = row_ptr_mem[row_ptr_rd_addr];
+    
+    // col_idx BRAM (DMA writes, scheduler reads)
+    always @(posedge clk) begin
+        if (dma_col_idx_we) begin
+            col_idx_mem[dma_col_idx_waddr] <= dma_col_idx_wdata;
+        end
+    end
+    assign col_idx_rd_data = col_idx_mem[col_idx_rd_addr];
+    
+    // block BRAM (DMA writes, scheduler reads)
+    // Note: block_rd_data is byte-wide, allows streaming 64-byte blocks
+    always @(posedge clk) begin
+        if (dma_block_we) begin
+            block_mem[dma_block_waddr] <= dma_block_wdata;
+        end
+    end
+    assign block_rd_data = block_mem[block_rd_addr];
     
     // Result ready signal (for now, always ready - add backpressure later)
     assign sparse_result_ready = 1'b1;
