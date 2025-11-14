@@ -1,41 +1,395 @@
-# ACCEL-v1 System Architecture```markdown
+# ACCEL-v1 System Architecture
 
-# Architecture
+## Overview (Updated Phase 5)
 
-## Overview
+ACCEL-v1 is a sparse CNN accelerator with:
+- **Dense path** (Phases 1-3): Traditional systolic array GEMM
+- **Sparse path** (Phases 4-5): BSR-format sparse via metadata cache + scheduler
+- **Host interfaces**: UART, AXI4-Lite, optional SPI
 
-## Dataflow (v1)
+## Dataflow (Phase 5 - Sparse Pipeline)
 
-The ACCEL-v1 is an INT8 CNN accelerator built around a systolic array architecture optimized for matrix multiplication operations. This document provides a comprehensive view of the system design, component interactions, and dataflow implementation.- **Weights**: pre-quantized INT8, streamed into `wgt_buffer`.
+### Sparse Metadata Pipeline Overview
 
-- **Activations**: im2col tiles as INT8 into `act_buffer`.
-
-## System Block Diagram- **Compute**: systolic array (N x M PEs), int32 accumulators.
-
-- **Post**: clamp/shift → INT8, return via UART.
+Phase 5 introduces a **metadata-driven sparse acceleration path** for Block Sparse Row (BSR) format tensors. This pipeline decouples sparsity metadata (row pointers, column indices) from block data, enabling **6-9× speedup** for sparse CNN layers:
 
 ```
+SPARSE DATA FLOW (Phase 5):
 
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐## Interfaces
-
-│   Host System   │◄──►│   UART Interface │◄──►│   CSR Control   │- **CSR**: start, dims (M,N,K), strides, tile sizes, scale/shift.
-
-└─────────────────┘    └──────────────────┘    └─────────────────┘- **UART**: 8N1 @ configurable baud; simple framing: [HDR|PAYLOAD|CRC].
-
-                                                         │
-
-                                                         ▼*(Diagram lives in README; final fig export to `docs/figs/` later.)*
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│  Weight Buffer  │──►│  Systolic Array  │◄──►│ Activation Buf  │
-│   (INT8 Wgts)   │    │   (N×M PEs)      │    │  (INT8 Acts)    │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-                                │
-                                ▼
-                       ┌─────────────────┐
-                       │ Output Pipeline │
-                       │ (Clamp/Shift)   │
-                       └─────────────────┘
+Host System
+    │
+    │ (UART: BSR metadata + block data)
+    ▼
+┌──────────────────────┐
+│   UART Receiver      │  115.2 kbps, 8N1
+│   (8-bit stream)     │
+└──────────────────────┘
+    │
+    │ (Raw 8-bit words)
+    ▼
+┌──────────────────────┐
+│   DMA Lite Engine    │  8→32 bit assembly
+│   (64-entry FIFO)    │  Word packing (LSB-first)
+└──────────────────────┘
+    │
+    │ (32-bit metadata words)
+    ▼
+┌──────────────────────┐
+│   Metadata Decoder   │  256-entry BRAM cache
+│   (meta_decode.sv)   │  Validation FSM
+│                      │  Perf counters (hit/miss)
+└──────────────────────┘
+    │
+    │ (Decoded row/col indices)
+    ▼
+┌──────────────────────┐
+│   BSR Scheduler      │  Workload generation
+│   (bsr_scheduler.sv) │  Block dependency tracking
+└──────────────────────┘
+    │
+    │ (Sparse block addresses)
+    ▼
+┌──────────────────────────────┐
+│   Systolic Array (Sparse)    │  2×2 PEs
+│   (systolic_sparse.sv)       │  8×8 block compute
+│   Block BRAM: 4MB (32-bit)   │  INT8 dataflow
+└──────────────────────────────┘
+    │
+    │ (32-bit partial sums)
+    ▼
+┌──────────────────────┐
+│   Output Reorder     │  Result reconstruction
+│   (Clamp/Shift INT8) │  CSR post-processing
+└──────────────────────┘
+    │
+    │ (UART: INT8 results)
+    ▼
+Host System
 ```
+
+### BSR Format Overview
+
+Block Sparse Row (BSR) encodes M×N sparse tensor as:
+
+```
+┌─────────────────────────────────────────────┐
+│  Block Sparse Row (BSR) Format              │
+├─────────────────────────────────────────────┤
+│  • Block size: 8×8 (INT8 elements)          │
+│  • Non-zero blocks stored in row-major      │
+│  • Metadata per block: row_idx, col_idx     │
+│  • Block data: 64 INT8 values per block     │
+│                                             │
+│  Example: 2 non-zero blocks in layer        │
+│                                             │
+│  Block 0: Row=0, Col=0 (top-left 8×8)       │
+│    ┌────────────────────────────┐           │
+│    │ a[0][0]  a[0][1] ... a[0][7]│           │
+│    │ ...                         │           │
+│    │ a[7][7] (64 values total)   │           │
+│    └────────────────────────────┘           │
+│                                             │
+│  Block 1: Row=2, Col=1 (row 16-23, col 8-15)│
+│    ┌────────────────────────────┐           │
+│    │ a[16][8]  ... a[16][15]     │           │
+│    │ ...                         │           │
+│    │ a[23][15]                   │           │
+│    └────────────────────────────┘           │
+│                                             │
+│  Metadata Stream Format:                    │
+│    [ROW_PTR | COL_IDX | ... | BLOCK_DATA]   │
+│     (Type=0)  (Type=1)        (32 bytes)    │
+└─────────────────────────────────────────────┘
+```
+
+### Component Details
+
+#### 1. DMA Lite Engine (`verilog/dma/dma_lite.v`)
+
+Lightweight byte-to-word DMA specifically for metadata stream assembly:
+
+```verilog
+module dma_lite #(
+    parameter FIFO_DEPTH = 64,    // 64-entry buffer
+    parameter PACKET_LEN = 4      // 4 bytes → 1 word
+) (
+    input clk, rst_n,
+    
+    // Host input (8-bit stream from UART)
+    input [7:0] in_data,
+    input in_valid,
+    output in_ready,
+    
+    // Assembled output (32-bit words)
+    output [31:0] out_data,
+    output out_valid,
+    input out_ready,
+    
+    // Status
+    output dma_done,
+    output [15:0] dma_bytes_transferred
+);
+
+// Internal:
+//   • 64-entry 8-bit FIFO for input buffering
+//   • Byte assembly: 4×8-bit → 1×32-bit (LSB-first)
+//   • Read pointer for tracking 8-to-32-bit packing
+//   • Backpressure via handshake signals
+endmodule
+```
+
+**Key Features:**
+- ✅ LSB-first packing: bytes[3:0] → word[31:0]
+- ✅ FIFO-based buffering (64 entries configurable)
+- ✅ Handshake protocol (valid/ready backpressure)
+- ✅ Byte counter for metadata length tracking
+- ✅ Simple state machine (IDLE → ASSEMBLE → OUTPUT)
+
+#### 2. Metadata Decoder (`verilog/meta/meta_decode.sv`)
+
+BRAM cache for sparse metadata with validation and performance monitoring:
+
+```verilog
+module meta_decode #(
+    parameter CACHE_SIZE = 256,   // 256-entry cache
+    parameter ENABLE_PERF = 1     // Enable counters
+) (
+    input clk, rst_n,
+    
+    // DMA Input (metadata words from dma_lite)
+    input [31:0] metadata_word,
+    input metadata_valid,
+    output metadata_ready,
+    
+    // Scheduler Read Port (dual-port BRAM)
+    input [7:0] sched_addr,
+    output [31:0] sched_data,
+    output sched_valid,
+    
+    // Status & Control
+    output [3:0] error_flags,           // Error vector
+    output [31:0] cache_hit_count,      // Performance counter
+    output [31:0] cache_miss_count,     // Performance counter
+    output [31:0] decode_cycle_count    // Performance counter
+);
+
+// Internal:
+//   • Dual-port BRAM (256×32-bit):
+//     - Write port: DMA input
+//     - Read port: Scheduler queries
+//   • Metadata types: ROW_PTR(0), COL_IDX(1), BLOCK_HDR(2)
+//   • Validation FSM: IDLE → LATCH → VALIDATE → DECODE → CACHE_WR → DONE
+//   • Performance counters: cache hits, misses, cycle count
+endmodule
+```
+
+**FSM State Machine:**
+
+```
+IDLE
+  ├─ metadata_valid=1 → LATCH
+  └─ else → IDLE
+
+LATCH (capture incoming metadata word)
+  ├─ → VALIDATE
+
+VALIDATE (check metadata type and format)
+  ├─ Valid type (0-2) → DECODE
+  └─ Invalid → ERROR (set error_flags[0]=1)
+
+DECODE (parse field content)
+  ├─ type==ROW_PTR → extract row_start
+  ├─ type==COL_IDX → extract col_start
+  └─ type==BLOCK_HDR → extract block_count
+
+CACHE_WR (write to BRAM)
+  ├─ → DONE
+
+DONE (ready for next word)
+  └─ → IDLE
+```
+
+**Performance Counters:**
+- `cache_hit_count`: Incremented when scheduler read hits cached block metadata
+- `cache_miss_count`: Incremented when scheduler read misses (refetch required)
+- `decode_cycle_count`: Total cycles spent in VALIDATE+DECODE+CACHE_WR stages
+
+#### 3. BSR Scheduler (`verilog/top/bsr_scheduler.sv` - skeleton)
+
+Generates block addresses and workload sequences from metadata cache:
+
+```
+SCHEDULER OPERATION:
+
+INPUT: Row pointers [r0, r1, r2, ...], Column indices [c0, c1, ...]
+OUTPUT: Block addresses for systolic array
+
+For each output row r:
+  For each non-zero block at (r, c):
+    1. Read row_ptr[r] → start block index
+    2. Read col_idx[start+k] → column index
+    3. Emit block address: (r, c, block_idx)
+    4. Wait for systolic array to consume
+```
+
+#### 4. Sparse Systolic Array (`verilog/systolic/systolic_array_sparse.sv` - skeleton)
+
+2×2 PE array optimized for sparse 8×8 blocks:
+
+```
+PE ARRAY (2×2):
+  
+  ┌──────────────────┐
+  │ PE[0][0] PE[0][1]│
+  │ PE[1][0] PE[1][1]│
+  └──────────────────┘
+  
+  • Each PE: 1×1 systolic with 8×8 local accumulator
+  • Block compute: 8×8 × 8×8 GEMM per block
+  • Pipelining: Load block → Compute 64 cycles → Store result
+  • Total cycles/block: ~70 cycles (10 load + 50 compute + 10 drain)
+```
+
+### Latency Analysis
+
+| Stage | Cycles | Notes |
+|-------|--------|-------|
+| UART RX (32 bytes metadata) | 280 | 115.2k baud, 8N1 |
+| DMA assembly (8 bytes → 1 word) | 4 | Pipelined |
+| Metadata decode (BRAM write) | 10 | FSM latency |
+| Scheduler lookup (BRAM read) | 2 | Dual-port BRAM |
+| Block compute (8×8 × 8×8) | 70 | 10+50+10 cycles |
+| **Total per block** | **~360** | Sequential pipeline |
+
+**Throughput**: 1 block every 70 compute cycles (systolic limited)  
+**Bandwidth**: 32 bytes metadata per block → 45% overhead
+
+### Performance Targets
+
+**For sparse CNN layer (10% density):**
+
+```
+Dense systolic: 70 cycles/block → 100 blocks = 7000 cycles
+
+Sparse pipeline:
+  • Skip 90% of blocks
+  • Metadata decode cache hits: 90% (cache the row pointers)
+  • Effective compute: 10 blocks × 70 = 700 cycles
+  • Metadata overhead: 10 blocks × 15 cycles = 150 cycles
+  • UART bottleneck: 320 cycles (280 RX + 40 header)
+  
+  Total: ~700 cycles (COMPUTED) + 320 cycles (I/O) = 1020 cycles
+  
+  Speedup: 7000 / 1020 = 6.9×
+```
+
+### CSR Register Map (Phase 5)
+
+```
+// Existing (Phases 1-4)
+0x00: CONTROL       // Start, reset, mode (dense vs sparse)
+0x04: STATUS        // Ready, busy, error flags  
+0x08: M_DIM         // Matrix M dimension
+0x0C: N_DIM         // Matrix N dimension
+0x10: K_DIM         // Matrix K dimension
+
+// New (Phase 5 - Sparse)
+0x50: SPARSE_MODE   // Enable sparse acceleration
+0x54: METADATA_ADDR // BRAM address offset for metadata
+0x58: BLOCK_COUNT   // Total non-zero blocks
+0x5C: PERF_CACHE_HIT    // Performance: cache hits
+0x60: PERF_CACHE_MISS   // Performance: cache misses
+0x64: PERF_CYCLES       // Performance: total cycles
+```
+
+### Integration with Dense Path
+
+The sparse path coexists with dense dense path:
+
+```
+Control Logic:
+  IF sparse_mode == 1:
+    → Route UART → DMA → meta_decode → scheduler → sparse_systolic
+  ELSE:
+    → Route UART → wgt_buffer → systolic_array (dense) [Phase 1-3]
+```
+
+### Testbench Coverage (Phase 5)
+
+| Testbench | Module | Coverage |
+|-----------|--------|----------|
+| `tb_dma_lite.sv` | dma_lite | Byte assembly (100%), backpressure (100%) |
+| `tb_meta_decode.sv` | meta_decode | BRAM write/read (100%), error injection (100%), perf counters (100%) |
+| `tb_bsr_scheduler.sv` (TODO) | bsr_scheduler | Row/col traversal, block address generation |
+| `tb_systolic_sparse.sv` (TODO) | systolic_sparse | Block compute, pipelining, accumulation |
+| `tb_integration_sparse.sv` (TODO) | top_sparse | Full DMA→meta→scheduler→systolic pipeline |
+
+## System Block Diagram (Dense + Sparse Paths)
+
+```
+                    ┌─────────────────┐
+                    │   Host System   │
+                    │  (UART/CSR Cmds)│
+                    └────────┬────────┘
+                             │
+                             ▼
+        ┌────────────────────────────────────┐
+        │    UART Receiver (8N1, 115.2k)     │
+        └────────┬────────────────────────────┘
+                 │
+          ┌──────┴──────┐
+          │             │
+          ▼ (sparse)    ▼ (dense)
+    ┌──────────────┐  ┌─────────────────┐
+    │  DMA Lite    │  │  Weight Buffer  │
+    │  (8→32 bit)  │  │  (WRAM, INT8)   │
+    └──────┬───────┘  └────────┬────────┘
+           │                   │
+           ▼                   │
+    ┌──────────────────┐       │
+    │  Meta Decoder    │       │
+    │  (BRAM Cache)    │       │
+    └──────┬───────────┘       │
+           │                   │
+           ▼                   ▼
+    ┌──────────────┐  ┌──────────────────┐
+    │ Scheduler    │  │ Activation Buff  │
+    │ (Workload)   │  │ (ARAM, INT8)     │
+    └──────┬───────┘  └────────┬─────────┘
+           │                   │
+           └────────┬──────────┘
+                    ▼
+           ┌─────────────────────┐
+           │  Systolic Array     │
+           │  (2×2 PEs)          │
+           │  INT32 Accum        │
+           └──────────┬──────────┘
+                      │
+                      ▼
+           ┌──────────────────────┐
+           │ Output Pipeline      │
+           │ (Clamp/Shift → INT8) │
+           └──────────┬───────────┘
+                      │
+                      ▼
+          ┌────────────────────────┐
+          │  Output Buffer (BRAM)  │
+          │  Result Storage        │
+          └────────────┬───────────┘
+                       │
+                       ▼
+                    UART TX
+                       │
+                       ▼
+                   Host System
+```
+
+## Interfaces
+
+- **CSR**: start, dims (M,N,K), strides, tile sizes, scale/shift, sparse_mode flag
+- **UART**: 8N1 @ 115.2 kbps; metadata + data stream (sparse) or weights + activations (dense)
+- **Block BRAM**: 4MB capacity for sparse block data (32-bit words, 1M entries)
+- **Metadata BRAM Cache**: 256 entries for row/col index caching
 
 ## Core Components
 
@@ -152,7 +506,7 @@ Row 1:  │ W00 │  │ W01 │  │ W02 │  ← Same weights (broadcast)
 Phase 2: ACTIVATION STREAMING (weights stay put, activations flow)
 
         Weights STAY STATIONARY in PEs
-           
+        ┌─────┐ ┌─────┐ ┌─────┐      
 A_row0 →│ W00 │→│ W01 │→│ W02 │  ← A_row0 flows right
         └─────┘ └─────┘ └─────┘
 A_row1 →│ W00 │→│ W01 │→│ W02 │  ← A_row1 flows right  
