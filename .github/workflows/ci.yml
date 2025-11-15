@@ -29,15 +29,15 @@ jobs:
       
       - name: Black formatting check
         run: |
-          black --check --line-length 120 "accel v1/python/"
+          black --check --line-length 120 "ACCEL-v1/accel v1/python/"
       
       - name: Flake8 linting
         run: |
-          flake8 "accel v1/python/" --max-line-length=120 --ignore=E203,W503,E501 --count --statistics
+          flake8 "ACCEL-v1/accel v1/python/" --max-line-length=120 --ignore=E203,W503,E501 --count --statistics
       
       - name: isort import sorting check
         run: |
-          isort --check-only --profile black --line-length 120 "accel v1/python/"
+          isort --check-only --profile black --line-length 120 "ACCEL-v1/accel v1/python/"
 
   test:
     runs-on: ubuntu-latest
