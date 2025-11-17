@@ -72,6 +72,22 @@ Thumbs.db
 *.npz
 *.log
 
+# Verilog/SystemVerilog simulation
+*.vvp
+*.vcd
+*.fst
+*.ghw
+*.lxt
+*.lxt2
+*.vpd
+*.shm
+*.fsdb
+sim_build/
+obj_dir/
+
+# Build directories
+build/
+
 # FPGA/EDA tools
 *.qpf
 *.qsf
@@ -83,6 +99,11 @@ Thumbs.db
 *.pin
 *.sof
 *.pof
+*.bit
+*.bin
+*.mcs
+*.ltx
+*.dcp
 db/
 incremental_db/
 output_files/
