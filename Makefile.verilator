@@ -41,8 +41,8 @@ OBJ_DIR = $(BUILD_DIR)/obj_dir
 TOP_MODULE = accel_top
 TOP_FILE = $(RTL_DIR)/top/$(TOP_MODULE).sv
 
-# All RTL source files
-RTL_SOURCES = \
+# All RTL source files (exclude testbenches with tb_ prefix)
+RTL_SOURCES_ALL = \
     $(wildcard $(RTL_DIR)/systolic/*.sv) \
     $(wildcard $(RTL_DIR)/buffer/*.sv) \
     $(wildcard $(RTL_DIR)/control/*.sv) \
@@ -52,6 +52,8 @@ RTL_SOURCES = \
     $(wildcard $(RTL_DIR)/meta/*.sv) \
     $(wildcard $(RTL_DIR)/monitor/*.sv) \
     $(wildcard $(RTL_DIR)/uart/*.sv)
+
+RTL_SOURCES = $(filter-out %tb_%.sv, $(RTL_SOURCES_ALL))
 
 # C++ testbench
 TB_SOURCES = $(TB_DIR)/verilator/tb_accel_top.cpp

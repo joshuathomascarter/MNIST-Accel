@@ -420,9 +420,11 @@ module bsr_dma #(
                             row_ptr_addr <= row_ptr_addr + 1;
                             rx_byte_count <= 2'd0;
                             rx_word_buf <= 32'd0;
-                            if (                            black --check --line-length 120 "ACCEL-v1/accel v1/python/" > 0) row_ptr_remaining <= row_ptr_remaining - 1;
-                            // move to next stage if done
-                            if (row_ptr_remaining == 1) next_state = RX_COL_IDX_INIT;
+                            if (row_ptr_remaining > 0) begin
+                                row_ptr_remaining <= row_ptr_remaining - 1;
+                                // move to next stage if done
+                                if (row_ptr_remaining == 1) next_state = RX_COL_IDX_INIT;
+                            end
                         end else begin
                             // Assign the 8-bit byte to its slot in rx_word_buf
                             rx_word_buf[rx_byte_count * 8 +: 8] <= fifo_q;

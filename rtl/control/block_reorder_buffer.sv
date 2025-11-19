@@ -272,7 +272,8 @@ module block_reorder_buffer #(
         end
     end
     
-    // Coverage: Track block counts per row
+    // Coverage: Track block counts per row (ModelSim/VCS only)
+    `ifndef VERILATOR
     covergroup cg_block_counts @(posedge clk);
         option.per_instance = 1;
         cp_count: coverpoint count {
@@ -286,6 +287,7 @@ module block_reorder_buffer #(
         cross cp_count, cp_state;
     endgroup
     cg_block_counts cg_inst = new();
+    `endif
     
     `endif
 

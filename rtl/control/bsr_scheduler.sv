@@ -436,7 +436,7 @@ module bsr_scheduler #(
             end
             READ_ROW_PTR_1: begin
                 meta_rd_en = 1'b1;
-                meta_rd_addr = (block_row + 1)[7:0]; // Read row_ptr[i+1] from cache
+                meta_rd_addr = {24'b0, block_row[7:0] + 8'b1}; // Read row_ptr[i+1] from cache
                 meta_rd_type = 2'b00;                 // ROW_PTR type
             end
         endcase
@@ -466,7 +466,7 @@ module bsr_scheduler #(
             // Prefetch next block's column index while systolic is computing
             if ((block_idx < block_end - 1) && !prefetch_valid) begin
                 meta_rd_en = 1'b1;
-                meta_rd_addr = (block_idx + 1)[7:0];
+                meta_rd_addr = {24'b0, block_idx[7:0] + 8'b1};
                 meta_rd_type = 2'b01;                 // COL_IDX type
             end
         end
