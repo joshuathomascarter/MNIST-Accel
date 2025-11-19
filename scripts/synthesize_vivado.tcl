@@ -52,20 +52,18 @@ puts "========================================="
 puts "Step 2: Adding RTL Sources"
 puts "========================================="
 
-# Add all Verilog/SystemVerilog files
+# Add all SystemVerilog files (.sv only - industry standard)
 set rtl_files [glob -nocomplain \
-    rtl/systolic/*.v \
     rtl/systolic/*.sv \
-    rtl/mac/*.v \
-    rtl/buffer/*.v \
-    rtl/control/*.v \
+    rtl/mac/*.sv \
+    rtl/buffer/*.sv \
     rtl/control/*.sv \
-    rtl/dma/*.v \
+    rtl/dma/*.sv \
     rtl/meta/*.sv \
-    rtl/monitor/*.v \
-    rtl/uart/*.v \
+    rtl/monitor/*.sv \
+    rtl/uart/*.sv \
     rtl/host_iface/*.sv \
-    rtl/top/accel_top.v \
+    rtl/top/*.sv \
 ]
 
 add_files -fileset sources_1 $rtl_files

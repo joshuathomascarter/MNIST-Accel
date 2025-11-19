@@ -12,14 +12,30 @@ module accel_top #(
     parameter TK = 8,
     parameter CLK_HZ = 50_000_000,
     parameter BAUD = 115_200,
-    parameter ADDR_WIDTH = 6
+    parameter ADDR_WIDTH = 6,
+    parameter USE_AXI_DMA = 1  // 1 = AXI DMA (400 MB/s), 0 = UART (14.4 KB/s)
 )(
     input  wire clk,
     input  wire rst_n,
     
-    // UART interface
+    // UART interface (legacy, USE_AXI_DMA=0 only)
     input  wire uart_rx,
     output wire uart_tx,
+    
+    // AXI4 Master DMA Interface (USE_AXI_DMA=1)
+    output wire [3:0]  m_axi_arid,
+    output wire [31:0] m_axi_araddr,
+    output wire [7:0]  m_axi_arlen,
+    output wire [2:0]  m_axi_arsize,
+    output wire [1:0]  m_axi_arburst,
+    output wire        m_axi_arvalid,
+    input  wire        m_axi_arready,
+    input  wire [3:0]  m_axi_rid,
+    input  wire [31:0] m_axi_rdata,
+    input  wire [1:0]  m_axi_rresp,
+    input  wire        m_axi_rlast,
+    input  wire        m_axi_rvalid,
+    output wire        m_axi_rready,
     
     // AXI4-Lite Host Interface (Phase 4)
     input  wire [31:0] s_axi_awaddr,
