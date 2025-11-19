@@ -35,6 +35,10 @@ module csr #(
   input  wire [31:0]       perf_decode_count,
   // Systolic array results (captured when done)
   input  wire [127:0]      result_data,  // 4×32-bit results from 2×2 array
+  // DMA status inputs (when USE_AXI_DMA=1)
+  input  wire              dma_busy_in,
+  input  wire              dma_done_in,
+  input  wire [31:0]       dma_bytes_xferred_in,
   // Pulses / config to core (snapshots consumed by core FSM)
   output wire              start_pulse,
   output wire              abort_pulse,
@@ -47,7 +51,12 @@ module csr #(
   output wire              bank_sel_rd_A, bank_sel_rd_B, // RO mirror of core
   output wire [31:0]       Sa_bits, Sw_bits,             // float32 raw
   output wire [31:0]       uart_len_max,
-  output wire              uart_crc_en
+  output wire              uart_crc_en,
+  // DMA control outputs
+  output wire [31:0]       dma_src_addr,
+  output wire [31:0]       dma_dst_addr,
+  output wire [31:0]       dma_xfer_len,
+  output wire              dma_start_pulse
 );
 
   // Address map (byte offsets)
@@ -79,6 +88,12 @@ module csr #(
   localparam RESULT_1     = 8'h84; // c_out[1]
   localparam RESULT_2     = 8'h88; // c_out[2]
   localparam RESULT_3     = 8'h8C; // c_out[3]
+  // DMA control registers (AXI DMA mode only)
+  localparam DMA_SRC_ADDR = 8'h90; // Source address (DDR/external memory)
+  localparam DMA_DST_ADDR = 8'h94; // Destination address (buffer select in MSBs)
+  localparam DMA_XFER_LEN = 8'h98; // Transfer length in bytes
+  localparam DMA_CTRL     = 8'h9C; // [0]=start (W1P), [1]=busy (RO), [2]=done (R/W1C)
+  localparam DMA_BYTES_XFERRED = 8'hA0; // Bytes transferred (RO)
 
   // Backing regs
   reg        r_irq_en;
@@ -97,6 +112,12 @@ module csr #(
   
   // Result capture registers
   reg [31:0] r_result_0, r_result_1, r_result_2, r_result_3;
+  
+  // DMA registers
+  reg [31:0] r_dma_src_addr;
+  reg [31:0] r_dma_dst_addr;
+  reg [31:0] r_dma_xfer_len;
+  reg        st_dma_done;
 
   // Coverage hooks (for UVM or functional coverage)
   // covergroup cg_csr_write @(posedge clk);
@@ -125,11 +146,16 @@ module csr #(
       r_result_1       <= 32'd0;
       r_result_2       <= 32'd0;
       r_result_3       <= 32'd0;
+      r_dma_src_addr   <= 32'h0;
+      r_dma_dst_addr   <= 32'h0;
+      r_dma_xfer_len   <= 32'h0;
+      st_dma_done      <= 1'b0;
     end else begin
       // Sticky setters
       if (core_done_tile_pulse) st_done_tile <= 1'b1;
       if (rx_crc_error)         st_err_crc   <= 1'b1;
       if (rx_illegal_cmd)       st_err_illegal <= 1'b1;
+      if (dma_done_in)          st_dma_done  <= 1'b1;
       
       // Capture results when computation completes
       if (core_done_tile_pulse) begin
@@ -169,6 +195,13 @@ module csr #(
             if (csr_wdata[8]) st_err_crc     <= 1'b0;
             if (csr_wdata[9]) st_err_illegal <= 1'b0;
           end
+          DMA_SRC_ADDR: r_dma_src_addr <= csr_wdata;
+          DMA_DST_ADDR: r_dma_dst_addr <= csr_wdata;
+          DMA_XFER_LEN: r_dma_xfer_len <= csr_wdata;
+          DMA_CTRL: begin
+            // R/W1C clear done
+            if (csr_wdata[2]) st_dma_done <= 1'b0;
+          end
           default: ;
         endcase
       end
@@ -178,6 +211,7 @@ module csr #(
   // W1P pulse generation (single-cycle)
   wire w_start = (csr_wen && csr_addr==CTRL && csr_wdata[0]);
   wire w_abort = (csr_wen && csr_addr==CTRL && csr_wdata[1]);
+  wire w_dma_start = (csr_wen && csr_addr==DMA_CTRL && csr_wdata[0]);
 
   // Illegal start guard (e.g., zero tiles or start while busy)
   wire dims_illegal  = (r_Tm==0 || r_Tn==0 || r_Tk==0);
@@ -202,6 +236,10 @@ module csr #(
   assign Sa_bits = r_Sa_bits;  assign Sw_bits = r_Sw_bits;
   assign uart_len_max = r_uart_len_max;
   assign uart_crc_en  = r_uart_crc_en;
+  assign dma_src_addr = r_dma_src_addr;
+  assign dma_dst_addr = r_dma_dst_addr;
+  assign dma_xfer_len = r_dma_xfer_len;
+  assign dma_start_pulse = w_dma_start;
 
   // Read mux (note CTRL start/abort read as 0)
   always @(*) begin
@@ -240,6 +278,12 @@ module csr #(
       RESULT_1:     csr_rdata = r_result_1;
       RESULT_2:     csr_rdata = r_result_2;
       RESULT_3:     csr_rdata = r_result_3;
+      // DMA registers
+      DMA_SRC_ADDR: csr_rdata = r_dma_src_addr;
+      DMA_DST_ADDR: csr_rdata = r_dma_dst_addr;
+      DMA_XFER_LEN: csr_rdata = r_dma_xfer_len;
+      DMA_CTRL:     csr_rdata = {29'b0, st_dma_done, dma_busy_in, 1'b0};
+      DMA_BYTES_XFERRED: csr_rdata = dma_bytes_xferred_in;
       default:      csr_rdata = 32'hDEAD_BEEF;
     endcase
   end

@@ -110,7 +110,7 @@ module accel_top #(
     wire [31:0] meta_cache_misses;
     wire [31:0] meta_decode_cycles;
     
-    // Buffer signals
+    // Buffer signals (muxed between UART and AXI DMA)
     wire act_we, wgt_we, out_we;
     wire [TM*8-1:0] act_wdata;
     wire [TN*8-1:0] wgt_wdata;
@@ -120,6 +120,14 @@ module accel_top #(
     wire [ADDR_WIDTH-1:0] act_waddr, wgt_waddr, out_waddr;
     wire [ADDR_WIDTH-1:0] act_k_idx, wgt_k_idx;
     wire act_rd_en, wgt_rd_en;
+    
+    // AXI DMA signals
+    wire [31:0] dma_src_addr, dma_dst_addr, dma_transfer_len;
+    wire dma_start, dma_done, dma_busy;
+    wire [31:0] dma_bytes_transferred;
+    wire [31:0] dma_buf_wdata;
+    wire [31:0] dma_buf_waddr;
+    wire dma_buf_wen, dma_buf_wready;
     
     // UART physical layer
     wire [7:0] uart_rx_data, uart_tx_data;
@@ -351,6 +359,99 @@ module accel_top #(
                          tx_data_reg[31:24];
 
     // ========================================================================
+    // AXI DMA Master (400 MB/s vs UART 14.4 KB/s)
+    // ========================================================================
+    generate
+        if (USE_AXI_DMA) begin : gen_axi_dma
+            axi_dma_master #(
+                .AXI_ADDR_WIDTH(32),
+                .AXI_DATA_WIDTH(32),
+                .AXI_ID_WIDTH(4),
+                .MAX_BURST_LEN(256),
+                .FIFO_DEPTH(512)
+            ) axi_dma_inst (
+                .clk(clk),
+                .rst_n(rst_n),
+                // Control interface (from CSR)
+                .src_addr(dma_src_addr),
+                .dst_addr(dma_dst_addr),
+                .transfer_len(dma_transfer_len),
+                .start(dma_start),
+                .done(dma_done),
+                .busy(dma_busy),
+                .bytes_transferred(dma_bytes_transferred),
+                // AXI4 Master Read Address Channel
+                .m_axi_arid(m_axi_arid),
+                .m_axi_araddr(m_axi_araddr),
+                .m_axi_arlen(m_axi_arlen),
+                .m_axi_arsize(m_axi_arsize),
+                .m_axi_arburst(m_axi_arburst),
+                .m_axi_arvalid(m_axi_arvalid),
+                .m_axi_arready(m_axi_arready),
+                // AXI4 Master Read Data Channel
+                .m_axi_rid(m_axi_rid),
+                .m_axi_rdata(m_axi_rdata),
+                .m_axi_rresp(m_axi_rresp),
+                .m_axi_rlast(m_axi_rlast),
+                .m_axi_rvalid(m_axi_rvalid),
+                .m_axi_rready(m_axi_rready),
+                // Internal buffer write interface
+                .buf_wdata(dma_buf_wdata),
+                .buf_waddr(dma_buf_waddr),
+                .buf_wen(dma_buf_wen),
+                .buf_wready(dma_buf_wready)
+            );
+            
+            // DMA buffer write ready (simple backpressure)
+            assign dma_buf_wready = 1'b1;  // Always ready for now
+            
+        end else begin : gen_no_dma
+            // Tie off AXI signals when DMA disabled
+            assign m_axi_arvalid = 1'b0;
+            assign m_axi_araddr = 32'h0;
+            assign m_axi_arlen = 8'h0;
+            assign m_axi_arsize = 3'h0;
+            assign m_axi_arburst = 2'h0;
+            assign m_axi_arid = 4'h0;
+            assign m_axi_rready = 1'b0;
+            assign dma_done = 1'b0;
+            assign dma_busy = 1'b0;
+            assign dma_bytes_transferred = 32'h0;
+            assign dma_buf_wdata = 32'h0;
+            assign dma_buf_waddr = 32'h0;
+            assign dma_buf_wen = 1'b0;
+        end
+    endgenerate
+
+    // ========================================================================
+    // Buffer Write Path Mux (UART vs AXI DMA)
+    // ========================================================================
+    wire [TM*8-1:0] uart_act_wdata;
+    wire [TN*8-1:0] uart_wgt_wdata;
+    wire [ADDR_WIDTH-1:0] uart_act_waddr, uart_wgt_waddr;
+    wire uart_act_we, uart_wgt_we;
+    
+    // UART path (from existing rx logic)
+    assign uart_act_wdata = act_wdata_r;
+    assign uart_wgt_wdata = wgt_wdata_r;
+    assign uart_act_waddr = act_waddr_r;
+    assign uart_wgt_waddr = wgt_waddr_r;
+    assign uart_act_we = act_we_r;
+    assign uart_wgt_we = wgt_we_r;
+    
+    // DMA path (decode buffer select from address MSBs)
+    wire dma_target_act = USE_AXI_DMA && dma_buf_wen && (dma_buf_waddr[31:30] == 2'b00);
+    wire dma_target_wgt = USE_AXI_DMA && dma_buf_wen && (dma_buf_waddr[31:30] == 2'b01);
+    
+    // Mux buffer writes
+    assign act_we = USE_AXI_DMA ? dma_target_act : uart_act_we;
+    assign wgt_we = USE_AXI_DMA ? dma_target_wgt : uart_wgt_we;
+    assign act_waddr = USE_AXI_DMA ? dma_buf_waddr[ADDR_WIDTH-1:0] : uart_act_waddr;
+    assign wgt_waddr = USE_AXI_DMA ? dma_buf_waddr[ADDR_WIDTH-1:0] : uart_wgt_waddr;
+    assign act_wdata = USE_AXI_DMA ? dma_buf_wdata[TM*8-1:0] : uart_act_wdata;
+    assign wgt_wdata = USE_AXI_DMA ? dma_buf_wdata[TN*8-1:0] : uart_wgt_wdata;
+
+    // ========================================================================
     // Hardware Module Instantiations
     // ========================================================================
 
@@ -392,7 +493,15 @@ module accel_top #(
         .perf_cache_hits(perf_cache_hits),
         .perf_cache_misses(perf_cache_misses),
         .perf_decode_count(perf_decode_count),
-        .result_data(c_out_flat[127:0])  // Connect systolic array output
+        .result_data(c_out_flat[127:0]),  // Connect systolic array output
+        // DMA connections
+        .dma_busy_in(dma_busy),
+        .dma_done_in(dma_done),
+        .dma_bytes_xferred_in(dma_bytes_transferred),
+        .dma_src_addr(dma_src_addr),
+        .dma_dst_addr(dma_dst_addr),
+        .dma_xfer_len(dma_transfer_len),
+        .dma_start_pulse(dma_start)
     );
 
     // ========================================================================
