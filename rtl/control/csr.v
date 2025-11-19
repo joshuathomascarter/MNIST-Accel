@@ -30,6 +30,9 @@ module csr #(
   input  wire [31:0]       perf_total_cycles,
   input  wire [31:0]       perf_active_cycles,
   input  wire [31:0]       perf_idle_cycles,
+  input  wire [31:0]       perf_cache_hits,
+  input  wire [31:0]       perf_cache_misses,
+  input  wire [31:0]       perf_decode_count,
   // Systolic array results (captured when done)
   input  wire [127:0]      result_data,  // 4×32-bit results from 2×2 array
   // Pulses / config to core (snapshots consumed by core FSM)
@@ -68,6 +71,9 @@ module csr #(
   localparam PERF_TOTAL   = 8'h40; // Total cycles from start to done
   localparam PERF_ACTIVE  = 8'h44; // Cycles where busy was high  
   localparam PERF_IDLE    = 8'h48; // Cycles where busy was low
+  localparam PERF_CACHE_HITS   = 8'h4C; // Metadata cache hits
+  localparam PERF_CACHE_MISSES = 8'h50; // Metadata cache misses
+  localparam PERF_DECODE_COUNT = 8'h54; // Metadata decode operations
   // Result registers (Read-Only, captured on done)
   localparam RESULT_0     = 8'h80; // c_out[0]
   localparam RESULT_1     = 8'h84; // c_out[1]
@@ -226,6 +232,9 @@ module csr #(
       PERF_TOTAL:   csr_rdata = perf_total_cycles;
       PERF_ACTIVE:  csr_rdata = perf_active_cycles;
       PERF_IDLE:    csr_rdata = perf_idle_cycles;
+      PERF_CACHE_HITS:   csr_rdata = perf_cache_hits;
+      PERF_CACHE_MISSES: csr_rdata = perf_cache_misses;
+      PERF_DECODE_COUNT: csr_rdata = perf_decode_count;
       // Result registers (Read-Only)
       RESULT_0:     csr_rdata = r_result_0;
       RESULT_1:     csr_rdata = r_result_1;

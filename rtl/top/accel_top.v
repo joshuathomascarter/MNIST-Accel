@@ -84,7 +84,15 @@ module accel_top #(
     wire [31:0] perf_total_cycles;
     wire [31:0] perf_active_cycles;
     wire [31:0] perf_idle_cycles;
+    wire [31:0] perf_cache_hits;
+    wire [31:0] perf_cache_misses;
+    wire [31:0] perf_decode_count;
     wire perf_measurement_done;
+    
+    // Metadata cache performance counters
+    wire [31:0] meta_cache_hits;
+    wire [31:0] meta_cache_misses;
+    wire [31:0] meta_decode_cycles;
     
     // Buffer signals
     wire act_we, wgt_we, out_we;
@@ -365,6 +373,9 @@ module accel_top #(
         .perf_total_cycles(perf_total_cycles),
         .perf_active_cycles(perf_active_cycles),
         .perf_idle_cycles(perf_idle_cycles),
+        .perf_cache_hits(perf_cache_hits),
+        .perf_cache_misses(perf_cache_misses),
+        .perf_decode_count(perf_decode_count),
         .result_data(c_out_flat[127:0])  // Connect systolic array output
     );
 
@@ -405,7 +416,13 @@ module accel_top #(
         .dma_busy(dma_busy),
         .dma_done(dma_done),
         .dma_error(dma_error),
-        .blocks_written(dma_blocks_written)
+        .blocks_written(dma_blocks_written),
+        // Metadata decoder interface
+        .dma_meta_data(dma_meta_data),
+        .dma_meta_waddr(dma_meta_waddr),
+        .dma_meta_type(dma_meta_type),
+        .dma_meta_wen(dma_meta_wen),
+        .dma_meta_ready(dma_meta_ready)
     );
 
     // ========================================================================
@@ -438,7 +455,24 @@ module accel_top #(
     wire [20:0] dma_block_waddr;  // word address: (byte address >> 2)
     wire [31:0] dma_block_wdata;
     
-    // BSR Metadata BRAMs (row_ptr, col_idx)
+    // DMA to metadata decoder interface
+    wire [31:0] dma_meta_data;
+    wire [7:0]  dma_meta_waddr;
+    wire [1:0]  dma_meta_type;
+    wire        dma_meta_wen;
+    wire        dma_meta_ready;
+    
+    // Scheduler to metadata decoder interface
+    wire        meta_rd_en;
+    wire [7:0]  meta_rd_addr;
+    wire [1:0]  meta_rd_type;
+    wire [31:0] meta_rd_data;
+    wire        meta_rd_valid;
+    wire        meta_rd_hit;
+    
+    // BSR Metadata BRAMs (kept for DMA direct write - legacy compatibility)
+    wire row_ptr_rd_en;
+    // BSR Metadata BRAMs (kept for DMA direct write - legacy compatibility)
     wire row_ptr_rd_en;
     wire [15:0] row_ptr_rd_addr;
     wire [31:0] row_ptr_rd_data;
@@ -508,6 +542,31 @@ module accel_top #(
         end
     endgenerate
     
+    // ========================================================================
+    // Metadata Decoder (Cache for BSR metadata - row_ptr, col_idx)
+    // ========================================================================
+    meta_decode meta_decode_inst (
+        .clk(clk),
+        .rst_n(rst_n),
+        // Write interface from DMA
+        .wr_data(dma_meta_data),
+        .wr_addr(dma_meta_waddr),
+        .wr_type(dma_meta_type),
+        .wr_en(dma_meta_wen),
+        .wr_ready(dma_meta_ready),
+        // Read interface to scheduler
+        .rd_en(meta_rd_en),
+        .rd_addr(meta_rd_addr),
+        .rd_type(meta_rd_type),
+        .rd_data(meta_rd_data),
+        .rd_valid(meta_rd_valid),
+        .rd_hit(meta_rd_hit),
+        // Performance monitoring
+        .cache_hits(meta_cache_hits),
+        .cache_misses(meta_cache_misses),
+        .total_reads(meta_decode_cycles)
+    );
+    
     // BSR Scheduler (traverses sparse blocks)
     bsr_scheduler #(
         .BLOCK_H(8),
@@ -526,12 +585,14 @@ module accel_top #(
         .cfg_layer_switch(bsr_layer_switch),
         .cfg_active_layer(bsr_active_layer),
         .cfg_layer_ready(bsr_layer_ready),
-        .row_ptr_rd_en(row_ptr_rd_en),
-        .row_ptr_rd_addr(row_ptr_rd_addr),
-        .row_ptr_rd_data(row_ptr_rd_data),
-        .col_idx_rd_en(col_idx_rd_en),
-        .col_idx_rd_addr(col_idx_rd_addr),
-        .col_idx_rd_data(col_idx_rd_data),
+        // Metadata decoder cache interface
+        .meta_rd_en(meta_rd_en),
+        .meta_rd_addr(meta_rd_addr),
+        .meta_rd_type(meta_rd_type),
+        .meta_rd_data(meta_rd_data),
+        .meta_rd_valid(meta_rd_valid),
+        .meta_rd_hit(meta_rd_hit),
+        // Block data BRAM
         .block_rd_en(block_rd_en),
         .block_rd_addr(block_rd_addr),
         .block_rd_data(block_rd_data),
@@ -737,9 +798,15 @@ module accel_top #(
         .start_pulse(start_pulse),
         .done_pulse(done_pulse),
         .busy_signal(busy),
+        .meta_cache_hits(meta_cache_hits),
+        .meta_cache_misses(meta_cache_misses),
+        .meta_decode_cycles(meta_decode_cycles),
         .total_cycles_count(perf_total_cycles),
         .active_cycles_count(perf_active_cycles),
         .idle_cycles_count(perf_idle_cycles),
+        .cache_hit_count(perf_cache_hits),
+        .cache_miss_count(perf_cache_misses),
+        .decode_count(perf_decode_count),
         .measurement_done(perf_measurement_done)
     );
 

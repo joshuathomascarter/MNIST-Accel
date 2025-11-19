@@ -103,10 +103,18 @@ module meta_decode #(
     // Assign output
     assign dma_meta_ready = dma_meta_ready_reg;
     
+    // Add row pointer, column index, and block header write addresses
+    reg [7:0] rowptr_waddr;
+    reg [7:0] colidx_waddr;
+    reg [7:0] blkhdr_waddr;
+
+    localparam [7:0] ROWPTR_BASE  = 8'h00;
+    localparam [7:0] COLIDX_BASE  = 8'h40;
+    localparam [7:0] BLKHDR_BASE  = 8'hC0;
+    
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state <= META_IDLE;
-            cache_waddr <= {METADATA_CACHE_ADDR_W{1'b0}};
             cache_wen <= 1'b0;
             dma_meta_ready_reg <= 1'b1;
             error_flags <= 32'd0;
@@ -114,6 +122,11 @@ module meta_decode #(
             cache_hit_count <= 32'd0;
             cache_miss_count <= 32'd0;
             decode_cycle_count <= 32'd0;
+            
+            // Initialize type-specific addresses
+            rowptr_waddr <= ROWPTR_BASE;
+            colidx_waddr <= COLIDX_BASE;
+            blkhdr_waddr <= BLKHDR_BASE;
         end else begin
             cache_wen <= 1'b0;  // Pulse
             dma_meta_ready_reg <= 1'b1;  // Always ready in IDLE
@@ -160,14 +173,26 @@ module meta_decode #(
                 end
                 
                 META_CACHE_WR: begin
-                    // Write to metadata cache
+                    // Write to metadata cache at type-specific address
                     cache_wen <= 1'b1;
-                    cache_waddr <= cache_waddr + 1'b1;
                     
-                    if (cache_waddr == METADATA_CACHE_DEPTH - 1) begin
-                        // Wrap around cache
-                        cache_waddr <= {METADATA_CACHE_ADDR_W{1'b0}};
-                    end
+                    case (meta_type_latched)
+                        2'b00: begin  // ROW_PTR
+                            cache_waddr <= rowptr_waddr;
+                            rowptr_waddr <= rowptr_waddr + 1'b1;
+                        end
+                        2'b01: begin  // COL_IDX
+                            cache_waddr <= colidx_waddr;
+                            colidx_waddr <= colidx_waddr + 1'b1;
+                        end
+                        2'b10: begin  // BLOCK_HDR
+                            cache_waddr <= blkhdr_waddr;
+                            blkhdr_waddr <= blkhdr_waddr + 1'b1;
+                        end
+                        default: begin
+                            cache_waddr <= {METADATA_CACHE_ADDR_W{1'b0}};
+                        end
+                    endcase
                     
                     state <= META_DONE;
                 end
@@ -187,14 +212,19 @@ module meta_decode #(
     
     reg [31:0] sched_rdata_reg;
     reg sched_valid_reg;
-    
+    reg sched_ren_delayed;  // <-- Add delay register
+
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             sched_rdata_reg <= 32'd0;
             sched_valid_reg <= 1'b0;
+            sched_ren_delayed <= 1'b0;
         end else begin
-            if (sched_meta_ren) begin
-                sched_rdata_reg <= cache_rdata;
+            // Delay read enable by 1 cycle to match BRAM latency
+            sched_ren_delayed <= sched_meta_ren;
+            
+            if (sched_ren_delayed) begin  // <-- Use delayed version
+                sched_rdata_reg <= cache_rdata;  // Now captures correct data
                 sched_valid_reg <= 1'b1;
                 
                 // Track cache hits/misses

@@ -91,6 +91,13 @@ module bsr_dma #(
     output reg [ADDR_WIDTH+4:0] block_waddr,  // word address (divide by 4)
     output reg [31:0]  block_wdata,
     
+    // Metadata decoder interface (parallel writes for caching)
+    output reg [31:0]  dma_meta_data,    // Metadata word to cache
+    output reg [7:0]   dma_meta_waddr,   // Cache write address
+    output reg [1:0]   dma_meta_type,    // 0=ROW_PTR, 1=COL_IDX, 2=BLOCK_HDR
+    output reg         dma_meta_wen,     // Write enable pulse
+    input  wire        dma_meta_ready,   // Cache ready (for backpressure)
+    
     // Status outputs
     output reg         dma_busy,
     output reg         dma_done,
@@ -261,6 +268,11 @@ module bsr_dma #(
             // Clear burst control
             burst_enable <= 1'b0;
             burst_len <= 8'd0;
+            // Clear metadata decoder signals
+            dma_meta_wen <= 1'b0;
+            dma_meta_type <= 2'b00;
+            dma_meta_waddr <= 8'd0;
+            dma_meta_data <= 32'd0;
         end else begin
             state <= next_state;
             // CSR_BURST write handling at runtime
@@ -273,6 +285,7 @@ module bsr_dma #(
             row_ptr_we <= 1'b0;
             col_idx_we <= 1'b0;
             block_we <= 1'b0;
+            dma_meta_wen <= 1'b0;
             uart_tx_valid <= 1'b0;
                     // Default: avoid FIFO operations unless handled in state
                     fifo_get <= 1'b0;
@@ -397,6 +410,13 @@ module bsr_dma #(
                             row_ptr_wdata <= {fifo_q, rx_word_buf[23:0]};
                             row_ptr_waddr <= row_ptr_addr;
                             row_ptr_we <= 1'b1;
+                            
+                            // Parallel write to metadata cache
+                            dma_meta_data <= {fifo_q, rx_word_buf[23:0]};
+                            dma_meta_waddr <= row_ptr_addr[7:0];  // Use lower 8 bits for cache addr
+                            dma_meta_type <= 2'b00;                // ROW_PTR type
+                            dma_meta_wen <= 1'b1;
+                            
                             row_ptr_addr <= row_ptr_addr + 1;
                             rx_byte_count <= 2'd0;
                             rx_word_buf <= 32'd0;
@@ -432,6 +452,18 @@ module bsr_dma #(
                             col_idx_wdata <= {fifo_q, rx_halfword[7:0]};
                             col_idx_waddr <= col_idx_addr;
                             col_idx_we <= 1'b1;
+                            
+                            // Parallel write to metadata cache (pack two 16-bit indices into 32-bit word)
+                            dma_meta_data <= {16'd0, fifo_q, rx_halfword[7:0]};
+                            dma_meta_waddr <= col_idx_addr[7:0];   // Use lower 8 bits
+                            dma_meta_type <= 2'b01;                 // COL_IDX type
+                            dma_meta_wen <= 1'b1;
+                            
+                            col_idx_addr <= col_idx_addr + 1;
+                            dma_meta_waddr <= col_idx_addr[7:0];   // Use lower 8 bits
+                            dma_meta_type <= 2'b01;                 // COL_IDX type
+                            dma_meta_wen <= 1'b1;
+                            
                             col_idx_addr <= col_idx_addr + 1;
                             rx_byte_count <= 2'd0;
                             rx_halfword <= 16'd0;

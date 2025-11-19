@@ -20,18 +20,20 @@ module tb_meta_decode;
     
     reg clk, rst_n;
     
-    // DMA metadata input
-    reg [31:0] dma_meta_data;
-    reg [3:0]  dma_meta_valid;
-    reg [1:0]  dma_meta_type;
-    reg        dma_meta_wen;
-    wire       dma_meta_ready;
+    // DMA metadata input (write interface)
+    reg [31:0] wr_data;
+    reg [7:0]  wr_addr;
+    reg [1:0]  wr_type;
+    reg        wr_en;
+    wire       wr_ready;
     
-    // Scheduler read
-    reg [7:0]  sched_meta_raddr;
-    reg        sched_meta_ren;
-    wire [31:0] sched_meta_rdata;
-    wire        sched_meta_rvalid;
+    // Scheduler read interface
+    reg        rd_en;
+    reg [7:0]  rd_addr;
+    reg [1:0]  rd_type;
+    wire [31:0] rd_data;
+    wire        rd_valid;
+    wire        rd_hit;
     
     // Config
     reg [15:0] cfg_num_rows;
@@ -52,33 +54,23 @@ module tb_meta_decode;
     // DUT Instantiation
     // ========================================================================
     
-    meta_decode #(
-        .METADATA_CACHE_DEPTH(256),
-        .METADATA_CACHE_ADDR_W(8),
-        .DATA_WIDTH(32),
-        .ENABLE_CRC(1),
-        .ENABLE_PERF(1)
-    ) dut (
+    meta_decode dut (
         .clk(clk),
         .rst_n(rst_n),
-        .dma_meta_data(dma_meta_data),
-        .dma_meta_valid(dma_meta_valid),
-        .dma_meta_type(dma_meta_type),
-        .dma_meta_wen(dma_meta_wen),
-        .dma_meta_ready(dma_meta_ready),
-        .sched_meta_raddr(sched_meta_raddr),
-        .sched_meta_ren(sched_meta_ren),
-        .sched_meta_rdata(sched_meta_rdata),
-        .sched_meta_rvalid(sched_meta_rvalid),
-        .cfg_num_rows(cfg_num_rows),
-        .cfg_num_cols(cfg_num_cols),
-        .cfg_total_blocks(cfg_total_blocks),
-        .cfg_block_size(cfg_block_size),
-        .perf_cache_hits(perf_cache_hits),
-        .perf_cache_misses(perf_cache_misses),
-        .perf_decode_cycles(perf_decode_cycles),
-        .meta_error(meta_error),
-        .meta_error_flags(meta_error_flags)
+        .wr_data(wr_data),
+        .wr_addr(wr_addr),
+        .wr_type(wr_type),
+        .wr_en(wr_en),
+        .wr_ready(wr_ready),
+        .rd_en(rd_en),
+        .rd_addr(rd_addr),
+        .rd_type(rd_type),
+        .rd_data(rd_data),
+        .rd_valid(rd_valid),
+        .rd_hit(rd_hit),
+        .cache_hits(perf_cache_hits),
+        .cache_misses(perf_cache_misses),
+        .total_reads(perf_decode_cycles)
     );
     
     // ========================================================================
@@ -97,16 +89,13 @@ module tb_meta_decode;
     initial begin
         // Initialize
         rst_n = 1'b0;
-        dma_meta_data = 32'd0;
-        dma_meta_valid = 4'd0;
-        dma_meta_type = 2'd0;
-        dma_meta_wen = 1'b0;
-        sched_meta_raddr = 8'd0;
-        sched_meta_ren = 1'b0;
-        cfg_num_rows = 16'd32;
-        cfg_num_cols = 16'd32;
-        cfg_total_blocks = 32'd512;
-        cfg_block_size = 3'd1;  // 8×8 blocks
+        wr_data = 32'd0;
+        wr_addr = 8'd0;
+        wr_type = 2'd0;
+        wr_en = 1'b0;
+        rd_en = 1'b0;
+        rd_addr = 8'd0;
+        rd_type = 2'd0;
         
         // Release reset
         @(posedge clk);
@@ -119,15 +108,14 @@ module tb_meta_decode;
         $display("\n[TEST 1] Write metadata - ROW_PTR");
         
         for (int i = 0; i < 10; i = i + 1) begin
-            dma_meta_data <= 32'h1000_0000 + (i << 4);
-            dma_meta_valid <= 4'hF;
-            dma_meta_type <= 2'b00;  // ROW_PTR
-            dma_meta_wen <= 1'b1;
+            wr_data <= 32'h1000_0000 + (i << 4);
+            wr_type <= 2'b00;  // ROW_PTR
+            wr_en <= 1'b1;
             @(posedge clk);
-            $display("  Write[%0d]: 0x%08x (type=ROW_PTR)", i, dma_meta_data);
+            $display("  Write[%0d]: addr=0x%02x data=0x%08x (type=ROW_PTR)", i, wr_addr, wr_data);
         end
         
-        dma_meta_wen <= 1'b0;
+        wr_en <= 1'b0;
         repeat(10) @(posedge clk);
         
         // ====================================================================
@@ -136,19 +124,20 @@ module tb_meta_decode;
         $display("\n[TEST 2] Read metadata back");
         
         for (int i = 0; i < 5; i = i + 1) begin
-            sched_meta_raddr <= i;
-            sched_meta_ren <= 1'b1;
+            rd_addr <= i;
+            rd_type <= 2'b00;  // ROW_PTR
+            rd_en <= 1'b1;
             @(posedge clk);
             @(posedge clk);
             
-            if (sched_meta_rvalid) begin
-                $display("  Read[%0d]: 0x%08x (valid=%b)", i, sched_meta_rdata, sched_meta_rvalid);
+            if (rd_valid) begin
+                $display("  Read[%0d]: 0x%08x (valid=%b hit=%b)", i, rd_data, rd_valid, rd_hit);
             end else begin
                 $display("  Read[%0d]: DATA INVALID", i);
             end
         end
         
-        sched_meta_ren <= 1'b0;
+        rd_en <= 1'b0;
         repeat(5) @(posedge clk);
         
         // ====================================================================
@@ -157,15 +146,14 @@ module tb_meta_decode;
         $display("\n[TEST 3] Write metadata - COL_IDX");
         
         for (int i = 0; i < 8; i = i + 1) begin
-            dma_meta_data <= 32'hAAAA_0000 + i;
-            dma_meta_valid <= 4'hF;
-            dma_meta_type <= 2'b01;  // COL_IDX
-            dma_meta_wen <= 1'b1;
+            wr_data <= 32'h0000_0000 + i;  // col_idx values
+            wr_type <= 2'b01;  // COL_IDX
+            wr_en <= 1'b1;
             @(posedge clk);
-            $display("  Write[%0d]: 0x%08x (type=COL_IDX)", i, dma_meta_data);
+            $display("  Write[%0d]: addr=0x%02x data=0x%08x (type=COL_IDX)", i, wr_addr, wr_data);
         end
         
-        dma_meta_wen <= 1'b0;
+        wr_en <= 1'b0;
         repeat(10) @(posedge clk);
         
         // ====================================================================
@@ -183,14 +171,13 @@ module tb_meta_decode;
         // ====================================================================
         $display("\n[TEST 5] Error injection - invalid type");
         
-        dma_meta_data <= 32'h0000_0000;
-        dma_meta_valid <= 4'hF;
-        dma_meta_type <= 2'b11;  // INVALID
-        dma_meta_wen <= 1'b1;
+        wr_data <= 32'h0000_0000;
+        wr_type <= 2'b11;  // INVALID (only 00, 01, 10 valid)
+        wr_en <= 1'b1;
         @(posedge clk);
-        $display("  Wrote invalid type; error=%b, error_flags=0x%08x", meta_error, meta_error_flags);
+        $display("  Wrote invalid type; checking for error handling");
         
-        dma_meta_wen <= 1'b0;
+        wr_en <= 1'b0;
         repeat(5) @(posedge clk);
         
         // ====================================================================

@@ -138,15 +138,13 @@ module bsr_scheduler #(
     input  logic [2:0]  cfg_active_layer,       // Active layer ID (0-7)
     output logic        cfg_layer_ready,        // Ready for new configuration
     
-    // BSR Metadata BRAM: row_ptr (cumulative block counts)
-    output logic        row_ptr_rd_en,          // Read enable
-    output logic [15:0] row_ptr_rd_addr,        // Read address
-    input  logic [31:0] row_ptr_rd_data,        // Read data (4 bytes)
-    
-    // BSR Metadata BRAM: col_idx (column position of each block)
-    output logic        col_idx_rd_en,          // Read enable
-    output logic [31:0] col_idx_rd_addr,        // Read address (up to 64K blocks)
-    input  logic [15:0] col_idx_rd_data,        // Read data (2 bytes)
+    // Metadata decoder cache interface (replaces direct BRAM access)
+    output logic        meta_rd_en,             // Read enable
+    output logic [7:0]  meta_rd_addr,           // Cache address
+    output logic [1:0]  meta_rd_type,           // 0=ROW_PTR, 1=COL_IDX, 2=BLOCK_HDR
+    input  logic [31:0] meta_rd_data,           // Read data from cache
+    input  logic        meta_rd_valid,          // Data valid (1 cycle after request)
+    input  logic        meta_rd_hit,            // Cache hit indicator
     
     // Block data BRAM (64 INT8 values per block)
     output logic        block_rd_en,            // Read enable
@@ -275,13 +273,13 @@ module bsr_scheduler #(
                 end
 
                 READ_ROW_PTR_0: begin
-                    block_start <= row_ptr_rd_data;
+                    block_start <= meta_rd_data;
                 end
 
                 
                 READ_ROW_PTR_1: begin
                     // Capture row_ptr[block_row+1]
-                    block_end <= row_ptr_rd_data;
+                    block_end <= meta_rd_data;
                 end
                 
                 CHECK_EMPTY: begin
@@ -426,17 +424,20 @@ module bsr_scheduler #(
     
     // Row pointer BRAM
     always_comb begin
-        row_ptr_rd_en = 1'b0;
-        row_ptr_rd_addr = '0;
+        meta_rd_en = 1'b0;
+        meta_rd_addr = '0;
+        meta_rd_type = 2'b00;
         
         case (state)
             READ_ROW_PTR_0: begin
-                row_ptr_rd_en = 1'b1;
-                row_ptr_rd_addr = block_row;        // Read row_ptr[i]
+                meta_rd_en = 1'b1;
+                meta_rd_addr = block_row[7:0];       // Read row_ptr[i] from cache
+                meta_rd_type = 2'b00;                 // ROW_PTR type
             end
             READ_ROW_PTR_1: begin
-                row_ptr_rd_en = 1'b1;
-                row_ptr_rd_addr = block_row + 1;    // Read row_ptr[i+1]
+                meta_rd_en = 1'b1;
+                meta_rd_addr = (block_row + 1)[7:0]; // Read row_ptr[i+1] from cache
+                meta_rd_type = 2'b00;                 // ROW_PTR type
             end
         endcase
     end
@@ -444,7 +445,7 @@ module bsr_scheduler #(
     // Capture row_ptr reads
     always_ff @(posedge clk) begin
         if (state == READ_ROW_PTR_0) begin
-            row_ptr_reg <= row_ptr_rd_data; // Will be block_start
+            row_ptr_reg <= meta_rd_data; // Will be block_start
         end
         if (state == READ_ROW_PTR_1) begin
             block_start <= row_ptr_reg;     // From previous cycle
@@ -453,17 +454,20 @@ module bsr_scheduler #(
     
     // Column index BRAM
     always_comb begin
-        col_idx_rd_en = 1'b0;
-        col_idx_rd_addr = '0;
+        meta_rd_en = 1'b0;
+        meta_rd_addr = '0;
+        meta_rd_type = 2'b01;  // COL_IDX type by default
         
         if (state == READ_COL_IDX) begin
-            col_idx_rd_en = 1'b1;
-            col_idx_rd_addr = block_idx;
+            meta_rd_en = 1'b1;
+            meta_rd_addr = block_idx[7:0];  // Map to COL_IDX cache region (0x40+idx)
+            meta_rd_type = 2'b01;            // COL_IDX type
         end else if (state == WAIT_SYSTOLIC) begin
             // Prefetch next block's column index while systolic is computing
             if ((block_idx < block_end - 1) && !prefetch_valid) begin
-                col_idx_rd_en = 1'b1;
-                col_idx_rd_addr = block_idx + 1;
+                meta_rd_en = 1'b1;
+                meta_rd_addr = (block_idx + 1)[7:0];
+                meta_rd_type = 2'b01;                 // COL_IDX type
             end
         end
     end
@@ -471,12 +475,12 @@ module bsr_scheduler #(
     // Capture col_idx read
     always_ff @(posedge clk) begin
         if (state == READ_COL_IDX) begin
-            col_idx_reg <= col_idx_rd_data;
+            col_idx_reg <= meta_rd_data[15:0];  // Extract 16-bit col_idx from 32-bit word
         end
         // Prefetch capture: when systolic is computing, capture next col_idx
         if (state == WAIT_SYSTOLIC) begin
             if ((block_idx < block_end - 1) && !prefetch_valid) begin
-                prefetch_col_idx <= col_idx_rd_data;
+                prefetch_col_idx <= meta_rd_data[15:0];  // Extract 16-bit col_idx
                 prefetch_block_idx <= block_idx + 1;
                 prefetch_valid <= 1'b1;
             end

@@ -31,10 +31,18 @@ module perf #(
     input  wire done_pulse,        // Single-cycle pulse to stop measurement
     input  wire busy_signal,       // High when the core is doing useful work
 
+    // Metadata Cache Inputs (from meta_decode)
+    input  wire [COUNTER_WIDTH-1:0] meta_cache_hits,    // Cache hit count from meta_decode
+    input  wire [COUNTER_WIDTH-1:0] meta_cache_misses,  // Cache miss count from meta_decode
+    input  wire [COUNTER_WIDTH-1:0] meta_decode_cycles, // Decode cycle count from meta_decode
+
     // Status Outputs (to be mapped to CSRs)
     output reg [COUNTER_WIDTH-1:0] total_cycles_count,  // Total cycles from start to done
     output reg [COUNTER_WIDTH-1:0] active_cycles_count, // Cycles where busy_signal was high
     output reg [COUNTER_WIDTH-1:0] idle_cycles_count,   // Cycles where busy_signal was low
+    output reg [COUNTER_WIDTH-1:0] cache_hit_count,     // Total metadata cache hits
+    output reg [COUNTER_WIDTH-1:0] cache_miss_count,    // Total metadata cache misses
+    output reg [COUNTER_WIDTH-1:0] decode_count,        // Total metadata decode operations
     output reg                     measurement_done     // Single-cycle pulse when measurement is complete
 );
 
@@ -109,6 +117,9 @@ module perf #(
             total_cycles_count  <= {COUNTER_WIDTH{1'b0}};
             active_cycles_count <= {COUNTER_WIDTH{1'b0}};
             idle_cycles_count   <= {COUNTER_WIDTH{1'b0}};
+            cache_hit_count     <= {COUNTER_WIDTH{1'b0}};
+            cache_miss_count    <= {COUNTER_WIDTH{1'b0}};
+            decode_count        <= {COUNTER_WIDTH{1'b0}};
             measurement_done    <= 1'b0;
         end else begin
             // Latch final counts when transitioning from MEASURING to IDLE
@@ -116,6 +127,9 @@ module perf #(
                 total_cycles_count  <= total_counter;
                 active_cycles_count <= active_counter;
                 idle_cycles_count   <= idle_counter;
+                cache_hit_count     <= meta_cache_hits;
+                cache_miss_count    <= meta_cache_misses;
+                decode_count        <= meta_decode_cycles;
                 measurement_done    <= 1'b1;
             end else begin
                 measurement_done <= 1'b0;

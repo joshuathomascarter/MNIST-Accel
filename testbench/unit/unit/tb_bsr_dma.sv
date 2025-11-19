@@ -77,6 +77,13 @@ module tb_bsr_dma;
     wire       dma_done;
     wire       dma_error;
     wire [31:0] blocks_written;
+    
+    // Metadata output interface (to meta_decode)
+    wire [31:0] dma_meta_data;
+    wire [7:0]  dma_meta_waddr;
+    wire [1:0]  dma_meta_type;
+    wire        dma_meta_wen;
+    wire        dma_meta_ready;
 
     // ========================================================================
     // DUT Instantiation
@@ -115,7 +122,12 @@ module tb_bsr_dma;
         .dma_busy(dma_busy),
         .dma_done(dma_done),
         .dma_error(dma_error),
-        .blocks_written(blocks_written)
+        .blocks_written(blocks_written),
+        .dma_meta_data(dma_meta_data),
+        .dma_meta_waddr(dma_meta_waddr),
+        .dma_meta_type(dma_meta_type),
+        .dma_meta_wen(dma_meta_wen),
+        .dma_meta_ready(dma_meta_ready)
     );
 
     // ========================================================================
@@ -176,6 +188,9 @@ module tb_bsr_dma;
     // ========================================================================
     reg [31:0] read_value;
     reg [31:0] tb_crc;
+    
+    // Simulate meta_decode ready signal
+    assign dma_meta_ready = 1'b1;  // Always ready
     
     initial begin
         uart_rx_valid = 1'b0;
@@ -357,6 +372,14 @@ module tb_bsr_dma;
     always @(posedge block_we) begin
         $display("%0t: block write: word_addr=0x%06x, byte_addr=0x%07x, data=0x%08x",
                  $time, block_waddr, (block_waddr << 2), block_wdata);
+    end
+    
+    always @(posedge dma_meta_wen) begin
+        $display("%0t: meta write: addr=0x%02x, type=%s, data=0x%08x",
+                 $time, dma_meta_waddr, 
+                 (dma_meta_type == 2'b00) ? "ROW_PTR" : 
+                 (dma_meta_type == 2'b01) ? "COL_IDX" : "BLOCK_HDR",
+                 dma_meta_data);
     end
 
 endmodule
