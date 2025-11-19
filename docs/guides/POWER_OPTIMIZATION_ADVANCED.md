@@ -15,7 +15,7 @@
 | **CSR** | **100** | ❌ **NOT GATED** |
 | **AXI DMA** | **200** | ❌ **NOT GATED** |
 | **BSR Scheduler** | **100** | ❌ **NOT GATED** |
-| I/O & Clocking | 300 | ⚠️ Partial |
+| I/O & Clocking | 300 | ⚠️ Partial | 
 | **TOTAL** | **1490** | — |
 
 ---
