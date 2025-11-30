@@ -2,264 +2,189 @@
 // meta_decode.sv — BSR Metadata Decoder with BRAM Cache
 // =============================================================================
 // Purpose:
-//   Decodes sparse matrix metadata (row pointers, column indices, blocks).
-//   Caches metadata in BRAM for fast repeated access.
-//   Interfaces with DMA for metadata input and scheduler for metadata output.
+//   Fetches and caches BSR metadata (Row Pointers and Column Indices).
+//   Provides a generic 32-bit interface to the Scheduler.
 //
 // Features:
-//   - 256-entry metadata BRAM cache
-//   - Configurable block size and sparsity parameters
-//   - CRC-32 metadata verification (optional)
-//   - Performance counters (cache hits/misses, decode latency)
-//   - Error detection and reporting
-//
+//   - 32-bit Memory Interface (Compatible with Row Pointers & System RAM)
+//   - One-Hot FSM for high-speed decoding
+//   - Synchronous BRAM Support with Power Gating
+//   - Valid Bitmap for accurate Cache Hit/Miss tracking
+//   - OPTIMIZED: Pipelined Request Processing (Zero-Wait State Transitions)
 // =============================================================================
 
-`timescale 1ns/1ps
+`timescale 1ns / 1ps
 `default_nettype none
 
 module meta_decode #(
-    parameter METADATA_CACHE_DEPTH = 256,
-    parameter METADATA_CACHE_ADDR_W = 8,
     parameter DATA_WIDTH = 32,
-    parameter ENABLE_CRC = 1,
-    parameter ENABLE_PERF = 1
+    parameter CACHE_DEPTH = 64 // Number of cached metadata entries
 )(
-    // Clock and reset
-    input  wire clk,
-    input  wire rst_n,
-    
-    // DMA Input Interface (metadata packets from DMA engine)
-    input  wire [31:0]  dma_meta_data,
-    input  wire [3:0]   dma_meta_valid,  // Per-byte valid (4 bytes)
-    input  wire [1:0]   dma_meta_type,   // 0=ROW_PTR, 1=COL_IDX, 2=BLOCK_HDR
-    input  wire         dma_meta_wen,
-    output wire         dma_meta_ready,
-    
-    // Scheduler Output Interface (metadata to sparse datapath)
-    input  wire [METADATA_CACHE_ADDR_W-1:0] sched_meta_raddr,
-    input  wire                             sched_meta_ren,
-    output wire [31:0]                      sched_meta_rdata,
-    output wire                             sched_meta_rvalid,
-    
-    // Configuration
-    input  wire [15:0]  cfg_num_rows,
-    input  wire [15:0]  cfg_num_cols,
-    input  wire [31:0]  cfg_total_blocks,
-    input  wire [2:0]   cfg_block_size,    // 0=4x4, 1=8x8, 2=16x16, etc.
-    
-    // Performance Counters (to perf module)
-    output wire [31:0]  perf_cache_hits,
-    output wire [31:0]  perf_cache_misses,
-    output wire [31:0]  perf_decode_cycles,
-    
-    // Status & Error
-    output wire         meta_error,
-    output wire [31:0]  meta_error_flags
+    input  wire                     clk,
+    input  wire                     rst_n,
+
+    // Interface to BSR Scheduler
+    input  wire                     req_valid,
+    input  wire [31:0]              req_addr, // Address of metadata in memory
+    output reg                      req_ready,
+
+    // Interface to Memory (BRAM/SRAM)
+    output wire                     mem_en,
+    output wire [31:0]              mem_addr,
+    input  wire [DATA_WIDTH-1:0]    mem_rdata, // 32-bit Data (Row Ptrs or Col Idx)
+
+    // Output to Scheduler
+    output reg                      meta_valid,
+    output reg [DATA_WIDTH-1:0]     meta_rdata, // Generic 32-bit output
+    input  wire                     meta_ready
 );
 
-    // ========================================================================
-    // Metadata BRAM Cache (256 entries × 32 bits)
-    // ========================================================================
-    
-    reg [31:0] metadata_cache [0:(METADATA_CACHE_DEPTH-1)];
-    reg [METADATA_CACHE_ADDR_W-1:0] cache_waddr;
-    reg [METADATA_CACHE_ADDR_W-1:0] cache_raddr;
-    reg [31:0] cache_wdata;
-    reg cache_wen;
-    
-    // Dual-port BRAM read/write
-    always @(posedge clk) begin
-        if (cache_wen) begin
-            metadata_cache[cache_waddr] <= cache_wdata;
-        end
-    end
-    
-    wire [31:0] cache_rdata = metadata_cache[sched_meta_raddr];
-    
-    // ========================================================================
-    // Metadata State Machine
-    // ========================================================================
-    
-    localparam [2:0] META_IDLE       = 3'd0,
-                     META_LATCH      = 3'd1,
-                     META_VALIDATE   = 3'd2,
-                     META_DECODE     = 3'd3,
-                     META_CACHE_WR   = 3'd4,
-                     META_DONE       = 3'd5;
-    
-    reg [2:0] state;
-    reg [31:0] meta_data_latched;
-    reg [1:0] meta_type_latched;
-    reg [31:0] crc_acc;
-    reg [31:0] error_flags;
-    reg dma_meta_ready_reg;
-    
-    // Performance counters
-    reg [31:0] cache_hit_count;
-    reg [31:0] cache_miss_count;
-    reg [31:0] decode_cycle_count;
-    
-    // Assign output
-    assign dma_meta_ready = dma_meta_ready_reg;
-    
-    // Add row pointer, column index, and block header write addresses
-    reg [7:0] rowptr_waddr;
-    reg [7:0] colidx_waddr;
-    reg [7:0] blkhdr_waddr;
+    //-------------------------------------------------------------------------
+    // 1. One-Hot FSM Encoding
+    //-------------------------------------------------------------------------
+    localparam [5:0] S_IDLE         = 6'b000001,
+                     S_READ_META    = 6'b000010,
+                     S_WAIT_MEM     = 6'b000100, // Wait for Sync BRAM
+                     S_CHECK_CACHE  = 6'b001000,
+                     S_OUTPUT_DATA  = 6'b010000,
+                     S_DONE         = 6'b100000;
 
-    localparam [7:0] ROWPTR_BASE  = 8'h00;
-    localparam [7:0] COLIDX_BASE  = 8'h40;
-    localparam [7:0] BLKHDR_BASE  = 8'hC0;
+    (* fsm_encoding = "one_hot" *) reg [5:0] current_state, next_state;
+
+    //-------------------------------------------------------------------------
+    // 2. Synchronous BRAM & Cache Structures
+    //-------------------------------------------------------------------------
+    reg [DATA_WIDTH-1:0] cache_mem [0:CACHE_DEPTH-1];
+    reg [CACHE_DEPTH-1:0] cache_valid_bits;
     
+    reg [31:0] addr_latch; // Latch to capture request address
+    wire [5:0] cache_index;
+    reg [DATA_WIDTH-1:0] fetched_data;
+
+    //-------------------------------------------------------------------------
+    // 3. Address Latching (Critical for Speed/Pipelining)
+    //-------------------------------------------------------------------------
+    // Capture address immediately when handshake occurs
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state <= META_IDLE;
-            cache_wen <= 1'b0;
-            dma_meta_ready_reg <= 1'b1;
-            error_flags <= 32'd0;
-            crc_acc <= 32'hFFFFFFFF;
-            cache_hit_count <= 32'd0;
-            cache_miss_count <= 32'd0;
-            decode_cycle_count <= 32'd0;
-            
-            // Initialize type-specific addresses
-            rowptr_waddr <= ROWPTR_BASE;
-            colidx_waddr <= COLIDX_BASE;
-            blkhdr_waddr <= BLKHDR_BASE;
+            addr_latch <= 32'd0;
+        end else if (req_valid && req_ready) begin
+            addr_latch <= req_addr;
+        end
+    end
+
+    // Use latched address for processing, but use direct req_addr for 
+    // hit/miss check in IDLE/OUTPUT to save a cycle (lookahead)
+    wire [31:0] active_addr = (req_ready && req_valid) ? req_addr : addr_latch;
+
+    //-------------------------------------------------------------------------
+    // 4. FSM Logic
+    //-------------------------------------------------------------------------
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            current_state <= S_IDLE;
         end else begin
-            cache_wen <= 1'b0;  // Pulse
-            dma_meta_ready_reg <= 1'b1;  // Always ready in IDLE
-            
-            case (state)
-                META_IDLE: begin
-                    if (dma_meta_wen && dma_meta_valid != 4'h0) begin
-                        meta_data_latched <= dma_meta_data;
-                        meta_type_latched <= dma_meta_type;
-                        state <= META_VALIDATE;
-                    end
-                end
-                
-                META_VALIDATE: begin
-                    // Validate metadata format
-                    decode_cycle_count <= decode_cycle_count + 1;
-                    
-                    // Check for valid metadata type
-                    if (meta_type_latched > 2'd2) begin
-                        error_flags[0] <= 1'b1;  // Invalid type
-                        state <= META_IDLE;
+            current_state <= next_state;
+        end
+    end
+
+    // Next State Logic
+    always @(*) begin
+        next_state = current_state;
+        
+        case (current_state)
+            S_IDLE: begin
+                if (req_valid) begin
+                    // Lookahead: Check hit/miss on the incoming address immediately
+                    if (cache_valid_bits[req_addr[5:0]]) begin
+                        next_state = S_CHECK_CACHE; // Hit
                     end else begin
-                        state <= META_DECODE;
+                        next_state = S_READ_META;   // Miss
                     end
                 end
-                
-                META_DECODE: begin
-                    // Decode based on metadata type
-                    case (meta_type_latched)
-                        2'b00: begin  // ROW_PTR
-                            // Row pointer: 32-bit address
-                            cache_wdata <= meta_data_latched;
-                        end
-                        2'b01: begin  // COL_IDX
-                            // Column index: 16-bit indices (2 per word)
-                            cache_wdata <= meta_data_latched;
-                        end
-                        2'b10: begin  // BLOCK_HDR
-                            // Block header: num_rows, num_cols, total
-                            cache_wdata <= meta_data_latched;
-                        end
-                    endcase
-                    state <= META_CACHE_WR;
-                end
-                
-                META_CACHE_WR: begin
-                    // Write to metadata cache at type-specific address
-                    cache_wen <= 1'b1;
-                    
-                    case (meta_type_latched)
-                        2'b00: begin  // ROW_PTR
-                            cache_waddr <= rowptr_waddr;
-                            rowptr_waddr <= rowptr_waddr + 1'b1;
-                        end
-                        2'b01: begin  // COL_IDX
-                            cache_waddr <= colidx_waddr;
-                            colidx_waddr <= colidx_waddr + 1'b1;
-                        end
-                        2'b10: begin  // BLOCK_HDR
-                            cache_waddr <= blkhdr_waddr;
-                            blkhdr_waddr <= blkhdr_waddr + 1'b1;
-                        end
-                        default: begin
-                            cache_waddr <= {METADATA_CACHE_ADDR_W{1'b0}};
-                        end
-                    endcase
-                    
-                    state <= META_DONE;
-                end
-                
-                META_DONE: begin
-                    state <= META_IDLE;
-                end
-                
-                default: state <= META_IDLE;
-            endcase
-        end
-    end
-    
-    // ========================================================================
-    // Scheduler Read Path
-    // ========================================================================
-    
-    reg [31:0] sched_rdata_reg;
-    reg sched_valid_reg;
-    reg sched_ren_delayed;  // <-- Add delay register
+            end
 
+            S_READ_META: begin
+                // Assert mem_en, wait one cycle for sync ram
+                next_state = S_WAIT_MEM;
+            end
+
+            S_WAIT_MEM: begin
+                // Data available at end of this cycle
+                next_state = S_OUTPUT_DATA;
+            end
+
+            S_CHECK_CACHE: begin
+                // Cache Hit Path
+                next_state = S_OUTPUT_DATA;
+            end
+
+            S_OUTPUT_DATA: begin
+                if (meta_ready) begin
+                    // OPTIMIZATION: Pipeline!
+                    // If a new request is waiting, jump straight to processing it.
+                    // Skip S_IDLE entirely.
+                    if (req_valid) begin
+                        if (cache_valid_bits[req_addr[5:0]]) 
+                            next_state = S_CHECK_CACHE;
+                        else 
+                            next_state = S_READ_META;
+                    end else begin
+                        next_state = S_IDLE;
+                    end
+                end
+            end
+
+            S_DONE: begin
+                next_state = S_IDLE;
+            end
+            
+            default: next_state = S_IDLE;
+        endcase
+    end
+
+    //-------------------------------------------------------------------------
+    // 5. Datapath & Outputs
+    //-------------------------------------------------------------------------
+
+    // Cache Index Calculation
+    assign cache_index = active_addr[5:0];
+
+    // Memory Interface
+    // Only enable memory when we need to read on a miss
+    assign mem_en   = (current_state == S_READ_META);
+    assign mem_addr = active_addr;
+
+    // Cache Write & Valid Bit Update
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            sched_rdata_reg <= 32'd0;
-            sched_valid_reg <= 1'b0;
-            sched_ren_delayed <= 1'b0;
-        end else begin
-            // Delay read enable by 1 cycle to match BRAM latency
-            sched_ren_delayed <= sched_meta_ren;
-            
-            if (sched_ren_delayed) begin  // <-- Use delayed version
-                sched_rdata_reg <= cache_rdata;  // Now captures correct data
-                sched_valid_reg <= 1'b1;
-                
-                // Track cache hits/misses
-                if (cache_rdata != 32'd0) begin
-                    cache_hit_count <= cache_hit_count + 1;
-                end else begin
-                    cache_miss_count <= cache_miss_count + 1;
-                end
-            end else begin
-                sched_valid_reg <= 1'b0;
-            end
+            cache_valid_bits <= {CACHE_DEPTH{1'b0}};
+            fetched_data <= 32'd0;
+        end else if (current_state == S_WAIT_MEM) begin
+            cache_mem[cache_index] <= mem_rdata;
+            cache_valid_bits[cache_index] <= 1'b1;
+            fetched_data <= mem_rdata;
         end
     end
-    
-    assign sched_meta_rdata = sched_rdata_reg;
-    assign sched_meta_rvalid = sched_valid_reg;
-    
-    // ========================================================================
-    // Performance Counter Outputs
-    // ========================================================================
-    
-    assign perf_cache_hits = cache_hit_count;
-    assign perf_cache_misses = cache_miss_count;
-    assign perf_decode_cycles = decode_cycle_count;
-    
-    // ========================================================================
-    // Error Status
-    // ========================================================================
-    
-    assign meta_error = (error_flags != 32'd0);
-    assign meta_error_flags = error_flags;
+
+    // Output Logic
+    always @(*) begin
+        // Ready to accept new request if IDLE, or if we are about to finish the current one
+        req_ready  = (current_state == S_IDLE) || (current_state == S_OUTPUT_DATA && meta_ready);
+        
+        meta_valid = (current_state == S_OUTPUT_DATA);
+        
+        // Mux between Cache and Fresh Data
+        if (current_state == S_OUTPUT_DATA) begin
+             if (cache_valid_bits[cache_index]) 
+                meta_rdata = cache_mem[cache_index];
+             else 
+                meta_rdata = fetched_data; 
+        end else begin
+             meta_rdata = 32'd0;
+        end
+    end
 
 endmodule
-
 `default_nettype wire
-// =============================================================================
-// End of meta_decode.sv
-// =============================================================================

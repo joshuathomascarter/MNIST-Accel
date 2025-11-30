@@ -1,13 +1,35 @@
+/*
+  systolic_array.v - Weight-Stationary Systolic Array
+  ---------------------------------------------------
+  ARCHITECTURAL CORRECTION:
+   - This is a WEIGHT-STATIONARY (WS) array.
+   - Weights are broadcast to columns and stored in PEs.
+   - Activations stream horizontally (West -> East).
+   - Partial sums accumulate locally in each PE.
+   
+  Engineer's Note:
+   - This module instantiates an NxM grid of PEs.
+   - The 'row_en' signal is critical for power gating unused rows during
+     sparse operations or small matrix multiplications.
+   - Ensure 'load_weight' is asserted for at least 1 cycle before 'en' goes high.
+   
+  Parameters:
+   N_ROWS : number of rows (default 2)
+   N_COLS : number of columns (default 2)
+   PIPE   : pass to each PE (1 inserts internal pipeline)
+   SAT    : pass to each mac8 instance inside PE
+   ENABLE_CLOCK_GATING: 1 enables BUFGCE/ICG insertion for power savings.
+*/
 `ifndef SYSTOLIC_ARRAY_V
 `define SYSTOLIC_ARRAY_V
 `default_nettype none
 // -----------------------------------------------------------------------------
 // Title      : systolic_array
 // File       : systolic_array.v
-// Description: TRUE ROW-STATIONARY INT8 systolic array with Pk=1.
+// Description: Weight-Stationary INT8 systolic array with Pk=1.
 //              Verilog-2001 compliant; uses generate loops and flattened ports.
 //
-//              ROW-STATIONARY DATAFLOW:
+//              WEIGHT-STATIONARY DATAFLOW:
 //              - Weights loaded ONCE and stored stationary in each PE
 //              - Activations stream horizontally (west to east)
 //              - No vertical weight flow (weights broadcast to all PEs in same column)
@@ -51,7 +73,12 @@ module systolic_array #(
   output wire [N_ROWS*N_COLS*32-1:0] c_out_flat
 );
 
-  // Unpack input activation and weight vectors
+  // ---------------------------------------------------------------------------
+  // 1. Input Unpacking
+  // ---------------------------------------------------------------------------
+  // Engineer's Note:
+  // Verilog-2001 does not support 2D ports, so we flatten inputs.
+  // This loop unpacks the flat vectors into internal 2D arrays for easier indexing.
   wire signed [7:0] a_in [0:N_ROWS-1];
   wire signed [7:0] b_in [0:N_COLS-1];
   genvar ui;
@@ -65,8 +92,11 @@ module systolic_array #(
   endgenerate
 
   // ========================================================================
-  // Clock Gating (Per-Row) - Saves 434 mW @ 100 MHz
+  // 2. Clock Gating (Per-Row) - Saves 434 mW @ 100 MHz
   // ========================================================================
+  // Engineer's Note:
+  // This is a critical power optimization. By gating the clock to unused rows,
+  // we eliminate dynamic power consumption in the PEs (which are the main consumers).
   // When ENABLE_CLOCK_GATING=1, each row gets gated clock (gates when !row_en[i])
   // When ENABLE_CLOCK_GATING=0, all rows use main clock (for simulation/debug)
   // Uses Xilinx BUFGCE primitive for glitch-free clock gating
@@ -77,7 +107,9 @@ module systolic_array #(
     if (ENABLE_CLOCK_GATING) begin : gen_clock_gating
       for (ui = 0; ui < N_ROWS; ui = ui + 1) begin : gen_row_gates
         wire row_clk_en;
-        assign row_clk_en = en & row_en[ui];  // Gate when disabled OR row inactive
+        // CRITICAL FIX: Clock must be active for Compute (en), Weight Load (load_weight), or Clear (clr)
+        // Previously: assign row_clk_en = en & row_en[ui]; (This prevented weight loading!)
+        assign row_clk_en = row_en[ui] & (en | load_weight | clr);
         
         // Xilinx BUFGCE: Clock buffer with gate enable (glitch-free)
         // For ASIC: use integrated clock gate cell (ICG) from library
@@ -104,6 +136,15 @@ module systolic_array #(
     end
   endgenerate
 
+  // ---------------------------------------------------------------------------
+  // 3. PE Grid Instantiation
+  // ---------------------------------------------------------------------------
+  // Engineer's Note:
+  // This double loop generates the physical grid of PEs.
+  // - Activations (a_src) are chained horizontally.
+  // - Weights (b_src) are BROADCAST vertically (all PEs in col 'c' get b_in[c]).
+  // - This confirms the Weight-Stationary architecture.
+  
   // Forwarding nets between PEs (ONLY for activations, NOT weights!)
   wire signed [7:0] a_fwd [0:N_ROWS-1][0:N_COLS-1];
   wire signed [31:0] acc_mat [0:N_ROWS-1][0:N_COLS-1];
@@ -135,7 +176,13 @@ module systolic_array #(
     end
   endgenerate
 
-  // Pack outputs row-major into flat bus
+  // ---------------------------------------------------------------------------
+  // 4. Output Packing
+  // ---------------------------------------------------------------------------
+  // Engineer's Note:
+  // Flattens the 2D array of results into a single wide bus.
+  // Format: Row-Major.
+  // [Row0_Col0, Row0_Col1, ..., Row1_Col0, ...]
   integer pi, pj;
   reg [N_ROWS*N_COLS*32-1:0] c_pack;
   always @(*) begin
@@ -148,6 +195,28 @@ module systolic_array #(
   end
   assign c_out_flat = c_pack;
 
-endmodule
-`default_nettype wire
-`endif
+  // ---------------------------------------------------------------------------
+  // 5. Assertions & Verification
+  // ---------------------------------------------------------------------------
+  // Engineer's Note: These assertions verify the control protocol.
+  
+  `ifdef ASSERT_ON
+    // 1. Mutual Exclusion: Cannot Compute and Load Weights simultaneously
+    //    (This would corrupt the stationary weights or produce garbage psums)
+    property p_mutex_load_compute;
+      @(posedge clk) disable iff (!rst_n) (load_weight |-> !en);
+    endproperty
+    assert property (p_mutex_load_compute) 
+      else $error("SYSTOLIC_ERROR: 'en' and 'load_weight' asserted simultaneously!");
+
+    // 2. Clock Gating Safety: If we are active, ensure row_en is not all zeros
+    //    (If global controls are high but all rows are disabled, we are stalling)
+    property p_valid_activity;
+      @(posedge clk) disable iff (!rst_n) ((en | load_weight | clr) |-> |row_en);
+    endproperty
+    cover property (p_valid_activity);
+
+    // 3. Reset Check: When reset is asserted, output should eventually be 0
+    //    (Note: This is a liveness property, simplified here)
+    property p_reset_clears;
+      @(posedge clk) !rst_n |=> (c_out_flat == 0

@@ -25,8 +25,7 @@ INDEX_k = 0x24  #: k index
 BUFF = 0x28  #: Buffer control
 SCALE_Sa = 0x2C  #: Activation scale (float32)
 SCALE_Sw = 0x30  #: Weight scale (float32)
-UART_len_max = 0x34  #: UART max packet length
-UART_crc_en = 0x38  #: UART CRC enable
+# UART registers removed (0x34, 0x38)
 STATUS = 0x3C  #: Status register
 # DMA CSR registers (BSR DMA)
 DMA_LAYER = 0x50  #: DMA: layer selection (0-7)
@@ -47,8 +46,7 @@ CTRL_IRQEN = 1 << 2  #: Interrupt enable (RW)
 # STATUS bits
 STS_BUSY = 1 << 0  #: Accelerator busy (RO)
 STS_DONE_TILE = 1 << 1  #: Tile done (R/W1C)
-STS_ERR_CRC = 1 << 8  #: CRC error (R/W1C)
-STS_ERR_ILLEGAL = 1 << 9  #: Illegal op error (R/W1C)
+# UART error bits removed
 
 # BUFF bits
 WR_A = 1 << 0  #: Write bank A
@@ -71,8 +69,6 @@ CSR_LAYOUT = [
     (BUFF, "BUFF", "u32", "Buffer control bits"),
     (SCALE_Sa, "SCALE_Sa", "f32", "Activation scale"),
     (SCALE_Sw, "SCALE_Sw", "f32", "Weight scale"),
-    (UART_len_max, "UART_len_max", "u32", "UART max packet length"),
-    (UART_crc_en, "UART_crc_en", "u32", "UART CRC enable"),
     (STATUS, "STATUS", "u32", "Status register"),
     (PERF_TOTAL, "PERF_TOTAL", "u32", "Total cycles from start to done (RO)"),
     (PERF_ACTIVE, "PERF_ACTIVE", "u32", "Cycles where busy was high (RO)"),
@@ -324,41 +320,3 @@ def make_ctrl_abort() -> bytes:
     """Pack CTRL register for abort pulse"""
     return pack_u32(CTRL_ABORT)
 
-
-# UART framing (no external IO here; just the packers)
-SOF = 0xA5
-CMD_WRITE = 0x01
-CMD_READ = 0x02
-
-
-def crc16_ccitt_false(data: bytes) -> int:
-    """CRC-16-CCITT (False) for UART packets"""
-    crc = 0xFFFF
-    for b in data:
-        crc ^= b << 8
-        for _ in range(8):
-            if crc & 0x8000:
-                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
-            else:
-                crc = (crc << 1) & 0xFFFF
-    return crc
-
-
-def frame_write(addr: int, payload: bytes, crc_en: bool = True) -> bytes:
-    """Frame a UART write packet with optional CRC"""
-    header = struct.pack(LE + "BBIH", SOF, CMD_WRITE, addr, len(payload))
-    pkt = header + payload
-    if crc_en:
-        crc = crc16_ccitt_false(pkt)
-        pkt += struct.pack(LE + "H", crc)
-    return pkt
-
-
-def frame_read(addr: int, nbytes: int, crc_en: bool = True) -> bytes:
-    """Frame a UART read packet with optional CRC"""
-    header = struct.pack(LE + "BBIH", SOF, CMD_READ, addr, 0)
-    pkt = header
-    if crc_en:
-        crc = crc16_ccitt_false(pkt)
-        pkt += struct.pack(LE + "H", crc)
-    return pkt

@@ -1,6 +1,6 @@
 //------------------------------------------------------------------------------
 // scheduler.v
-// Tiled RS (Row-Stationary) GEMM scheduler for systolic array
+// Tiled WS (Weight-Stationary) GEMM scheduler for systolic array
 //
 // Responsibilities:
 //  - Implements tile loop-nest over (m_tile, n_tile, k_tile)
@@ -9,6 +9,12 @@
 //  - Generates row/col enable masks for edge tiles (Tm_eff/Tn_eff)
 //  - Ping/Pong bank policy: k_tile parity
 //  - Status + perf: busy, done_tile, tile coords, cycles, stall_cycles
+//
+// Engineer's Note:
+//  - This module orchestrates the entire compute flow.
+//  - It assumes a "Double Buffering" scheme (Ping/Pong) for A and B buffers.
+//  - The 'load_weight' signal is critical for the Weight-Stationary dataflow.
+//    It must be asserted during the 'LOAD' state to latch weights into PEs.
 //
 // Latency note (per tile, ideal):
 //   cycles_tile ≈ Tk_eff + (Tm-1) + (Tn-1)
@@ -75,7 +81,7 @@ module scheduler #(
   output reg                  bank_sel_rd_B,  // typically mirror A
   output reg                  clr,            // 1-cycle pulse at tile start
   output reg                  en,             // MAC enable (AND with row/col masks externally if desired)
-  output reg                  load_weight,    // NEW: weight loading control for row-stationary
+  output reg                  load_weight,    // NEW: weight loading control for weight-stationary
   output reg [MAX_TM-1:0]     en_mask_row,    // bit i = 1 -> row i valid
   output reg [MAX_TN-1:0]     en_mask_col,    // bit j = 1 -> col j valid
 
@@ -90,8 +96,11 @@ module scheduler #(
 );
 
   // ========================================================================
-  // Clock Gating Logic (saves ~200 mW when scheduler idle)
+  // 1. Clock Gating Logic (saves ~200 mW when scheduler idle)
   // ========================================================================
+  // Engineer's Note:
+  // This logic gates the clock to the entire scheduler FSM when it is not busy.
+  // This is a standard low-power technique.
   wire sched_clk_en, clk_gated;
   assign sched_clk_en = start | busy | abort | done_tile;
   
@@ -180,7 +189,10 @@ module scheduler #(
   // Helpers (combinational)
   // ------------------------
 
-  // Ceil-div helper (be aware: synthesizes a divider if use_csr_counts=0)
+  // Engineer's Note:
+  // These division functions are expensive in hardware.
+  // Ideally, the host driver should pre-calculate MT, NT, KT and pass them via CSR.
+  // If USE_CSR_COUNTS=1, these dividers are optimized away by synthesis if inputs are constant 0.
   function [M_W-1:0] ceil_div_M;
     input [M_W-1:0] a;
     input [TM_W-1:0] b;
@@ -205,7 +217,14 @@ module scheduler #(
     end
   endfunction
 
-  // Compute effective sizes for edge tiles: eff = min(T*, remaining)
+  // ---------------------------------------------------------------------------
+  // 2. Effective Tile Size Calculation (Edge Handling)
+  // ---------------------------------------------------------------------------
+  // Engineer's Note:
+  // This logic handles the "edge tiles" where the matrix dimension is not a 
+  // perfect multiple of the tile size.
+  // Example: M=10, Tm=4 -> Tiles are size 4, 4, 2.
+  // The 'Tm_eff' signal tells the PEs to mask off the unused rows/cols.
   always @(*) begin
     reg [M_W-1:0] m_rem;
     reg [N_W-1:0] n_rem;
@@ -241,7 +260,12 @@ module scheduler #(
     end
   end
 
-  // Bank select policy & readiness
+  // ---------------------------------------------------------------------------
+  // 3. Bank Selection (Double Buffering)
+  // ---------------------------------------------------------------------------
+  // Engineer's Note:
+  // We use the LSB of the K-tile index to toggle between Ping (0) and Pong (1) buffers.
+  // While the accelerator processes 'Ping', the DMA loads 'Pong'.
   always @(*) begin
     bank_sel_k = k_tile_r[0]; // even k_tile -> ping(0), odd -> pong(1)
     A_ready    = bank_sel_k ? valid_A_pong : valid_A_ping;

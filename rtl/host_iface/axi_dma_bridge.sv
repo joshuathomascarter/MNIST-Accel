@@ -1,13 +1,17 @@
 // =============================================================================
-// axi_dma_bridge.sv — AXI Write-Burst to DMA FIFO Bridge
+// axi_dma_bridge.sv — Unified AXI Write-Burst Router for Activations, Weights, Metadata
 // =============================================================================
 // Purpose:
-//   Maps AXI4-Full write bursts to the bsr_dma block-write FIFO.
-//   Handles multi-beat bursts and assembles 32-bit words for DMA.
+//   Routes AXI4-Full write bursts to act_buffer, wgt_buffer, or bsr_dma based on address.
+//   Address decoding:
+//     [31:30] = 00 → activations (act_buffer)
+//     [31:30] = 01 → weights (wgt_buffer)
+//     [31:30] = 10 → metadata/BSR blocks (to FIFO for bsr_dma)
 //
 // Features:
 //   - AXI4 write address and data channels
 //   - Burst length support (WLEN up to 256)
+//   - Address-based routing to three destinations
 //   - Write strobe (WSTRB) handling
 //   - Flow control and error reporting
 //
@@ -19,8 +23,7 @@
 module axi_dma_bridge #(
     parameter DATA_WIDTH = 32,
     parameter ADDR_WIDTH = 32,
-    parameter DMA_FIFO_DEPTH = 64,
-    parameter DMA_FIFO_PTR_W = 6
+    parameter ADDR_WIDTH_LOCAL = 6  // Local address width for buffers
 )(
     // Clock and reset
     input  wire clk,
@@ -46,11 +49,20 @@ module axi_dma_bridge #(
     output reg                     s_axi_bvalid,
     input  wire                    s_axi_bready,
     
-    // DMA FIFO Interface (32-bit words, LSB-first)
-    output reg [31:0]              dma_fifo_wdata,
-    output reg                     dma_fifo_wen,
-    input  wire                    dma_fifo_full,
-    input  wire [DMA_FIFO_PTR_W:0] dma_fifo_count,
+    // OUTPUT: Activation Buffer Write Port
+    output reg [DATA_WIDTH-1:0]    act_buf_wdata,
+    output reg [ADDR_WIDTH_LOCAL-1:0] act_buf_waddr,
+    output reg                     act_buf_wen,
+    
+    // OUTPUT: Weight Buffer Write Port
+    output reg [DATA_WIDTH-1:0]    wgt_buf_wdata,
+    output reg [ADDR_WIDTH_LOCAL-1:0] wgt_buf_waddr,
+    output reg                     wgt_buf_wen,
+    
+    // OUTPUT: BSR DMA FIFO Write Port (metadata/blocks)
+    output reg [DATA_WIDTH-1:0]    bsr_fifo_wdata,
+    output reg                     bsr_fifo_wen,
+    input  wire                    bsr_fifo_full,
     
     // Status & error
     output reg                     axi_error,
@@ -66,6 +78,11 @@ module axi_dma_bridge #(
     reg [7:0] beat_count;
     reg [7:0] burst_len;
     reg [1:0] burst_type;
+    reg [31:0] burst_addr;  // Captured address to determine route
+    reg [1:0] target_type;  // Which buffer: 00=act, 01=wgt, 10=bsr
+    
+    // Address decode
+    wire [1:0] addr_target = s_axi_awaddr[31:30];
     
     // ========================================================================
     // Write Address Latch
@@ -75,12 +92,16 @@ module axi_dma_bridge #(
             s_axi_awready <= 1'b1;
             burst_len <= 8'd0;
             burst_type <= 2'd0;
+            burst_addr <= 32'd0;
+            target_type <= 2'd0;
         end else begin
             case (state)
                 IDLE: begin
                     if (s_axi_awvalid) begin
                         burst_len <= s_axi_awlen;
                         burst_type <= s_axi_awburst;
+                        burst_addr <= s_axi_awaddr;
+                        target_type <= addr_target;  // Latch which buffer
                         s_axi_awready <= 1'b0;
                         // Transition to receive data
                     end
@@ -91,20 +112,24 @@ module axi_dma_bridge #(
     end
     
     // ========================================================================
-    // Write Data Path & DMA FIFO Enqueue
+    // Write Data Path & Address-Based Routing
     // ========================================================================
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state <= IDLE;
             s_axi_wready <= 1'b0;
             s_axi_bvalid <= 1'b0;
-            dma_fifo_wen <= 1'b0;
-            dma_fifo_wdata <= 32'd0;
+            act_buf_wen <= 1'b0;
+            wgt_buf_wen <= 1'b0;
+            bsr_fifo_wen <= 1'b0;
             beat_count <= 8'd0;
             axi_error <= 1'b0;
             words_written <= 32'd0;
         end else begin
-            dma_fifo_wen <= 1'b0;  // Pulse
+            // Default: clear write enables (pulse outputs)
+            act_buf_wen <= 1'b0;
+            wgt_buf_wen <= 1'b0;
+            bsr_fifo_wen <= 1'b0;
             
             case (state)
                 IDLE: begin
@@ -116,12 +141,34 @@ module axi_dma_bridge #(
                 end
                 
                 BURST_DATA: begin
-                    // Accept write data and enqueue to DMA FIFO
+                    // Accept write data and route based on target_type
                     if (s_axi_wvalid && s_axi_wready) begin
-                        if (!dma_fifo_full) begin
-                            // Enqueue 32-bit word to DMA FIFO
-                            dma_fifo_wdata <= s_axi_wdata;
-                            dma_fifo_wen <= 1'b1;
+                        // Route to appropriate buffer based on address
+                        case (target_type)
+                            2'b00: begin  // Activation buffer
+                                act_buf_wdata <= s_axi_wdata;
+                                act_buf_waddr <= (burst_addr[ADDR_WIDTH_LOCAL-1:0] + beat_count);
+                                act_buf_wen <= 1'b1;
+                            end
+                            2'b01: begin  // Weight buffer
+                                wgt_buf_wdata <= s_axi_wdata;
+                                wgt_buf_waddr <= (burst_addr[ADDR_WIDTH_LOCAL-1:0] + beat_count);
+                                wgt_buf_wen <= 1'b1;
+                            end
+                            2'b10: begin  // BSR metadata/blocks FIFO
+                                if (!bsr_fifo_full) begin
+                                    bsr_fifo_wdata <= s_axi_wdata;
+                                    bsr_fifo_wen <= 1'b1;
+                                end else begin
+                                    // FIFO full: stall
+                                    s_axi_wready <= 1'b0;
+                                    axi_error <= 1'b1;
+                                end
+                            end
+                            default: axi_error <= 1'b1;  // Invalid address
+                        endcase
+                        
+                        if (!axi_error) begin
                             words_written <= words_written + 1;
                             beat_count <= beat_count + 1;
                             
@@ -130,10 +177,6 @@ module axi_dma_bridge #(
                                 state <= WAIT_RESP;
                                 s_axi_wready <= 1'b0;
                             end
-                        end else begin
-                            // DMA FIFO full: stall
-                            s_axi_wready <= 1'b0;
-                            axi_error <= 1'b1;
                         end
                     end else begin
                         s_axi_wready <= 1'b1;
@@ -161,5 +204,5 @@ endmodule
 
 `default_nettype wire
 // =============================================================================
-// End of axi_dma_bridge.sv
-// =============================================================================
+// End of axi_dma_bridge.sv (Unified Router)
+// ============================================================================={

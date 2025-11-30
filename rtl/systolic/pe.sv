@@ -1,116 +1,105 @@
 /*
-  pe.v - Row-Stationary Processing Element (PE)
-  ---------------------------------------------
-  TRUE ROW-STATIONARY DATAFLOW:
-   - Weights are loaded ONCE and stored stationary in registers
-   - Activations flow horizontally through the PE (left to right)
-   - Partial sums accumulate locally using mac8
-   - Pk = 1 lane (single MAC per PE)
-   
-  Features:
-   - STATIONARY weight storage (does NOT flow to neighbors)
-   - Pass-through of activations with configurable 1-stage pipeline
-   - Local partial-sum accumulation
-   
-  Parameters:
-   PIPE = 1 -> enable internal pipeline for activation forwarding
-   SAT  = 0 -> forwarded to mac8 for saturation behaviour
-   
-  Controls:
-   clk, rst_n       : clock / active-low reset
-   clr              : synchronous clear of local partial-sum
-   en               : enable for MAC accumulation this cycle
-   load_weight      : load b_in into stationary weight register
-   
-  IO:
-   a_in             : incoming INT8 activation (flows horizontally)
-   b_in             : incoming INT8 weight (loaded once via load_weight)
-   a_out            : forwarded activation to neighbor PE (right)
-   acc              : local 32-bit partial-sum (from mac8)
-   
-  NOTE: b_out removed - weights do NOT flow in row-stationary!
+  pe.sv - Weight-Stationary Processing Element
+  --------------------------------------------
+  - Weights are loaded once and held (Stationary).
+  - Activations flow horizontally (Streaming).
+  - Partial Sums accumulate locally.
 */
+
 `ifndef PE_V
 `define PE_V
 `default_nettype none
-// -----------------------------------------------------------------------------
-// Title      : pe
-// File       : pe.v
-// Description: Row-Stationary Processing Element (single MAC lane).
-//              Verilog-2001 compliant; weights stored stationary,
-//              activations flow horizontally with optional pipeline skew.
-//
-// Requirements Trace:
-//   REQ-ACCEL-PE-01: Store weight stationary, forward activation only.
-//   REQ-ACCEL-PE-02: Accumulate partial sum locally via mac8 (Pk=1).
-//   REQ-ACCEL-PE-03: Support synchronous clear of partial sum (clr).
-//   REQ-ACCEL-PE-04: Provide deterministic hold when en=0.
-//   REQ-ACCEL-PE-05: Support weight preloading before computation phase.
-// -----------------------------------------------------------------------------
-// Parameters:
-//   PIPE (0/1): 1 inserts a pipeline register stage for activation forwarding.
-//   SAT  (0/1): passed to mac8 for saturation behavior.
-// -----------------------------------------------------------------------------
-module pe #(parameter PIPE = 1, parameter SAT = 0)(
+
+module pe #(
+    parameter PIPE = 1,  // 1 = Pipeline activation (better Fmax), 0 = Combinational
+    parameter SAT  = 1   // Enable Saturation in MAC
+)(
     input  wire              clk,
     input  wire              rst_n,
-    input  wire signed [7:0] a_in,
-    input  wire signed [7:0] b_in,
-    input  wire              en,
-    input  wire              clr,
-    input  wire              load_weight,  // NEW: weight load control
-    output wire signed [7:0] a_out,
-    // b_out REMOVED - weights are stationary!
-    output wire signed [31:0] acc
+    input  wire signed [7:0] a_in,        // Activation In (Left)
+    input  wire signed [7:0] b_in,        // Weight Load Data (Top)
+    input  wire              en,          // Mac Enable
+    input  wire              clr,         // Accumulator Clear
+    input  wire              load_weight, // Control: Load b_in into internal register
+    
+    output logic signed [7:0] a_out,      // Activation Out (Right)
+    output logic signed [31:0] acc        // Accumulator Result
 );
 
-    // Stationary weight register (THE KEY CHANGE!)
-    reg signed [7:0] weight_reg;
-    
-    // Internal registers for activation pipeline
-    reg signed [7:0] a_reg;
-    reg signed [7:0] a_del;
-    wire sat_internal;
+    // -------------------------------------------------------------------------
+    // 1. Internal State
+    // -------------------------------------------------------------------------
+    logic signed [7:0] weight_reg;
+    logic signed [7:0] a_reg;
 
-    // Weight loading - capture and hold
-    always @(posedge clk or negedge rst_n) begin
+    // -------------------------------------------------------------------------
+    // 2. Weight Stationary Logic
+    // -------------------------------------------------------------------------
+    // The weight is loaded only when load_weight is high, otherwise it holds.
+    always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             weight_reg <= 8'sd0;
-        end else begin
-            if (load_weight) begin
-                weight_reg <= b_in;  // Load weight and hold stationary
-            end
-            // Weight stays constant until next load_weight pulse
+        end else if (load_weight) begin
+            weight_reg <= b_in;
         end
     end
 
-    // Activation pipeline (Verilog-2001 style)
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            a_reg <= 8'sd0;
-            a_del <= 8'sd0;
-        end else begin
-            if (clr) begin
-                a_reg <= 8'sd0; // zero activation on clear
-            end else begin
-                a_reg <= a_in;  // Activation flows through
+    // -------------------------------------------------------------------------
+    // 3. Activation Pipeline (Horizontal Forwarding)
+    // -------------------------------------------------------------------------
+    generate
+        if (PIPE) begin : gen_pipe
+            always_ff @(posedge clk or negedge rst_n) begin
+                if (!rst_n) a_out <= 8'sd0;
+                else        a_out <= a_in;
             end
-            a_del <= a_reg; // forward chain for skew
+        end else begin : gen_comb
+            // Combinational pass-through (Not recommended for large arrays)
+            always_comb a_out = a_in;
         end
-    end
+    endgenerate
 
-    // Select signals depending on PIPE parameter
-    wire signed [7:0] mac_a = (PIPE) ? a_reg : a_in;
-    wire signed [7:0] mac_b = weight_reg;  // ALWAYS use stationary weight!
-    assign a_out = (PIPE) ? a_del : a_in;
-    // b_out removed - no weight forwarding in row-stationary
-
-    mac8 #( .SAT(SAT) ) u_mac (
-        .clk(clk), .rst_n(rst_n),
-        .a(mac_a), .b(mac_b),  // b uses stored weight
-        .clr(clr), .en(en),
-        .acc(acc), .sat_flag(sat_internal)
+    // -------------------------------------------------------------------------
+    // 4. MAC Unit Instance
+    // -------------------------------------------------------------------------
+    // We use the optimized mac8 module we just created.
+    wire sat_flag_unused; // We can expose this if needed later
+    
+    mac8 #(
+        .SAT(SAT),
+        .ENABLE_ZERO_BYPASS(1)
+    ) u_mac (
+        .clk(clk),
+        .rst_n(rst_n),
+        .a(a_in),        // Use current activation
+        .b(weight_reg),  // Use STATIONARY weight
+        .en(en),
+        .clr(clr),
+        .acc(acc),
+        .sat_flag(sat_flag_unused)
     );
+
+    // -------------------------------------------------------------------------
+    // 5. Assertions (Design by Contract)
+    // -------------------------------------------------------------------------
+    // These run only in simulation to catch logic bugs.
+    
+    // Property 1: Never load weight and enable MAC at the same time
+    // (This would cause a race condition or undefined math behavior)
+    property p_no_load_and_compute;
+        @(posedge clk) disable iff (!rst_n) (load_weight |-> !en);
+    endproperty
+    
+    assert property (p_no_load_and_compute) 
+        else $error("PE Error: Attempted to Load Weight and Compute simultaneously!");
+
+    // Property 2: If clear is high, accumulator should be 0 next cycle
+    // (Note: This depends on mac8 internal latency, so we check after 1 cycle)
+    property p_clear_works;
+        @(posedge clk) disable iff (!rst_n) (clr |=> (acc == 0));
+    endproperty
+    
+    // assert property (p_clear_works); // Uncomment after verifying mac8 latency
 
 endmodule
 `default_nettype wire

@@ -1,17 +1,20 @@
 // =============================================================================
 // axi_dma_master.sv — AXI4 DMA Master Controller
 // =============================================================================
-// Replaces 115,200 baud UART (14.4 KB/s) with AXI4 DMA (400 MB/s @ 100 MHz)
+// Engineer's Note:
+// This module is the "Performance Engine" of the accelerator.
+// It replaces the slow UART interface (14.4 KB/s) with a high-speed AXI4 Master
+// capable of 400 MB/s (at 100 MHz, 32-bit).
 //
 // Performance Comparison:
 //   UART: 1.18 MB (MNIST FC1 weights) / 14.4 KB/s = 82 seconds
 //   AXI:  1.18 MB / 400 MB/s = 3 milliseconds (27,000× speedup)
 //
-// Features:
-//   - Burst transfers (up to 256 beats = 1 KB)
-//   - Outstanding transaction support (up to 4 concurrent)
-//   - Automatic address increment
-//   - Configurable data width (32/64/128-bit)
+// Key Features:
+//   - Burst transfers (up to 256 beats = 1 KB per burst)
+//   - Outstanding transaction support (pipelined address requests)
+//   - Automatic address incrementing
+//   - Clock gating for power efficiency
 // =============================================================================
 
 module axi_dma_master #(
@@ -67,8 +70,11 @@ module axi_dma_master #(
 );
 
     // =========================================================================
-    // Clock Gating Logic (saves ~150 mW when DMA idle)
+    // 1. Clock Gating Logic (Power Optimization)
     // =========================================================================
+    // Engineer's Note:
+    // DMA logic is only active during transfers. Gating the clock saves significant
+    // dynamic power (~150mW estimated).
     wire dma_clk_en, clk_gated;
     assign dma_clk_en = start | busy | m_axi_arvalid | m_axi_rvalid;
     
@@ -121,8 +127,12 @@ module axi_dma_master #(
     reg [3:0]                transaction_id;
 
     // =========================================================================
-    // Burst Calculation
+    // 2. Burst Calculation Logic
     // =========================================================================
+    // Engineer's Note:
+    // AXI4 bursts cannot cross 4KB boundaries.
+    // TODO: Add 4KB boundary check here. Currently assumes aligned transfers.
+    // 'this_burst_len' is 0-indexed (0 = 1 beat, 255 = 256 beats).
     wire [31:0] max_burst_bytes = MAX_BURST_LEN * BYTES_PER_BEAT;
     wire [31:0] this_burst_bytes = (bytes_remaining > max_burst_bytes) 
                                     ? max_burst_bytes 
@@ -137,7 +147,7 @@ module axi_dma_master #(
     assign bytes_transferred = bytes_xferred;
 
     // =========================================================================
-    // FSM Sequential Logic
+    // 3. FSM Sequential Logic
     // =========================================================================
     always_ff @(posedge clk_gated or negedge rst_n) begin
         if (!rst_n) begin
@@ -168,18 +178,21 @@ module axi_dma_master #(
                 end
 
                 ADDR_PHASE: begin
+                    // Issue Address Request (AR)
                     if (m_axi_arvalid && m_axi_arready) begin
                         beats_received <= '0;
                     end
                 end
 
                 DATA_PHASE: begin
+                    // Receive Data (R)
                     if (m_axi_rvalid && m_axi_rready) begin
                         beats_received <= beats_received + 1;
                         curr_dst_addr <= curr_dst_addr + BYTES_PER_BEAT;
                         bytes_xferred <= bytes_xferred + BYTES_PER_BEAT;
 
                         if (m_axi_rlast) begin
+                            // End of burst: Update source address for next burst
                             curr_src_addr <= curr_src_addr + ((burst_len + 1) * BYTES_PER_BEAT);
                             bytes_remaining <= bytes_remaining - ((burst_len + 1) * BYTES_PER_BEAT);
                             transaction_id <= transaction_id + 1;
@@ -195,7 +208,7 @@ module axi_dma_master #(
     end
 
     // =========================================================================
-    // FSM Combinational Logic (Next State)
+    // 4. FSM Combinational Logic (Next State)
     // =========================================================================
     always_comb begin
         next_state = state;
@@ -222,7 +235,7 @@ module axi_dma_master #(
                     if (bytes_remaining <= ((burst_len + 1) * BYTES_PER_BEAT)) begin
                         next_state = DONE_STATE;
                     end else begin
-                        next_state = CALC_BURST;
+                        next_state = CALC_BURST; // More data to transfer
                     end
                 end
             end
