@@ -1,0 +1,71 @@
+# =============================================================================
+# Makefile.accel_top — Cocotb Testbench for accel_top
+# =============================================================================
+# Usage:
+#   make -f Makefile.accel_top              # Run all tests
+#   make -f Makefile.accel_top TESTCASE=test_reset  # Run specific test
+# =============================================================================
+
+# Simulator selection (verilator or icarus)
+SIM ?= verilator
+
+# Top-level module
+TOPLEVEL = accel_top
+TOPLEVEL_LANG = verilog
+
+# Python test module
+MODULE = test_accel_top
+
+# RTL directories
+RTL_TOP     = ../../rtl/top
+RTL_BUF     = ../../rtl/buffer
+RTL_CTRL    = ../../rtl/control
+RTL_DMA     = ../../rtl/dma
+RTL_MAC     = ../../rtl/mac
+RTL_SYS     = ../../rtl/systolic
+RTL_HOST    = ../../rtl/host_iface
+RTL_MON     = ../../rtl/monitor
+RTL_META    = ../../rtl/meta
+
+# Source files
+VERILOG_SOURCES = \
+    $(RTL_TOP)/accel_top.sv \
+    $(RTL_HOST)/axi_lite_slave.sv \
+    $(RTL_HOST)/axi_dma_bridge.sv \
+    $(RTL_CTRL)/csr.sv \
+    $(RTL_CTRL)/bsr_scheduler.sv \
+    $(RTL_DMA)/act_dma.sv \
+    $(RTL_DMA)/bsr_dma.sv \
+    $(RTL_BUF)/act_buffer.sv \
+    $(RTL_BUF)/wgt_buffer.sv \
+    $(RTL_SYS)/systolic_array_sparse.sv \
+    $(RTL_SYS)/pe.sv \
+    $(RTL_META)/meta_decode.sv \
+    $(RTL_MON)/perf_monitor.sv
+
+# Verilator-specific flags
+ifeq ($(SIM),verilator)
+    EXTRA_ARGS += --trace --trace-structs
+    EXTRA_ARGS += -Wno-fatal -Wno-MULTIDRIVEN -Wno-BLKANDNBLK
+    EXTRA_ARGS += -DVERILATOR
+    COMPILE_ARGS += -CFLAGS "-std=c++14"
+endif
+
+# Icarus-specific flags
+ifeq ($(SIM),icarus)
+    EXTRA_ARGS += -DICARUS
+endif
+
+# Include paths
+EXTRA_ARGS += -I$(RTL_TOP) -I$(RTL_BUF) -I$(RTL_CTRL) -I$(RTL_DMA)
+EXTRA_ARGS += -I$(RTL_MAC) -I$(RTL_SYS) -I$(RTL_HOST) -I$(RTL_MON) -I$(RTL_META)
+
+# Cocotb makefile inclusion
+include $(shell cocotb-config --makefiles)/Makefile.sim
+
+# Clean target
+clean::
+	rm -rf __pycache__ sim_build results.xml
+	rm -rf *.vcd *.fst
+
+.PHONY: clean

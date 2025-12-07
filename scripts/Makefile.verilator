@@ -1,0 +1,196 @@
+# =============================================================================
+# Makefile.verilator — Verilator Build System for ACCEL-v1
+# =============================================================================
+# Usage:
+#   make -f Makefile.verilator lint          # Lint all RTL files
+#   make -f Makefile.verilator sim           # Build C++ testbench
+#   make -f Makefile.verilator coverage      # Build with coverage
+#   make -f Makefile.verilator clean         # Clean build artifacts
+#
+# Requirements:
+#   - Verilator 5.0+ (sudo apt install verilator)
+#   - C++17 compiler (g++/clang++)
+# =============================================================================
+
+# Verilator configuration
+VERILATOR = verilator
+VERILATOR_FLAGS = \
+    --sv \
+    --Wall \
+    --Wno-fatal \
+    --Wno-MULTIDRIVEN \
+    --Wno-BLKANDNBLK \
+    --trace \
+    -I$(RTL_DIR) \
+    -I$(RTL_DIR)/systolic \
+    -I$(RTL_DIR)/buffer \
+    -I$(RTL_DIR)/control \
+    -I$(RTL_DIR)/dma \
+    -I$(RTL_DIR)/host_iface \
+    -I$(RTL_DIR)/mac \
+    -I$(RTL_DIR)/meta \
+    -I$(RTL_DIR)/monitor \
+    -I$(RTL_DIR)/uart \
+    -I$(RTL_DIR)/top
+
+# Directories
+RTL_DIR = rtl
+TB_DIR = testbench
+BUILD_DIR = build/verilator
+OBJ_DIR = $(BUILD_DIR)/obj_dir
+
+# Top modules
+TOP_MODULE = accel_top
+TOP_FILE = $(RTL_DIR)/top/$(TOP_MODULE).sv
+
+# All RTL source files (exclude testbenches with tb_ prefix)
+RTL_SOURCES_ALL = \
+    $(wildcard $(RTL_DIR)/systolic/*.sv) \
+    $(wildcard $(RTL_DIR)/buffer/*.sv) \
+    $(wildcard $(RTL_DIR)/control/*.sv) \
+    $(wildcard $(RTL_DIR)/dma/*.sv) \
+    $(wildcard $(RTL_DIR)/host_iface/*.sv) \
+    $(wildcard $(RTL_DIR)/mac/*.sv) \
+    $(wildcard $(RTL_DIR)/meta/*.sv) \
+    $(wildcard $(RTL_DIR)/monitor/*.sv) \
+    $(wildcard $(RTL_DIR)/uart/*.sv)
+
+RTL_SOURCES = $(filter-out %tb_%.sv, $(RTL_SOURCES_ALL))
+
+# C++ testbench
+TB_SOURCES = $(TB_DIR)/verilator/tb_accel_top.cpp
+TB_MAIN = $(TB_DIR)/test_main.cpp
+TB_STRESS = $(TB_DIR)/integration/test_stress.cpp
+
+# Output executable
+SIM_EXE = $(BUILD_DIR)/Vaccel_top
+STRESS_EXE = $(BUILD_DIR)/Vaccel_top_stress
+
+# =============================================================================
+# Targets
+# =============================================================================
+
+.PHONY: all lint sim stress coverage run clean help
+
+all: lint
+
+help:
+	@echo "ACCEL-v1 Verilator Build Targets:"
+	@echo "  make lint      - Lint all RTL files (checks syntax/warnings)"
+	@echo "  make sim       - Build C++ simulation executable"
+	@echo "  make stress    - Build stress test executable (100 random matrices)"
+	@echo "  make coverage  - Build with line/toggle coverage"
+	@echo "  make run       - Run simulation (builds if needed)"
+	@echo "  make clean     - Remove build artifacts"
+	@echo ""
+	@echo "Verilator version: $(shell $(VERILATOR) --version)"
+
+# Lint: Check RTL for warnings/errors
+lint: $(RTL_SOURCES) $(TOP_FILE)
+	@echo "========================================"
+	@echo "Linting RTL files with Verilator..."
+	@echo "========================================"
+	$(VERILATOR) $(VERILATOR_FLAGS) --lint-only $(TOP_FILE) $(RTL_SOURCES)
+	@echo "✅ Lint complete - no errors"
+
+# Build simulation executable
+sim: $(SIM_EXE)
+
+$(SIM_EXE): $(RTL_SOURCES) $(TOP_FILE) $(TB_SOURCES)
+	@echo "========================================"
+	@echo "Building Verilator simulation..."
+	@echo "========================================"
+	@mkdir -p $(BUILD_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+	    --cc $(TOP_FILE) $(RTL_SOURCES) \
+	    --exe $(TB_SOURCES) \
+	    --Mdir $(OBJ_DIR) \
+	    -CFLAGS "-std=c++17 -O2" \
+	    -LDFLAGS "-pthread"
+	@echo "Compiling C++ testbench..."
+	$(MAKE) -C $(OBJ_DIR) -f V$(TOP_MODULE).mk
+	@cp $(OBJ_DIR)/V$(TOP_MODULE) $(SIM_EXE)
+	@echo "✅ Simulation built: $(SIM_EXE)"
+
+# Build stress test executable
+stress: $(STRESS_EXE)
+
+$(STRESS_EXE): $(RTL_SOURCES) $(TOP_FILE) $(TB_STRESS)
+	@echo "========================================"
+	@echo "Building stress test executable..."
+	@echo "========================================"
+	@mkdir -p $(BUILD_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+	    --cc $(TOP_FILE) $(RTL_SOURCES) \
+	    --exe $(TB_STRESS) \
+	    --Mdir $(OBJ_DIR)_stress \
+	    -CFLAGS "-std=c++17 -O2 -I$(TB_DIR)/integration" \
+	    -LDFLAGS "-pthread"
+	@echo "Compiling C++ stress test..."
+	$(MAKE) -C $(OBJ_DIR)_stress -f V$(TOP_MODULE).mk
+	@cp $(OBJ_DIR)_stress/V$(TOP_MODULE) $(STRESS_EXE)
+	@echo "✅ Stress test built: $(STRESS_EXE)"
+	@echo "Run with: $(STRESS_EXE)"
+
+# Build with coverage
+coverage: VERILATOR_FLAGS += --coverage --coverage-line --coverage-toggle
+coverage: $(SIM_EXE)
+	@echo "✅ Coverage-enabled build complete"
+	@echo "Run simulation, then use: verilator_coverage logs/*.dat --annotate coverage_html/"
+
+# Run simulation
+run: $(SIM_EXE)
+	@echo "========================================"
+	@echo "Running Verilator simulation..."
+	@echo "========================================"
+	$(SIM_EXE)
+	@echo "✅ Simulation complete"
+	@if [ -f $(BUILD_DIR)/trace.vcd ]; then \
+	    echo "Waveform saved: $(BUILD_DIR)/trace.vcd"; \
+	    echo "View with: gtkwave $(BUILD_DIR)/trace.vcd"; \
+	fi
+
+# Clean build artifacts
+clean:
+	@echo "Cleaning Verilator build artifacts..."
+	rm -rf $(BUILD_DIR)
+	@echo "✅ Clean complete"
+
+# =============================================================================
+# Specific Module Tests
+# =============================================================================
+
+# Test individual modules
+test-systolic:
+	$(VERILATOR) $(VERILATOR_FLAGS) --lint-only $(RTL_DIR)/systolic/systolic_array.sv
+
+test-scheduler:
+	$(VERILATOR) $(VERILATOR_FLAGS) --lint-only $(RTL_DIR)/control/scheduler.sv
+
+test-dma:
+	$(VERILATOR) $(VERILATOR_FLAGS) --lint-only $(RTL_DIR)/dma/axi_dma_master.sv
+
+# =============================================================================
+# Performance Metrics
+# =============================================================================
+
+# Count RTL lines of code
+loc:
+	@echo "RTL Lines of Code:"
+	@wc -l $(RTL_SOURCES) $(TOP_FILE) | tail -1
+
+# Show RTL file count
+files:
+	@echo "RTL Source Files:"
+	@echo "  Systolic:    $(words $(wildcard $(RTL_DIR)/systolic/*.sv))"
+	@echo "  Buffers:     $(words $(wildcard $(RTL_DIR)/buffer/*.sv))"
+	@echo "  Control:     $(words $(wildcard $(RTL_DIR)/control/*.sv))"
+	@echo "  DMA:         $(words $(wildcard $(RTL_DIR)/dma/*.sv))"
+	@echo "  Host I/F:    $(words $(wildcard $(RTL_DIR)/host_iface/*.sv))"
+	@echo "  MAC:         $(words $(wildcard $(RTL_DIR)/mac/*.sv))"
+	@echo "  Metadata:    $(words $(wildcard $(RTL_DIR)/meta/*.sv))"
+	@echo "  Monitor:     $(words $(wildcard $(RTL_DIR)/monitor/*.sv))"
+	@echo "  UART:        $(words $(wildcard $(RTL_DIR)/uart/*.sv))"
+	@echo "  Top:         $(words $(wildcard $(RTL_DIR)/top/*.sv))"
+	@echo "  ---"
+	@echo "  Total:       $(words $(RTL_SOURCES) $(TOP_FILE))"

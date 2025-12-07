@@ -1,0 +1,121 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.npz
+*.log
+
+# Verilog/SystemVerilog simulation
+*.vvp
+*.vcd
+*.fst
+*.ghw
+*.lxt
+*.lxt2
+*.vpd
+*.shm
+*.fsdb
+*.view
+
+# Build directories (all artifacts)
+build/
+sim_build/
+obj_dir/
+obj_dir_*/
+
+# Verilator output
+V*.cpp
+V*.h
+V*.mk
+*.dat
+
+# FPGA/EDA tools
+*.qpf
+*.qsf
+*.qws
+*.rpt
+*.summary
+*.done
+*.jdi
+*.pin
+*.sof
+*.pof
+*.bit
+*.bin
+*.mcs
+*.ltx
+*.dcp
+db/
+incremental_db/
+output_files/
+simulation/
+work/
+transcript
+vsim.wlf

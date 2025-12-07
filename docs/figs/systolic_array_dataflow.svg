@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Comprehensive systolic array dataflow diagram (2x2 example with timing) -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+  <style>
+    .pe { fill:#f4f6f8; stroke:#3b3f45; stroke-width:2; rx:8; } 
+    .pe-active { fill:#e8f4ff; stroke:#1f77b4; stroke-width:2; rx:8; }
+    .text { font-family: 'Segoe UI', Arial, sans-serif; font-size:11px; fill:#111; }
+    .title { font-family: 'Segoe UI', Arial, sans-serif; font-size:16px; font-weight:700; fill:#1f1f1f; }
+    .subtitle { font-family: 'Segoe UI', Arial, sans-serif; font-size:13px; font-weight:600; fill:#444; }
+    .label { font-weight:700; font-size:10px; }
+    .arrow { stroke:#1f77b4; stroke-width:2.5; fill:none; marker-end:url(#arrowhead); }
+    .weight-arrow { stroke:#ff7f0e; stroke-width:2.5; fill:none; marker-end:url(#weighthead); }
+    .data-box { fill:#fff; stroke:#666; stroke-width:1; rx:4; }
+    .timing-box { fill:#f9f9f9; stroke:#999; stroke-width:1; rx:6; }
+  </style>
+
+  <defs>
+    <marker id="arrowhead" markerWidth="12" markerHeight="8" refX="12" refY="4" orient="auto">
+      <polygon points="0 0, 12 4, 0 8" fill="#1f77b4"/>
+    </marker>
+    <marker id="weighthead" markerWidth="12" markerHeight="8" refX="12" refY="4" orient="auto">
+      <polygon points="0 0, 12 4, 0 8" fill="#ff7f0e"/>
+    </marker>
+  </defs>
+
+  <!-- Title and description -->
+  <text x="50" y="35" class="title">ACCEL-v1 Row-Stationary Systolic Array Dataflow</text>
+  <text x="50" y="55" class="subtitle">2×2 PE Array with Detailed Data Movement and Timing</text>
+
+  <!-- Main systolic array -->
+  <g transform="translate(300,100)">
+    <!-- PE grid with enhanced styling -->
+    <rect x="0" y="0" width="140" height="100" class="pe"/>
+    <rect x="160" y="0" width="140" height="100" class="pe-active"/>
+    <rect x="0" y="120" width="140" height="100" class="pe"/>
+    <rect x="160" y="120" width="140" height="100" class="pe-active"/>
+
+    <!-- PE labels and internal details -->
+    <text x="70" y="25" text-anchor="middle" class="subtitle">PE[0,0]</text>
+    <text x="230" y="25" text-anchor="middle" class="subtitle">PE[0,1]</text>
+    <text x="70" y="145" text-anchor="middle" class="subtitle">PE[1,0]</text>
+    <text x="230" y="145" text-anchor="middle" class="subtitle">PE[1,1]</text>
+
+    <!-- PE internal operations -->
+    <text x="70" y="45" text-anchor="middle" class="text">W: B[0,0]</text>
+    <text x="70" y="58" text-anchor="middle" class="text">MAC: acc+=a*w</text>
+    <text x="70" y="71" text-anchor="middle" class="text">P: ∑(A[0,k]*B[k,0])</text>
+
+    <text x="230" y="45" text-anchor="middle" class="text">W: B[0,1]</text>
+    <text x="230" y="58" text-anchor="middle" class="text">MAC: acc+=a*w</text>
+    <text x="230" y="71" text-anchor="middle" class="text">P: ∑(A[0,k]*B[k,1])</text>
+
+    <text x="70" y="165" text-anchor="middle" class="text">W: B[1,0]</text>
+    <text x="70" y="178" text-anchor="middle" class="text">MAC: acc+=a*w</text>
+    <text x="70" y="191" text-anchor="middle" class="text">P: ∑(A[1,k]*B[k,0])</text>
+
+    <text x="230" y="165" text-anchor="middle" class="text">W: B[1,1]</text>
+    <text x="230" y="178" text-anchor="middle" class="text">MAC: acc+=a*w</text>
+    <text x="230" y="191" text-anchor="middle" class="text">P: ∑(A[1,k]*B[k,1])</text>
+
+    <!-- Activation flow (horizontal) with data values -->
+    <path d="M -120 40 L 0 40" class="arrow" />
+    <path d="M 140 40 L 160 40" class="arrow" />
+    <path d="M 300 40 L 380 40" class="arrow" />
+    <path d="M -120 160 L 0 160" class="arrow" />
+    <path d="M 140 160 L 160 160" class="arrow" />
+    <path d="M 300 160 L 380 160" class="arrow" />
+    
+    <text x="-130" y="35" class="text" text-anchor="end">A[0,k] →</text>
+    <text x="-130" y="155" class="text" text-anchor="end">A[1,k] →</text>
+    <text x="390" y="35" class="text">→ out</text>
+    <text x="390" y="155" class="text">→ out</text>
+
+    <!-- Weight flow (vertical) with data values -->
+    <path d="M 70 -80 L 70 0" class="weight-arrow" />
+    <path d="M 230 -80 L 230 0" class="weight-arrow" />
+    <path d="M 70 100 L 70 120" class="weight-arrow" />
+    <path d="M 230 100 L 230 120" class="weight-arrow" />
+    
+    <text x="70" y="-90" class="text" text-anchor="middle">↓ B[k,0]</text>
+    <text x="230" y="-90" class="text" text-anchor="middle">↓ B[k,1]</text>
+
+    <!-- Partial sum accumulation arrows (internal) -->
+    <circle cx="70" cy="85" r="3" fill="#2ca02c"/>
+    <circle cx="230" cy="85" r="3" fill="#2ca02c"/>
+    <circle cx="70" cy="205" r="3" fill="#2ca02c"/>
+    <circle cx="230" cy="205" r="3" fill="#2ca02c"/>
+    <text x="70" y="95" class="text" text-anchor="middle" style="font-size:9px">ACC</text>
+  </g>
+
+  <!-- Data path timing diagram -->
+  <g transform="translate(50,350)">
+    <rect x="0" y="0" width="1100" height="180" class="timing-box"/>
+    <text x="20" y="25" class="subtitle">Timing Example (K=4 cycles)</text>
+    
+    <!-- Time steps -->
+    <text x="100" y="50" class="text">t=0</text>
+    <text x="250" y="50" class="text">t=1</text>
+    <text x="400" y="50" class="text">t=2</text>
+    <text x="550" y="50" class="text">t=3</text>
+    <text x="700" y="50" class="text">Result</text>
+
+    <!-- A values over time -->
+    <text x="20" y="75" class="text">A[0,k]:</text>
+    <rect x="80" y="60" width="50" height="20" class="data-box"/>
+    <text x="105" y="75" class="text" text-anchor="middle">A[0,0]</text>
+    <rect x="230" y="60" width="50" height="20" class="data-box"/>
+    <text x="255" y="75" class="text" text-anchor="middle">A[0,1]</text>
+    <rect x="380" y="60" width="50" height="20" class="data-box"/>
+    <text x="405" y="75" class="text" text-anchor="middle">A[0,2]</text>
+    <rect x="530" y="60" width="50" height="20" class="data-box"/>
+    <text x="555" y="75" class="text" text-anchor="middle">A[0,3]</text>
+
+    <!-- B values (stationary) -->
+    <text x="20" y="105" class="text">B[k,0]:</text>
+    <rect x="80" y="90" width="50" height="20" class="data-box" fill="#ffe0b3"/>
+    <text x="105" y="105" class="text" text-anchor="middle">B[0,0]</text>
+    <rect x="230" y="90" width="50" height="20" class="data-box" fill="#ffe0b3"/>
+    <text x="255" y="105" class="text" text-anchor="middle">B[1,0]</text>
+    <rect x="380" y="90" width="50" height="20" class="data-box" fill="#ffe0b3"/>
+    <text x="405" y="105" class="text" text-anchor="middle">B[2,0]</text>
+    <rect x="530" y="90" width="50" height="20" class="data-box" fill="#ffe0b3"/>
+    <text x="555" y="105" class="text" text-anchor="middle">B[3,0]</text>
+
+    <!-- Accumulation -->
+    <text x="20" y="135" class="text">PE[0,0]:</text>
+    <text x="80" y="135" class="text">0 + A[0,0]*B[0,0]</text>
+    <text x="230" y="135" class="text">+ A[0,1]*B[1,0]</text>
+    <text x="380" y="135" class="text">+ A[0,2]*B[2,0]</text>
+    <text x="530" y="135" class="text">+ A[0,3]*B[3,0]</text>
+    <rect x="680" y="120" width="80" height="20" class="data-box" fill="#d4edda"/>
+    <text x="720" y="135" class="text" text-anchor="middle">C[0,0] = ∑</text>
+
+    <text x="20" y="160" class="text">Key: Weights (orange) stay in PE; activations (white) flow through</text>
+  </g>
+
+  <!-- Legend and advantages -->
+  <g transform="translate(700,100)">
+    <rect x="0" y="0" width="400" height="220" fill="#f8f9fa" stroke="#dee2e6" rx="8"/>
+    <text x="20" y="25" class="subtitle">Row-Stationary Advantages</text>
+    
+    <text x="20" y="50" class="text">• Weights loaded once per tile, reused K times</text>
+    <text x="20" y="70" class="text">• Minimizes weight memory bandwidth</text>
+    <text x="20" y="90" class="text">• Optimal for CNN workloads (filter reuse)</text>
+    <text x="20" y="110" class="text">• Activations stream efficiently</text>
+    <text x="20" y="130" class="text">• Partial sums accumulate locally (no broadcasts)</text>
+    
+    <text x="20" y="160" class="subtitle">Data Types</text>
+    <text x="20" y="180" class="text">• Weights/Activations: INT8 (-128 to 127)</text>
+    <text x="20" y="200" class="text">• Accumulators: INT32 (prevent overflow)</text>
+  </g>
+
+  <!-- Matrix multiplication context -->
+  <g transform="translate(50,600)">
+    <rect x="0" y="0" width="1100" height="120" fill="#fff8dc" stroke="#d6b656" rx="8"/>
+    <text x="20" y="25" class="subtitle">Matrix Multiplication Context: C = A × B</text>
+    
+    <text x="20" y="50" class="text">Input A[2×4] streams horizontally (row-wise), Input B[4×2] loaded vertically (column-wise)</text>
+    <text x="20" y="70" class="text">For each output element C[i,j] = ∑(k=0 to K-1) A[i,k] * B[k,j]</text>
+    <text x="20" y="90" class="text">PE[i,j] computes C[i,j] by accumulating over K cycles, using stationary weight B[j] column</text>
+  </g>
+</svg>

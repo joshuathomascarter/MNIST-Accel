@@ -1,0 +1,11 @@
+{
+  "d_model": 128,
+  "d_head": 64,
+  "target_sparsity": 90.0,
+  "actual_sparsity": {
+    "Q": 89.84375,
+    "K": 89.84375,
+    "V": 89.84375
+  },
+  "block_size": 8
+}

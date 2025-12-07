@@ -1,0 +1,42 @@
+import numpy as np
+from pynq import Overlay
+from accel import Accelerator
+from memory import MemoryManager
+
+# 1. Load Bitstream
+overlay = Overlay("accel.bit")
+dma = overlay.axi_dma_0 # Adjust based on your Vivado block design
+
+# 2. Initialize Driver
+accel = Accelerator(overlay)
+mem = MemoryManager(dma)
+
+# 3. Load Data (You need to copy these .npy files to the board)
+# Load 100 test images and labels
+images = np.load("mnist_inputs.npy") 
+weights = np.load("fc1_weights.bsr") # Example for one layer
+
+# 4. Run Inference Loop
+print("Running MNIST Inference...")
+correct = 0
+for i in range(100):
+    # Write input to DDR
+    input_buf = mem.allocate(shape=(784,), dtype=np.int8)
+    input_buf[:] = images[i]
+    
+    # Configure Accelerator (Address, Size)
+    accel.set_weights(weights_addr)
+    accel.set_input(input_buf.physical_address)
+    
+    # Start
+    accel.start()
+    accel.wait_for_done()
+    
+    # Read Result (Assuming CSR readback for now)
+    result = accel.read_output_registers() 
+    prediction = np.argmax(result)
+    
+    if prediction == labels[i]:
+        correct += 1
+
+print(f"Accuracy: {correct}%")

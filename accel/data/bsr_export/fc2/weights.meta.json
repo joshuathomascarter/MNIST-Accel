@@ -1,0 +1,56 @@
+{
+  "layer_name": "fc2",
+  "shape": [
+    10,
+    128
+  ],
+  "padded_shape": [
+    16,
+    128
+  ],
+  "blocksize": [
+    8,
+    8
+  ],
+  "num_blocks": 23,
+  "num_block_rows": 2,
+  "num_block_cols": 16,
+  "density": 0.71875,
+  "sparsity_pct": 28.125,
+  "row_ptr": [
+    0,
+    16,
+    23
+  ],
+  "col_idx": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    0,
+    3,
+    5,
+    6,
+    10,
+    11,
+    14
+  ],
+  "tiles_per_row": [
+    16,
+    7
+  ],
+  "max_tiles_per_row": 16,
+  "avg_tiles_per_row": 11.5
+}

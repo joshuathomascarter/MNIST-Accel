@@ -1,0 +1,74 @@
+{
+  "model": "ACCEL-BSR MNIST",
+  "total_parameters": 1199648,
+  "total_blocks": 19640,
+  "nonzero_blocks": 1964,
+  "overall_block_density": 0.1,
+  "overall_block_sparsity_pct": 90.0,
+  "layers": [
+    {
+      "name": "conv1",
+      "original_shape": [
+        32,
+        1,
+        3,
+        3
+      ],
+      "blocksize": [
+        4,
+        4
+      ],
+      "num_blocks": 20,
+      "total_blocks": 24,
+      "density": 0.8333333333333334,
+      "sparsity_pct": 16.666666666666664
+    },
+    {
+      "name": "conv2",
+      "original_shape": [
+        64,
+        32,
+        3,
+        3
+      ],
+      "blocksize": [
+        4,
+        4
+      ],
+      "num_blocks": 345,
+      "total_blocks": 1152,
+      "density": 0.2994791666666667,
+      "sparsity_pct": 70.05208333333333
+    },
+    {
+      "name": "fc1",
+      "original_shape": [
+        128,
+        9216
+      ],
+      "blocksize": [
+        8,
+        8
+      ],
+      "num_blocks": 1576,
+      "total_blocks": 18432,
+      "density": 0.08550347222222222,
+      "sparsity_pct": 91.44965277777779
+    },
+    {
+      "name": "fc2",
+      "original_shape": [
+        10,
+        128
+      ],
+      "blocksize": [
+        8,
+        8
+      ],
+      "num_blocks": 23,
+      "total_blocks": 32,
+      "density": 0.71875,
+      "sparsity_pct": 28.125
+    }
+  ]
+}

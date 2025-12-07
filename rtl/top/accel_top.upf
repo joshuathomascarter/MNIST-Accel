@@ -1,0 +1,148 @@
+# ============================================================================
+# UPF (Unified Power Format) for Multi-Voltage Domain Design
+# Phase 4: Control @ 0.9V, Datapath @ 1.0V
+# ============================================================================
+# 
+# PURPOSE:
+# --------
+# Partition accelerator into two voltage domains to reduce dynamic power:
+#   - Control domain (0.9V): Scheduler, CSR, DMA, BSR scheduler
+#   - Datapath domain (1.0V): Systolic array, buffers, MAC units
+#
+# POWER SAVINGS:
+# --------------
+# Dynamic power ∝ CV²f
+# Control logic @ 0.9V vs 1.0V: (0.9/1.0)² = 81% → 19% savings
+# Control consumes ~500 mW @ 1.0V → ~100 mW savings
+#
+# IMPLEMENTATION:
+# ---------------
+# 1. Define power domains
+# 2. Create supply ports (VDD_CTRL, VDD_DATA)
+# 3. Insert level shifters at domain boundaries
+# 4. Define isolation strategy (retain during power-down)
+#
+# VERIFICATION REQUIREMENTS:
+# --------------------------
+# - Static timing analysis (STA) across voltage domains
+# - Functional simulation with UPF-aware simulator (Questa/VCS)
+# - Power analysis (Vivado Power Report with UPF)
+# - CDC (clock domain crossing) checks if clocks differ
+#
+# ============================================================================
+
+# Create top-level supply ports
+create_supply_port VDD_CTRL -domain TOP
+create_supply_port VDD_DATA -domain TOP
+create_supply_port VSS -domain TOP
+
+# Create supply nets
+create_supply_net VDD_CTRL -domain TOP
+create_supply_net VDD_DATA -domain TOP
+create_supply_net VSS -domain TOP
+
+# Connect supply ports to nets
+connect_supply_net VDD_CTRL -ports VDD_CTRL
+connect_supply_net VDD_DATA -ports VDD_DATA
+connect_supply_net VSS -ports VSS
+
+# ============================================================================
+# Define Power Domain 1: Control Logic @ 0.9V
+# ============================================================================
+create_power_domain PD_CTRL -include_scope
+update_power_domain PD_CTRL -primary_power_net VDD_CTRL -primary_ground_net VSS
+
+# Assign control modules to 0.9V domain
+set_scope u_scheduler
+update_power_domain PD_CTRL -elements .
+set_scope u_csr
+update_power_domain PD_CTRL -elements .
+set_scope u_axi_dma_master
+update_power_domain PD_CTRL -elements .
+set_scope u_bsr_scheduler
+update_power_domain PD_CTRL -elements .
+set_scope /
+
+# ============================================================================
+# Define Power Domain 2: Datapath @ 1.0V
+# ============================================================================
+create_power_domain PD_DATA -include_scope
+update_power_domain PD_DATA -primary_power_net VDD_DATA -primary_ground_net VSS
+
+# Assign datapath modules to 1.0V domain
+set_scope u_systolic_array
+update_power_domain PD_DATA -elements .
+set_scope u_act_buffer
+update_power_domain PD_DATA -elements .
+set_scope u_wgt_buffer
+update_power_domain PD_DATA -elements .
+set_scope /
+
+# ============================================================================
+# Level Shifter Strategy
+# ============================================================================
+# Control → Data transitions (0.9V → 1.0V): Need level shifters
+set_level_shifter LS_CTRL_TO_DATA -domain PD_CTRL -applies_to outputs \
+    -rule both -location parent
+
+# Data → Control transitions (1.0V → 0.9V): Need level shifters
+set_level_shifter LS_DATA_TO_CTRL -domain PD_DATA -applies_to outputs \
+    -rule both -location parent
+
+# Use Xilinx FPGA built-in level shifters (OLOGIC/ILOGIC with LVDS support)
+# For ASIC: Insert explicit level shifter cells (HDLSC09/HDLSC18)
+
+# ============================================================================
+# Isolation Strategy (optional - for future power gating)
+# ============================================================================
+# If control domain powers down, isolate outputs to prevent X propagation
+set_isolation ISO_CTRL -domain PD_CTRL -applies_to outputs \
+    -clamp_value 0 -location parent
+
+# If data domain powers down, isolate outputs
+set_isolation ISO_DATA -domain PD_DATA -applies_to outputs \
+    -clamp_value 0 -location parent
+
+# ============================================================================
+# Retention Strategy (optional - for future state retention)
+# ============================================================================
+# Define retention flops for critical state (e.g., CSR registers)
+# set_retention RET_CSR -domain PD_CTRL -retention_power_net VDD_CTRL
+
+# ============================================================================
+# Power State Table
+# ============================================================================
+# Define legal combinations of power domain states
+add_power_state PD_CTRL -state ACTIVE {-supply_expr {VDD_CTRL == 0.9 && VSS == 0.0}}
+add_power_state PD_CTRL -state OFF    {-supply_expr {VDD_CTRL == 0.0 && VSS == 0.0}}
+
+add_power_state PD_DATA -state ACTIVE {-supply_expr {VDD_DATA == 1.0 && VSS == 0.0}}
+add_power_state PD_DATA -state OFF    {-supply_expr {VDD_DATA == 0.0 && VSS == 0.0}}
+
+# ============================================================================
+# NOTES FOR IMPLEMENTATION
+# ============================================================================
+# 
+# 1. FPGA IMPLEMENTATION:
+#    - Use Vivado IP Integrator to create voltage rails
+#    - Assign IOSTANDARD attributes:
+#      * Control: set_property IOSTANDARD LVCMOS18 (0.9V ≈ 1.8V / 2)
+#      * Datapath: set_property IOSTANDARD LVCMOS33 (1.0V ≈ 3.3V / 3)
+#    - Level shifters auto-inserted by Vivado
+#
+# 2. ASIC IMPLEMENTATION:
+#    - Requires multi-VDD PDK (e.g., TSMC 28nm HPC+ with 0.9V/1.0V cells)
+#    - Insert manual level shifter cells at domain boundaries
+#    - Run Encounter/ICC2 with UPF flow
+#
+# 3. VERIFICATION:
+#    - UPF-aware simulation: vsim -upf accel_top.upf tb_top
+#    - STA with voltage derating: read_upf accel_top.upf; update_timing
+#    - Power analysis: read_upf accel_top.upf; report_power -verbose
+#
+# 4. EXPECTED POWER SAVINGS:
+#    - Control domain: ~500 mW @ 1.0V → ~405 mW @ 0.9V (95 mW savings)
+#    - Level shifters overhead: ~5 mW (negligible)
+#    - Net savings: ~90-100 mW
+#
+# ============================================================================
