@@ -59,14 +59,15 @@ module systolic_array #(
   parameter N_ROWS = 16,
   parameter N_COLS = 16,
   parameter PIPE   = 1,
-  parameter ENABLE_CLOCK_GATING = 1  // NEW: Enable per-row clock gating
+  parameter ENABLE_CLOCK_GATING = 1
 )(
   input  wire clk,
   input  wire rst_n,
   input  wire en,
   input  wire clr,
-  input  wire load_weight,  // NEW: weight loading control
-  input  wire [N_ROWS-1:0] row_en,  // NEW: per-row enable for fine-grained power control
+  input  wire load_weight,
+  input  wire [N_ROWS-1:0] row_en,
+  input  wire [N_ROWS*N_COLS-1:0] bypass_flat,  // ← ADD THIS: Per-PE bypass signal
   input  wire [N_ROWS*8-1:0] a_in_flat,
   input  wire [N_COLS*8-1:0] b_in_flat,
   output wire [N_ROWS*N_COLS*32-1:0] c_out_flat
@@ -90,6 +91,16 @@ module systolic_array #(
     // Unpack weights (No skew needed for broadcast weights in WS)
     for (ui = 0; ui < N_COLS; ui = ui + 1) begin : UNPACK_B
       assign b_in[ui] = b_in_flat[ui*8 +: 8];
+    end
+    
+    // NEW: Unpack bypass signals (Per-PE bypass for residual connections in ResNet)
+    for (ui = 0; ui < N_ROWS*N_COLS; ui = ui + 1) begin : UNPACK_BYPASS
+      integer r_idx, c_idx;
+      initial begin
+        r_idx = ui / N_COLS;
+        c_idx = ui % N_COLS;
+      end
+      assign bypass_mat[r_idx][c_idx] = bypass_flat[ui];
     end
 
     // Create Triangular Skew for Activations
@@ -183,6 +194,9 @@ module systolic_array #(
   
   // NEW: Forwarding nets for load_weight (Systolic Fanout Fix)
   wire load_weight_fwd [0:N_ROWS-1][0:N_COLS-1];
+  
+  // NEW: 2D bypass matrix for residual mode (ResNet support)
+  wire bypass_mat [0:N_ROWS-1][0:N_COLS-1];
 
   genvar r, c;
   generate
@@ -203,6 +217,7 @@ module systolic_array #(
           .rst_n(rst_n),
           .a_in(a_src), 
           .b_in(b_src),  // Weight broadcast (not forwarded from neighbor)
+          .bypass(bypass_mat[r][c]),  // NEW: Bypass signal for residual mode
           .en(en), 
           .clr(clr),
           .load_weight(load_weight_src),  // NEW: Chained load_weight

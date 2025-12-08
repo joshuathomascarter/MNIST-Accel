@@ -89,6 +89,7 @@ module scheduler #(
   output wire                 load_weight,    // NEW: weight loading control for weight-stationary
   output reg [MAX_TM-1:0]     en_mask_row,    // bit i = 1 -> row i valid
   output reg [MAX_TN-1:0]     en_mask_col,    // bit j = 1 -> col j valid
+  output reg [(MAX_TM*MAX_TN)-1:0] bypass_out, // NEW: Per-PE bypass signal for residual mode (ResNet)
 
   // -------- Status / perf --------
   output reg                  busy,
@@ -177,6 +178,10 @@ module scheduler #(
 
   // Perf counters
   reg [31:0] cycles_tile_r, stall_cycles_r;
+  
+  // NEW: Bypass control (for residual mode in ResNet layers)
+  // Set to 1 to enable bypass mode (residual addition instead of MAC)
+  reg bypass_mode;
 
   // ---------------------------------------------------------------------------
   // Pipeline register for load_weight to match 1-cycle SRAM latency
@@ -189,6 +194,13 @@ module scheduler #(
     else        load_weight_r <= load_weight_comb;
   end
   assign load_weight = load_weight_r;
+
+  // NEW: Initialize bypass_mode (can be extended to support instruction encoding)
+  always @(*) begin
+    // For now, bypass is disabled by default
+    // In future, this can be set by instruction bits or a control register
+    bypass_mode = 1'b0;  // Set to 1 to enable residual bypass mode
+  end
 
   // Outputs default
   always @(*) begin
@@ -409,6 +421,7 @@ module scheduler #(
     // Default outputs already zeroed above; we drive deltas per state.
     // k_idx mirrors k_ctr during STREAM_K.
     k_idx          = k_ctr;
+    bypass_out     = bypass_mode ? {(MAX_TM*MAX_TN){1'b1}} : {(MAX_TM*MAX_TN){1'b0}};  // NEW: All 1s if bypass_mode, else all 0s
 
     case (1'b1)  // ONE-HOT case statement
 

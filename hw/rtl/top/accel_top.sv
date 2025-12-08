@@ -199,6 +199,7 @@ module accel_top #(
     wire                    load_weight;
     wire                    pe_en;
     wire                    accum_en;
+    wire [(N_ROWS*N_COLS)-1:0] bypass_flat;  // NEW: Per-PE bypass signal for residual mode
 
     // Scheduler → Buffer Read
     wire                    wgt_rd_en;
@@ -586,7 +587,8 @@ module accel_top #(
         // Systolic Control
         .load_weight    (load_weight),
         .pe_en          (pe_en),
-        .accum_en       (accum_en)
+        .accum_en       (accum_en),
+        .bypass_out     (bypass_flat)  // NEW: Route bypass to systolic array
     );
 
     // -------------------------------------------------------------------------
@@ -624,6 +626,7 @@ module accel_top #(
         // Control
         .block_valid    (pe_en),
         .load_weight    (load_weight),
+        .bypass_flat    (bypass_flat),  // NEW: Route bypass signals
         // Data
         .a_in_flat      (act_rd_data),
         .b_in_flat      (wgt_rd_data),

@@ -52,7 +52,8 @@ module bsr_scheduler #(
   // Systolic Array Control
   output wire                 load_weight, // Latch weight into PE (Registered)
   output reg                  pe_en,       // Enable MAC (block_valid)
-  output reg                  accum_en     // Enable accumulation
+  output reg                  accum_en,    // Enable accumulation
+  output reg [(BLOCK_SIZE*BLOCK_SIZE)-1:0] bypass_out  // NEW: Per-PE bypass signal for residual mode
 );
 
   // ---------------------------------------------------------------------------
@@ -246,5 +247,13 @@ module bsr_scheduler #(
 
   // Always ready to accept metadata when requested
   assign meta_ready = 1'b1;
+
+  // NEW: Bypass signal control (disabled by default for now)
+  // Can be extended to support instruction-based control for ResNet residual layers
+  always @(*) begin
+    // For now, bypass is always disabled (all PEs use normal MAC mode)
+    // Set to all 1s to enable residual bypass mode for a tile
+    bypass_out = {(BLOCK_SIZE*BLOCK_SIZE){1'b0}};
+  end
 
 endmodule
