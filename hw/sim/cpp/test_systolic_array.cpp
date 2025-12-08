@@ -121,8 +121,8 @@ std::vector<uint8_t> pack_skewed_input(Matrix2D<uint8_t>& mat) {
 int main() {
     StackAllocator mem(1024 * 1024); // 1MB Heap
     
-    // 1. Create a 4x4 Matrix on the Stack Allocator
-    Matrix2D<uint8_t> input_matrix(mem, 4, 4);
+    // 1. Create a 16x16 Matrix on the Stack Allocator (Updated to match hardware)
+    Matrix2D<uint8_t> input_matrix(mem, 16, 16);
     input_matrix.fill_random();
     input_matrix.print("Input");
 
@@ -130,12 +130,13 @@ int main() {
     std::vector<uint8_t> stream = pack_skewed_input(input_matrix);
 
     // 3. Verify the Skew
+    // Total cycles = 16 cols + 16 rows skew = 32 cycles
     std::cout << "Skewed Stream (Cycle by Cycle):\n";
-    for(int t=0; t<8; t++) { // 4 cols + 4 rows skew = 8 cycles
+    for(int t=0; t<32; t++) { 
         std::cout << "Cycle " << t << ": ";
-        for(int r=0; r<4; r++) {
+        for(int r=0; r<16; r++) {
             // Print the byte for each row at this time step
-            int val = stream[t*4 + r];
+            int val = stream[t*16 + r];
             // A bubble exists if the row hasn't started yet (t < r means Cycle is before Row's start time)
             if(t < r) std::cout << ". ";  // This row hasn't started yet - definite bubble
             else std::cout << val << " ";  // Row has started - print actual value (even if 0)
