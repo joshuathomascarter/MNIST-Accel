@@ -86,304 +86,88 @@
 #include <cstdint>
 #include <vector>
 #include <string>
-#include <chrono>
 #include <random>
-#include <functional>
 #include <iostream>
+#include <chrono>
+#include <algorithm>
 
-// ANSI color codes for pretty output
-#define COLOR_GREEN  "\033[32m"
-#define COLOR_RED    "\033[31m"
-#define COLOR_YELLOW "\033[33m"
-#define COLOR_BLUE   "\033[34m"
-#define COLOR_RESET  "\033[0m"
-#define COLOR_BOLD   "\033[1m"
-
-// Test result macros
-#define TEST_PASS(name) \
-    std::cout << COLOR_GREEN << "✓ " << COLOR_RESET << (name) << std::endl
-
-#define TEST_FAIL(name, reason) \
-    std::cout << COLOR_RED << "✗ " << COLOR_RESET << (name) \
-              << " - " << COLOR_YELLOW << (reason) << COLOR_RESET << std::endl
-
-#define SECTION(name) \
-    std::cout << std::endl << COLOR_BOLD << COLOR_BLUE << "=== " << (name) \
-              << " ===" << COLOR_RESET << std::endl
-
+namespace resnet_accel {
 namespace test {
 
-// =============================================================================
-// Random Number Generation
-// =============================================================================
-
-/**
- * Seeded random number generator for reproducible tests
- */
 class RandomGenerator {
 public:
-    explicit RandomGenerator(uint32_t seed = 42) : rng_(seed) {}
-    
-    int8_t next_int8() {
-        std::uniform_int_distribution<int> dist(-128, 127);
-        return static_cast<int8_t>(dist(rng_));
+    explicit RandomGenerator(std::uint32_t seed = 42) : gen_(seed) {}
+
+    std::int8_t next_int8() {
+        return static_cast<std::int8_t>(dist_int8_(gen_));
     }
-    
-    int32_t next_int32() {
-        std::uniform_int_distribution<int32_t> dist(INT32_MIN, INT32_MAX);
-        return dist(rng_);
+
+    std::vector<std::int8_t> int8_vector(std::size_t size) {
+        std::vector<std::int8_t> vec(size);
+        for (auto& v : vec) v = next_int8();
+        return vec;
     }
-    
-    float next_float(float min = -1.0f, float max = 1.0f) {
-        std::uniform_real_distribution<float> dist(min, max);
-        return dist(rng_);
+
+    std::vector<std::int8_t> int8_matrix(std::size_t rows, std::size_t cols) {
+        return int8_vector(rows * cols);
     }
-    
-    bool next_bool(float probability = 0.5f) {
-        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-        return dist(rng_) < probability;
-    }
-    
-    void reset(uint32_t seed) { rng_.seed(seed); }
-    
+
 private:
-    std::mt19937 rng_;
+    std::mt19937 gen_;
+    std::uniform_int_distribution<int> dist_int8_{-128, 127};
 };
 
-/**
- * Generate random INT8 vector
- * 
- * TODO: Implement using RandomGenerator
- */
-std::vector<int8_t> random_int8_vector(size_t size, uint32_t seed = 42);
+template<typename T>
+bool compare_exact(const std::vector<T>& expected, const std::vector<T>& actual) {
+    if (expected.size() != actual.size()) return false;
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        if (expected[i] != actual[i]) return false;
+    }
+    return true;
+}
 
-/**
- * Generate random INT8 matrix (row-major)
- */
-std::vector<int8_t> random_int8_matrix(size_t rows, size_t cols, uint32_t seed = 42);
+template<typename T>
+void print_mismatch(const std::vector<T>& expected, const std::vector<T>& actual, std::size_t max_show = 5) {
+    std::size_t count = 0;
+    for (std::size_t i = 0; i < std::min(expected.size(), actual.size()) && count < max_show; ++i) {
+        if (expected[i] != actual[i]) {
+            std::cout << "  [" << i << "] expected " << static_cast<int>(expected[i])
+                     << ", got " << static_cast<int>(actual[i]) << "\n";
+            ++count;
+        }
+    }
+}
 
-/**
- * Generate random sparse matrix with specified block sparsity
- * 
- * @param rows      Number of rows
- * @param cols      Number of columns  
- * @param sparsity  Fraction of 16x16 blocks that are zero (0.0 to 1.0)
- * @param seed      Random seed
- */
-std::vector<int8_t> random_sparse_matrix(size_t rows, size_t cols, 
-                                          float sparsity, uint32_t seed = 42);
-
-// =============================================================================
-// Edge Case Test Vectors
-// =============================================================================
-
-/**
- * All zeros
- */
-std::vector<int8_t> zeros_int8(size_t size);
-std::vector<int32_t> zeros_int32(size_t size);
-
-/**
- * All ones
- */
-std::vector<int8_t> ones_int8(size_t size);
-
-/**
- * Maximum positive values (127)
- */
-std::vector<int8_t> max_int8(size_t size);
-
-/**
- * Minimum negative values (-128)
- */
-std::vector<int8_t> min_int8(size_t size);
-
-/**
- * Alternating max/min for overflow testing
- */
-std::vector<int8_t> alternating_int8(size_t size);
-
-/**
- * 16x16 identity matrix (for testing matmul)
- */
-std::vector<int8_t> identity_block_16x16();
-
-/**
- * Counting pattern (0, 1, 2, ... 127, -128, -127, ...)
- */
-std::vector<int8_t> counting_int8(size_t size);
-
-// =============================================================================
-// Comparison Functions
-// =============================================================================
-
-/**
- * Bit-exact comparison
- * 
- * @return true if all elements match exactly
- */
-bool compare_exact(const std::vector<int8_t>& expected, 
-                   const std::vector<int8_t>& actual);
-
-bool compare_exact(const std::vector<int32_t>& expected,
-                   const std::vector<int32_t>& actual);
-
-bool compare_exact(const int8_t* expected, const int8_t* actual, size_t size);
-bool compare_exact(const int32_t* expected, const int32_t* actual, size_t size);
-
-/**
- * Tolerant comparison for floating point or quantized values
- * 
- * @param tolerance  Maximum allowed difference per element
- */
-bool compare_tolerant(const std::vector<int8_t>& expected,
-                      const std::vector<int8_t>& actual,
-                      int tolerance);
-
-bool compare_tolerant(const std::vector<float>& expected,
-                      const std::vector<float>& actual,
-                      float tolerance);
-
-/**
- * Count number of mismatches
- */
-size_t count_mismatches(const std::vector<int8_t>& expected,
-                        const std::vector<int8_t>& actual);
-
-size_t count_mismatches(const std::vector<int32_t>& expected,
-                        const std::vector<int32_t>& actual);
-
-/**
- * Compute statistics on differences
- */
-struct DiffStats {
-    size_t count;
-    double mean_error;
-    double max_error;
-    size_t max_error_index;
-};
-
-DiffStats compute_diff_stats(const std::vector<int8_t>& expected,
-                             const std::vector<int8_t>& actual);
-
-DiffStats compute_diff_stats(const std::vector<int32_t>& expected,
-                             const std::vector<int32_t>& actual);
-
-/**
- * Print first N mismatches with index and values
- */
-void print_mismatches(const std::vector<int8_t>& expected,
-                      const std::vector<int8_t>& actual,
-                      size_t max_to_print = 10);
-
-void print_mismatches(const std::vector<int32_t>& expected,
-                      const std::vector<int32_t>& actual,
-                      size_t max_to_print = 10);
-
-/**
- * Print matrix for debugging (small matrices only)
- */
-void print_matrix_int8(const int8_t* data, size_t rows, size_t cols,
-                       const std::string& name = "");
-
-void print_matrix_int32(const int32_t* data, size_t rows, size_t cols,
-                        const std::string& name = "");
-
-// =============================================================================
-// Timing Utilities
-// =============================================================================
-
-/**
- * High-resolution timer
- */
 class Timer {
 public:
     void start() {
         start_ = std::chrono::high_resolution_clock::now();
     }
-    
+
     void stop() {
         stop_ = std::chrono::high_resolution_clock::now();
     }
-    
-    double elapsed_us() const {
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop_ - start_);
+
+    double elapsed_ms() const {
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop_ - start_);
         return static_cast<double>(duration.count());
     }
-    
-    double elapsed_ms() const {
-        return elapsed_us() / 1000.0;
-    }
-    
-    double elapsed_s() const {
-        return elapsed_us() / 1000000.0;
-    }
-    
+
 private:
     std::chrono::high_resolution_clock::time_point start_, stop_;
 };
 
-/**
- * Benchmark a function over multiple iterations
- * 
- * @param func        Function to benchmark (void() signature)
- * @param iterations  Number of iterations
- * @return            Average time per iteration in microseconds
- */
-double benchmark(std::function<void()> func, size_t iterations = 1000);
+// Test result macros
+#define TEST_PASS(name) \
+    std::cout << "✓ " << (name) << " PASSED" << std::endl
 
-/**
- * Print benchmark results
- */
-void print_benchmark(const std::string& name, double time_us, size_t ops = 0);
+#define TEST_FAIL(name, reason) \
+    std::cout << "✗ " << (name) << " FAILED: " << (reason) << std::endl
 
-// =============================================================================
-// File I/O Utilities
-// =============================================================================
-
-/**
- * Load binary file into vector
- */
-std::vector<uint8_t> load_binary_file(const std::string& path);
-
-/**
- * Save vector to binary file
- */
-void save_binary_file(const std::string& path, const std::vector<uint8_t>& data);
-
-/**
- * Load numpy .npy file (simplified, INT8 only)
- * 
- * TODO: Implement basic .npy parsing
- */
-std::vector<int8_t> load_npy_int8(const std::string& path);
-std::vector<int32_t> load_npy_int32(const std::string& path);
-std::vector<float> load_npy_float(const std::string& path);
-
-// =============================================================================
-// Test Suite Runner
-// =============================================================================
-
-/**
- * Simple test case structure
- */
-struct TestCase {
-    std::string name;
-    std::function<bool()> test_func;
-};
-
-/**
- * Run a suite of tests and report results
- */
-struct TestResults {
-    size_t total;
-    size_t passed;
-    size_t failed;
-};
-
-TestResults run_test_suite(const std::string& suite_name,
-                           const std::vector<TestCase>& tests);
+#define SECTION(name) \
+    std::cout << std::endl << "=== " << (name) << " ===" << std::endl
 
 } // namespace test
+} // namespace resnet_accel
 
 #endif // TEST_UTILS_HPP
