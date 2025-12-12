@@ -5,7 +5,7 @@
 //   Transfers BSR-format sparse matrix data from DDR memory into on-chip BRAMs:
 //   - row_ptr[]: cumulative block counts (sparse metadata)
 //   - col_idx[]: column position of each block
-//   - blocks[]:  8×8 INT8 weight blocks
+//   - blocks[]:  16×16 INT8 weight blocks (256 bytes each)
 //
 // Features:
 //   - AXI4 Master Interface (Read Only)
@@ -20,7 +20,7 @@
 //   Header (3 words): [Num_Rows, Num_Cols, Total_Blocks]
 //   Row_Ptr Array:    [row_ptr[0], row_ptr[1], ... row_ptr[M]]
 //   Col_Idx Array:    [col_idx[0], col_idx[1], ... col_idx[Total_Blocks]]
-//   Weight Blocks:    [Block0 (64B), Block1 (64B), ... ]
+//   Weight Blocks:    [Block0 (256B), Block1 (256B), ... ]  // 16×16 INT8 blocks
 //
 // =============================================================================
 
