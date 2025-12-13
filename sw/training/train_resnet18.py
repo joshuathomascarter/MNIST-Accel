@@ -9,7 +9,7 @@ This script provides training/fine-tuning for ResNet-18 with:
 
 REPLACES: sw/MNIST CNN/train_mnist.py
 
-Hardware Target: 16×16 Systolic Array with BSR sparse format
+Hardware Target: 14×14 Systolic Array with BSR sparse format (PYNQ-Z2)
 
 Author: ACCEL-v1 Team
 Date: December 2024
@@ -77,7 +77,7 @@ def create_block_sparse_mask(
     
     Args:
         weight: Weight tensor [out_features, in_features] or [out_ch, in_ch, kH, kW]
-        block_size: (block_h, block_w) - use (16, 16) for FC, (4, 4) for conv
+        block_size: (block_h, block_w) - use (14, 14) for FC, (4, 4) for conv
         sparsity: Target sparsity (0-1), e.g., 0.90 for 90% zeros
         seed: Random seed
     
@@ -149,7 +149,7 @@ class BlockSparsePruner:
         self,
         model: nn.Module,
         sparsity: float = 0.90,
-        fc_block_size: Tuple[int, int] = (16, 16),
+        fc_block_size: Tuple[int, int] = (14, 14),
         conv_block_size: Tuple[int, int] = (4, 4),
     ):
         self.model = model
@@ -423,7 +423,7 @@ def train_resnet18(
         pruner = BlockSparsePruner(
             model,
             sparsity=sparsity,
-            fc_block_size=(16, 16),  # Match 16×16 systolic array
+            fc_block_size=(14, 14),  # Match 14×14 systolic array (PYNQ-Z2)
             conv_block_size=(4, 4),
         )
         pruner.apply_masks()  # Apply initial masks

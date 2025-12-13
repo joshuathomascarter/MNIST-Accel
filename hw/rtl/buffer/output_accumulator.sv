@@ -5,7 +5,7 @@
 // Features:
 //  - Accumulates partial sums from systolic array across K-tiles
 //  - Double-buffered: one bank accumulates while other drains to DMA
-//  - Supports 16x16 output tiles (256 × 32-bit accumulators per bank)
+//  - Supports 14x14 output tiles (196 × 32-bit accumulators per bank)
 //  - ReLU activation option before output
 //  - Quantization/scaling support for INT8 output
 //
@@ -19,8 +19,8 @@
 `default_nettype none
 
 module output_accumulator #(
-    parameter N_ROWS    = 16,           // Systolic array rows
-    parameter N_COLS    = 16,           // Systolic array columns  
+    parameter N_ROWS    = 14,           // Systolic array rows
+    parameter N_COLS    = 14,           // Systolic array columns  
     parameter ACC_W     = 32,           // Accumulator width (INT32)
     parameter OUT_W     = 8,            // Output data width (INT8)
     parameter ADDR_W    = 10            // Address width for output buffer
@@ -61,7 +61,7 @@ module output_accumulator #(
     // =========================================================================
     // Local Parameters
     // =========================================================================
-    localparam NUM_ACCS = N_ROWS * N_COLS;  // 256 for 16x16
+    localparam NUM_ACCS = N_ROWS * N_COLS;  // 196 for 14x14
     localparam BANK_DEPTH = NUM_ACCS;       // One entry per output element
     
     // =========================================================================

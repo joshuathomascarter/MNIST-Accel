@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**16×16 Weight-Stationary Systolic Array with BSR Sparse Acceleration**
+**14×14 Weight-Stationary Systolic Array with BSR Sparse Acceleration (PYNQ-Z2)**
 
 [![GitHub stars](https://img.shields.io/github/stars/joshuathomascarter/ResNet-Accel?style=social)](https://github.com/joshuathomascarter/ResNet-Accel)
 ![RTL](https://img.shields.io/badge/RTL-SystemVerilog-blue)
@@ -15,9 +15,9 @@
 
 ## 🎯 What is This?
 
-A complete **sparse neural network accelerator** built from scratch, targeting the Xilinx Zynq-7020 FPGA. Implements:
+A complete **sparse neural network accelerator** built from scratch, targeting the Xilinx Zynq-7020 FPGA (PYNQ-Z2). Implements:
 
-- **16×16 systolic array** with weight-stationary dataflow
+- **14×14 systolic array** with weight-stationary dataflow (196 DSPs, fits Z7020)
 - **BSR (Block Sparse Row) format** that skips zero weight blocks entirely
 - **INT8 quantization** pipeline with per-channel scaling
 - **Full software stack**: Python training/export + C++ host driver
@@ -26,10 +26,10 @@ A complete **sparse neural network accelerator** built from scratch, targeting t
                     Activations (INT8)
                     ↓   ↓   ↓   ↓
               ┌───────────────────────┐
-  Weights ───▶│   16×16 Systolic      │───▶ Outputs (INT32)
-  (BSR INT8)  │   Array (256 MACs)    │     
-              │   @ 200 MHz           │     Throughput: 51 GOPS (dense)
-              └───────────────────────┘                 170 GOPS (70% sparse)
+  Weights ───▶│   14×14 Systolic      │───▶ Outputs (INT32)
+  (BSR INT8)  │   Array (196 MACs)    │     
+              │   @ 200 MHz           │     Throughput: 39 GOPS (dense)
+              └───────────────────────┘                 131 GOPS (70% sparse)
 ```
 
 > **Status**: RTL complete, simulation verified, Python tooling functional.  
@@ -41,7 +41,7 @@ A complete **sparse neural network accelerator** built from scratch, targeting t
 
 | Metric | Target | Notes |
 |--------|--------|-------|
-| **Peak Throughput** | 6.4 GOPS | 16×16 array @ 200 MHz (256 MACs/cycle) |
+| **Peak Throughput** | 39.2 GOPS | 14×14 array @ 200 MHz (196 MACs/cycle) |
 | **Sparse Speedup** | 6–9× | vs dense baseline at 70–90% sparsity |
 | **Memory Reduction** | 9.7× | BSR format (118 KB vs 1.15 MB for MNIST FC1) |
 | **INT8 Accuracy** | 98.7% | MNIST CNN, 0.2% degradation from FP32 |
@@ -54,7 +54,7 @@ A complete **sparse neural network accelerator** built from scratch, targeting t
 ## Key Features
 
 ### Hardware (RTL)
-- **16×16 Weight-Stationary Systolic Array** — INT8×INT8→INT32 accumulation
+- **14×14 Weight-Stationary Systolic Array** — INT8×INT8→INT32 accumulation (fits Z7020 DSPs)
 - **BSR Sparse Format** — Block Sparse Row with hardware scheduler, skips zero blocks
 - **Dual-Clock Architecture** — 50 MHz control / 200 MHz datapath
 - **AXI4 Interface** — DMA for weights/activations, AXI-Lite for CSR control
@@ -99,15 +99,15 @@ A complete **sparse neural network accelerator** built from scratch, targeting t
 │           └──────────┬───────┴────────────────┘                      │
 │                      ▼                                               │
 │  ┌────────────────────────────────────────────────────────┐          │
-│  │         Systolic Array (16x16 PEs @ 200 MHz)           │          │
+│  │         Systolic Array (14x14 PEs @ 200 MHz)           │          │
 │  │  ┌───────┐  ┌───────┐     INT8 x INT8 -> INT32         │          │
 │  │  │ PE    │──│ PE    │     Weight-Stationary Dataflow   │          │
 │  │  │ MACx1 │  │ MACx1 │     Zero-Value Bypass            │          │
 │  │  └───┬───┘  └───┬───┘                                  │          │
 │  │      │          │                                      │          │
 │  │  ┌───▼───┐  ┌───▼───┐                                  │          │
-│  │  │ PE    │──│ PE    │     256 MACs/cycle @ 200 MHz     │          │
-│  │  │ MACx1 │  │ MACx1 │     = 51.2 billion ops/s         │          │
+│  │  │ PE    │──│ PE    │     196 MACs/cycle @ 200 MHz     │          │
+│  │  │ MACx1 │  │ MACx1 │     = 39.2 billion ops/s         │          │
 │  │  └───────┘  └───────┘                                  │          │
 │  └────────────────────────────────────────────────────────┘          │
 │                      │                                               │
@@ -127,8 +127,8 @@ A complete **sparse neural network accelerator** built from scratch, targeting t
 | Feature | Choice | Rationale |
 |---------|--------|-----------|
 | **Data Type** | INT8 | 4x memory reduction, 0.2% accuracy loss |
-| **Array Size** | 16x16 PEs | Balanced area/performance for FPGA |
-| **Block Size** | 16x16 | Matches systolic array tiling, sparse-friendly |
+| **Array Size** | 14x14 PEs | Fits Z7020's 220 DSPs (196 DSPs = 89%) |
+| **Block Size** | 14x14 | Matches systolic array tiling, sparse-friendly |
 | **Dataflow** | Row-Stationary | Minimizes weight reloads, maximizes reuse |
 | **Clock Gating** | BUFGCE primitives | 810 mW savings (40.5% power reduction) |
 | **Sparse Format** | BSR | Hardware-friendly, sequential memory access |
@@ -250,9 +250,9 @@ end
 
 **Lesson**: AXI-Stream backpressure handling must be rigorous. Always gate state transitions on handshake signals.
 
-### 2. 8x8 to 16x16 Systolic Scaling
+### 2. 8x8 to 14x14 Systolic Scaling
 
-**Problem**: Scaling the systolic array from 8x8 (64 PEs) to 16x16 (256 PEs) broke the BSR scheduler. Tests showed correct first-row computation, then all zeros.
+**Problem**: Scaling the systolic array from 8x8 (64 PEs) to 14x14 (196 PEs) required updating the BSR scheduler. Tests showed correct first-row computation, then all zeros.
 
 **Root Cause**: The scheduler had hardcoded `3'd7` for the 8-cycle weight load count:
 ```systemverilog
@@ -260,13 +260,13 @@ if (load_cnt == 3'd7) begin  // Hardcoded for 8x8!
     state <= COMPUTE;
 end
 ```
-With 16x16 blocks, we needed 16 cycles, but `load_cnt` was only 3 bits wide.
+With 14x14 blocks, we needed 14 cycles, but `load_cnt` was only 3 bits wide.
 
 **Fix**: Parameterized the scheduler with `BLOCK_SIZE`:
 ```systemverilog
-parameter BLOCK_SIZE = 16;
+parameter BLOCK_SIZE = 14;
 localparam LOAD_CNT_MAX = BLOCK_SIZE - 1;
-logic [4:0] load_cnt;  // 5 bits for 16
+logic [4:0] load_cnt;  // 5 bits for 14
 
 if (load_cnt == LOAD_CNT_MAX[4:0]) begin
     state <= COMPUTE;

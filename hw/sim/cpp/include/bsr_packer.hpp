@@ -2,13 +2,13 @@
  * @file bsr_packer.hpp
  * @brief Block Sparse Row format packing for sparse matrix acceleration
  * 
- * Converts dense int8 matrices to BSR format with 16×16 blocks optimized
- * for the systolic array hardware. Only non-zero blocks are stored.
+ * Converts dense int8 matrices to BSR format with 14×14 blocks optimized
+ * for the systolic array hardware (PYNQ-Z2 DSP budget). Only non-zero blocks are stored.
  * 
- * Example: 64×64 matrix → 4×4 block grid
+ * Example: 56×56 matrix → 4×4 block grid
  *   row_ptr = [0, 2, 3, 5]      // Cumulative block counts
  *   col_idx = [0, 2, 1, 0, 2]   // Column of each non-zero block
- *   data = [B0_256bytes, B2_256bytes, ...]  // Block values
+ *   data = [B0_196bytes, B2_196bytes, ...]  // Block values
  * 
  * Usage:
  *   auto bsr = pack_to_bsr(dense, 64, 64);
@@ -39,10 +39,10 @@ namespace resnet_accel {
 // Constants
 //==============================================================================
 
-/// BSR block size - matches systolic array dimensions (16x16)
-constexpr std::size_t BSR_BLOCK_SIZE = 16;
+/// BSR block size - matches systolic array dimensions (14x14 for PYNQ-Z2)
+constexpr std::size_t BSR_BLOCK_SIZE = 14;
 
-/// Number of elements per block (16 * 16 = 256)
+/// Number of elements per block (14 * 14 = 196)
 constexpr std::size_t BSR_BLOCK_ELEMENTS = BSR_BLOCK_SIZE * BSR_BLOCK_SIZE;
 
 /// Maximum supported matrix dimension (64K blocks = 1M rows/cols)
@@ -56,7 +56,7 @@ constexpr std::size_t BSR_MAX_DIMENSION = 65536 * BSR_BLOCK_SIZE;
  * @brief BSR Matrix representation
  * 
  * Stores a sparse matrix in Block Sparse Row format where only non-zero
- * 16x16 blocks are stored.
+ * 14x14 blocks are stored.
  * 
  * Memory layout:
  * - data: Block values stored contiguously, row-major within each block
@@ -119,8 +119,8 @@ struct ValidationResult {
  * 
  * @param block_start Pointer to start of block in dense matrix
  * @param block_row_stride Stride between rows in dense matrix (= cols)
- * @param block_rows Actual rows in this block (may be < 16 at edge)
- * @param block_cols Actual cols in this block (may be < 16 at edge)
+ * @param block_rows Actual rows in this block (may be < 14 at edge)
+ * @param block_cols Actual cols in this block (may be < 14 at edge)
  * @return true if block contains any non-zero element, false if all zeros
  */
 inline bool is_block_nonzero(const std::int8_t* block_start, 
@@ -631,14 +631,14 @@ inline bool test_serialization() {
 }
 
 /**
- * @brief Test round-trip for non-aligned dimensions (17x17)
+ * @brief Test round-trip for non-aligned dimensions (15x15)
  */
 inline bool test_non_aligned() {
-    std::vector<std::int8_t> dense(17 * 17, 0);
+    std::vector<std::int8_t> dense(15 * 15, 0);
     dense[0] = 1;
-    dense[16 * 17 + 16] = 2;
+    dense[14 * 15 + 14] = 2;
     
-    return verify_round_trip(dense.data(), 17, 17);
+    return verify_round_trip(dense.data(), 15, 15);
 }
 
 /**

@@ -58,8 +58,8 @@ class BenchmarkResult:
         if self.accel_time_ms > 0:
             self.gops = effective_ops / (self.accel_time_ms * 1e6)
         
-        # Peak GOPS (16x16 array @ 100MHz = 25.6 GOPS)
-        self.gops_peak = 16 * 16 * 2 * clock_freq_mhz / 1000.0
+        # Peak GOPS (14x14 array @ 100MHz = 39.2 GOPS)
+        self.gops_peak = 14 * 14 * 2 * clock_freq_mhz / 1000.0
         
         # Speedup
         if self.accel_time_ms > 0:
@@ -72,7 +72,7 @@ class BenchmarkResult:
 
 
 def generate_sparse_weights(K: int, N: int, sparsity: float, 
-                           block_size: int = 16) -> Tuple[BSRMatrix, np.ndarray]:
+                           block_size: int = 14) -> Tuple[BSRMatrix, np.ndarray]:
     """
     Generate sparse weight matrix with given sparsity.
     
@@ -203,17 +203,17 @@ def run_benchmark_suite(simulation: bool = True) -> List[BenchmarkResult]:
     # Test configurations
     configs = [
         # (M, N, K, sparsity)
-        (16, 16, 16, 0.0),    # Dense baseline
-        (16, 16, 16, 0.5),    # 50% sparse
-        (16, 16, 16, 0.75),   # 75% sparse
-        (16, 16, 16, 0.9),    # 90% sparse
+        (14, 14, 14, 0.0),    # Dense baseline
+        (14, 14, 14, 0.5),    # 50% sparse
+        (14, 14, 14, 0.75),   # 75% sparse
+        (14, 14, 14, 0.9),    # 90% sparse
         
-        (32, 32, 32, 0.5),    # Larger matrix
-        (64, 64, 64, 0.5),
-        (128, 128, 128, 0.5),
+        (28, 28, 28, 0.5),    # Larger matrix
+        (56, 56, 56, 0.5),
+        (112, 112, 112, 0.5),
         
-        (64, 64, 64, 0.0),    # Dense larger
-        (64, 64, 64, 0.9),    # Highly sparse
+        (56, 56, 56, 0.0),    # Dense larger
+        (56, 56, 56, 0.9),    # Highly sparse
     ]
     
     print("\nRunning benchmarks...")
@@ -271,8 +271,8 @@ def main():
     print("ACCEL-v1 Sparse Matrix Multiply Benchmarks")
     print("=" * 80)
     print(f"Mode: {'Real Hardware' if args.real else 'Simulation'}")
-    print(f"Array: 16x16 INT8 Systolic")
-    print(f"Expected Peak: 25.6 GOPS @ 100MHz")
+    print(f"Array: 14x14 INT8 Systolic (PYNQ-Z2)")
+    print(f"Expected Peak: 39.2 GOPS @ 100MHz")
     
     results = run_benchmark_suite(simulation=not args.real)
     print_summary(results)

@@ -1,14 +1,14 @@
 """
-ResNet-18 BSR Export for ACCEL-v1 Hardware (16×16 Systolic Array)
+ResNet-18 BSR Export for ACCEL-v1 Hardware (14×14 Systolic Array)
 =================================================================
 
 Exports ResNet-18 weights in hardware-ready BSR format with metadata.
-Uses 16×16 block size to match the systolic array dimensions.
+Uses 14×14 block size to match the systolic array dimensions (PYNQ-Z2).
 
 REPLACES: sw/training/export_bsr.py (MNIST version)
 
 Output format:
-- *.bsr: Binary payload with non-zero 16×16 blocks
+- *.bsr: Binary payload with non-zero 14×14 blocks
 - *.meta.json: Metadata with row_ptr, col_idx, block dimensions
 
 ResNet-18 Layer Structure:
@@ -38,9 +38,9 @@ import struct
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 OUTPUT_DIR = os.path.join(ROOT, "data", "resnet18_bsr_export")
 
-# Block size for 16×16 systolic array
-BLOCK_SIZE = 16
-BLOCK_ELEMENTS = BLOCK_SIZE * BLOCK_SIZE  # 256 elements per block
+# Block size for 14×14 systolic array (PYNQ-Z2 DSP budget)
+BLOCK_SIZE = 14
+BLOCK_ELEMENTS = BLOCK_SIZE * BLOCK_SIZE  # 196 elements per block
 
 
 # ----------------------------
@@ -50,7 +50,7 @@ def get_resnet18_layer_config() -> Dict[str, Dict]:
     """
     Return block size and sparsity configuration for each ResNet-18 layer.
     
-    FC layers use 16×16 blocks (matches systolic array)
+    FC layers use 14×14 blocks (matches systolic array for PYNQ-Z2)
     Conv layers use 4×4 blocks (better for 3×3 kernels)
     
     Returns:
@@ -87,8 +87,8 @@ def get_resnet18_layer_config() -> Dict[str, Dict]:
         "layer4.1.conv1": {"block_size": (4, 4), "min_keep": 0.10, "type": "conv"},
         "layer4.1.conv2": {"block_size": (4, 4), "min_keep": 0.10, "type": "conv"},
         
-        # Final FC layer (512 → num_classes) - Uses 16×16 blocks!
-        "fc": {"block_size": (16, 16), "min_keep": 0.05, "type": "linear"},
+        # Final FC layer (512 → num_classes) - Uses 14×14 blocks!
+        "fc": {"block_size": (14, 14), "min_keep": 0.05, "type": "linear"},
     }
 
 
@@ -103,8 +103,8 @@ def build_bsr_from_dense(weight: np.ndarray, block_h: int, block_w: int,
 
     Args:
         weight: Dense weight matrix [out_features, in_features] or flattened conv
-        block_h: Block height (16 for FC layers)
-        block_w: Block width (16 for FC layers)
+        block_h: Block height (14 for FC layers)
+        block_w: Block width (14 for FC layers)
         threshold: Blocks with L2 norm below this are considered zero
 
     Returns:
@@ -293,7 +293,7 @@ def export_resnet18_weights(
     export_stats = {}
     
     print("=" * 70)
-    print("Exporting ResNet-18 Weights for 16×16 Systolic Array")
+    print("Exporting ResNet-18 Weights for 14×14 Systolic Array")
     print("=" * 70)
     
     for name, module in model.named_modules():
@@ -301,7 +301,7 @@ def export_resnet18_weights(
             weight = module.weight.detach().cpu().numpy()
             
             # Get configuration for this layer
-            config = layer_configs.get(name, {"block_size": (16, 16), "min_keep": 0.10, "type": "linear"})
+            config = layer_configs.get(name, {"block_size": (14, 14), "min_keep": 0.10, "type": "linear"})
             block_h, block_w = config["block_size"]
             
             # Reshape for BSR packing
@@ -357,7 +357,7 @@ def export_resnet18_weights(
     summary = {
         "model": "resnet18",
         "num_classes": num_classes,
-        "systolic_array_size": [16, 16],
+        "systolic_array_size": [14, 14],
         "layers": export_stats,
     }
     

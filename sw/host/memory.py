@@ -103,12 +103,12 @@ class BSRMatrix:
         [values:  nnz_blocks x bs x bs bytes]
     """
     
-    def __init__(self, block_size: int = 16):
+    def __init__(self, block_size: int = 14):
         """
         Initialize BSR matrix container.
         
         Args:
-            block_size: Block dimension (16 for 16x16 systolic array)
+            block_size: Block dimension (14 for 14x14 systolic array, PYNQ-Z2)
         """
         self.block_size = block_size
         self.row_ptr = None
@@ -118,7 +118,7 @@ class BSRMatrix:
         self.nnz_blocks = 0
         
     @classmethod
-    def from_dense(cls, dense: np.ndarray, block_size: int = 16, 
+    def from_dense(cls, dense: np.ndarray, block_size: int = 14, 
                    threshold: float = 0.0) -> 'BSRMatrix':
         """
         Convert dense matrix to BSR format.
@@ -257,13 +257,13 @@ def align_size(size: int, alignment: int = 64) -> int:
     return ((size + alignment - 1) // alignment) * alignment
 
 
-def pack_activations(activations: np.ndarray, block_size: int = 16) -> bytes:
+def pack_activations(activations: np.ndarray, block_size: int = 14) -> bytes:
     """
     Pack dense activations for DMA transfer.
     
     Args:
         activations: Activation matrix (M, K) INT8
-        block_size: Block size for padding
+        block_size: Block size for padding (14 for 14×14 systolic array)
         
     Returns:
         Packed bytes
@@ -295,13 +295,13 @@ if __name__ == "__main__":
     dense = np.random.randint(-128, 127, (K, N), dtype=np.int8)
     
     # Make it sparse (set some blocks to zero)
-    for i in range(0, K, 16):
-        for j in range(0, N, 16):
+    for i in range(0, K, 14):
+        for j in range(0, N, 14):
             if np.random.random() > 0.5:  # 50% sparsity
-                dense[i:i+16, j:j+16] = 0
+                dense[i:i+14, j:j+14] = 0
     
     # Convert to BSR
-    bsr = BSRMatrix.from_dense(dense, block_size=16)
+    bsr = BSRMatrix.from_dense(dense, block_size=14)
     print(f"BSR: {bsr}")
     print(f"  Memory size: {bsr.memory_size()} bytes")
     print(f"  Dense size:  {K * N} bytes")

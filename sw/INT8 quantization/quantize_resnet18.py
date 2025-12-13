@@ -1,10 +1,10 @@
 """
-INT8 Per-Channel Quantization for ResNet-18 on ACCEL-v1 (16×16 Systolic Array)
+INT8 Per-Channel Quantization for ResNet-18 on ACCEL-v1 (14×14 Systolic Array)
 ===============================================================================
 
 Extends basic quantization to support:
 - Per-channel quantization for better accuracy
-- Block-sparse weight handling with 16×16 blocks
+- Block-sparse weight handling with 14×14 blocks (PYNQ-Z2)
 - Full ResNet-18 model quantization
 - Calibration using representative data
 
@@ -32,8 +32,8 @@ from collections import OrderedDict
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 OUT_DIR = os.path.join(ROOT, "data", "resnet18_int8")
 
-# Tiling parameters for 16×16 systolic array
-Tm, Tn, Tk = 16, 16, 16  # Tile dimensions matching systolic array
+# Tiling parameters for 14×14 systolic array (PYNQ-Z2)
+Tm, Tn, Tk = 14, 14, 14  # Tile dimensions matching systolic array
 NUM_CALIBRATION_BATCHES = 32
 
 
@@ -304,7 +304,7 @@ def quantize_resnet18(
     global_meta = {
         "model": "resnet18",
         "tile_size": [Tm, Tn, Tk],
-        "systolic_array_size": [16, 16],
+        "systolic_array_size": [14, 14],
         "layers": list(quant_metadata.keys()),
         "num_layers": len(quant_metadata),
     }

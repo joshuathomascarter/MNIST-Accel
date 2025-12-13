@@ -1,6 +1,6 @@
 # ACCEL-v1 Architecture Deep Dive
 
-> Technical specification for the 16×16 weight-stationary systolic array accelerator
+> Technical specification for the 14×14 weight-stationary systolic array accelerator (PYNQ-Z2)
 
 ---
 
@@ -25,15 +25,15 @@ For C = A × B where:
 - B: Weights [K × N]
 - C: Output [M × N]
 
-The 16×16 array computes a 16×16 output tile per pass:
+The 14×14 array computes a 14×14 output tile per pass:
 
 ```
                     B (weights)
-                    [K × 16]
+                    [K × 14]
                     ↓ ↓ ↓ ↓
               ┌─────────────────┐
    A          │                 │
-[16 × K] ───▶ │  16×16 Systolic │ ───▶ C [16 × 16]
+[14 × K] ───▶ │  14×14 Systolic │ ───▶ C [14 × 14]
               │     Array       │
               │                 │
               └─────────────────┘
@@ -44,35 +44,35 @@ The 16×16 array computes a 16×16 output tile per pass:
 For M=512, N=512, K=512:
 
 ```
-Total tiles = ceil(512/16) × ceil(512/16) × ceil(512/16)
-            = 32 × 32 × 32
-            = 32,768 tile operations
+Total tiles = ceil(512/14) × ceil(512/14) × ceil(512/14)
+            = 37 × 37 × 37
+            = 50,653 tile operations
 
-Each tile: 16 × 16 × 16 = 4,096 MACs
-Total MACs: 32,768 × 4,096 = 134,217,728 (matches M×N×K)
+Each tile: 14 × 14 × 14 = 2,744 MACs
+Total MACs: 50,653 × 2,744 = ~139M (matches M×N×K)
 ```
 
 ### Tile Loop Structure
 
 ```python
 # Pseudocode for tiled GEMM
-for m_tile in range(0, M, 16):      # Output row tiles
-    for n_tile in range(0, N, 16):  # Output col tiles
+for m_tile in range(0, M, 14):      # Output row tiles
+    for n_tile in range(0, N, 14):  # Output col tiles
         # Initialize accumulator tile to 0
-        acc[16][16] = 0
+        acc[14][14] = 0
         
-        for k_tile in range(0, K, 16):  # Reduction tiles
-            # Load 16×16 weight block
-            load_weights(B[k_tile:k_tile+16, n_tile:n_tile+16])
+        for k_tile in range(0, K, 14):  # Reduction tiles
+            # Load 14×14 weight block
+            load_weights(B[k_tile:k_tile+14, n_tile:n_tile+14])
             
-            # Stream 16×16 activation block
-            stream_activations(A[m_tile:m_tile+16, k_tile:k_tile+16])
+            # Stream 14×14 activation block
+            stream_activations(A[m_tile:m_tile+14, k_tile:k_tile+14])
             
             # Accumulate partial products
             acc += systolic_compute()
         
         # Store output tile
-        store_output(C[m_tile:m_tile+16, n_tile:n_tile+16], acc)
+        store_output(C[m_tile:m_tile+14, n_tile:n_tile+14], acc)
 ```
 
 ---
@@ -325,11 +325,11 @@ Total: ~465 MB/s << Z7020's 4.2 GB/s DDR bandwidth ✓
 
 | Buffer | Size | Purpose |
 |--------|------|---------|
-| Weight BRAM | 16 KB | Current 16×16 block + next (double buffer) |
-| Activation BRAM | 8 KB | 16 rows × 256 cols × 2 banks |
-| Output BRAM | 4 KB | 16×16 × INT32 × 2 banks |
+| Weight BRAM | 12 KB | Current 14×14 block + next (double buffer) |
+| Activation BRAM | 7 KB | 14 rows × 256 cols × 2 banks |
+| Output BRAM | 3 KB | 14×14 × INT32 × 2 banks |
 | BSR Metadata | 2 KB | row_ptr, col_idx for current layer |
-| **Total** | **30 KB** | Fits in Z7020's 560 KB BRAM ✓ |
+| **Total** | **24 KB** | Fits in Z7020's 560 KB BRAM ✓ |
 
 ---
 
@@ -374,12 +374,12 @@ Comparison:
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
-| Array size | 16×16 (or 14×14 for Z7020) | 256 PEs |
-| Block size | 16×16 | Matches array |
+| Array size | 14×14 | 196 PEs (fits Z7020's 220 DSPs) |
+| Block size | 14×14 | Matches array |
 | Data type | INT8 weights, INT8 activations | INT32 accumulators |
 | Clock | 200 MHz target | 5ns period |
-| Throughput | 51.2 GOPS (dense) | 256 MACs × 200 MHz |
-| Throughput | 170 GOPS (70% sparse) | 3.3× speedup |
-| Latency | 7.3 ms/image | ResNet-18 @ 70% sparse |
-| Power | ~1.9 W | Z7020 @ 200 MHz |
-| Efficiency | 90 GOPS/W | At 70% sparsity |
+| Throughput | 39.2 GOPS (dense) | 196 MACs × 200 MHz |
+| Throughput | 131 GOPS (70% sparse) | 3.3× speedup |
+| Latency | ~9.5 ms/image | ResNet-18 @ 70% sparse |
+| Power | ~1.7 W | Z7020 @ 200 MHz |
+| Efficiency | 77 GOPS/W | At 70% sparsity |

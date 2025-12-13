@@ -13,8 +13,8 @@
 `default_nettype none
 
 module accel_top #(
-    parameter N_ROWS     = 16,          // Systolic array rows (16x16)
-    parameter N_COLS     = 16,          // Systolic array columns
+    parameter N_ROWS     = 14,          // Systolic array rows (14x14 for PYNQ-Z2)
+    parameter N_COLS     = 14,          // Systolic array columns
     parameter DATA_W     = 8,           // INT8 data width
     parameter ACC_W      = 32,          // Accumulator width
     parameter AXI_ADDR_W = 32,          // AXI address width

@@ -94,7 +94,7 @@ class AccelDriver:
     """
     
     # Hardware constants
-    BLOCK_SIZE = 16  # 16x16 systolic array
+    BLOCK_SIZE = 14  # 14x14 systolic array (PYNQ-Z2)
     DATA_WIDTH = 8   # INT8
     ACC_WIDTH = 32   # INT32 accumulators
     
@@ -136,7 +136,7 @@ class AccelDriver:
         self.activations_loaded = False
         
     def configure_dimensions(self, M: int, N: int, K: int, 
-                            Tm: int = 16, Tn: int = 16, Tk: int = 16):
+                            Tm: int = 14, Tn: int = 14, Tk: int = 14):
         """
         Configure matrix dimensions.
         
@@ -144,7 +144,7 @@ class AccelDriver:
             M: Output rows (activation rows)
             N: Output columns (weight columns)
             K: Reduction dimension (shared)
-            Tm, Tn, Tk: Tile sizes (default 16 for 16x16 array)
+            Tm, Tn, Tk: Tile sizes (default 14 for 14x14 array)
         """
         self.M = M
         self.N = N
@@ -158,7 +158,7 @@ class AccelDriver:
         self._csr_write(CSRMap.TILES_Tk, Tk)
         
     def load_sparse_weights(self, row_ptr: np.ndarray, col_idx: np.ndarray, 
-                           weights: np.ndarray, block_size: int = 16) -> int:
+                           weights: np.ndarray, block_size: int = 14) -> int:
         """
         Load sparse weights in BSR format.
         
@@ -171,7 +171,7 @@ class AccelDriver:
             row_ptr: Row pointer array (num_block_rows + 1,)
             col_idx: Column index array (num_blocks,)
             weights: Weight blocks (num_blocks, block_size, block_size) INT8
-            block_size: Block dimension (must match hardware, default 16)
+            block_size: Block dimension (must match hardware, default 14)
             
         Returns:
             Total bytes transferred

@@ -23,8 +23,8 @@ def create_mlp_weights(input_dim: int = 512, output_dim: int = 128, sparsity_pct
     weights = np.random.randn(output_dim, input_dim).astype(np.float32) * scale
     bias = np.zeros(output_dim, dtype=np.float32)
 
-    # Apply block sparsity (16×16 blocks for systolic array)
-    mask = create_sparse_mask(weights.shape, sparsity_pct, block_size=16, seed=seed)
+    # Apply block sparsity (14×14 blocks for systolic array, PYNQ-Z2)
+    mask = create_sparse_mask(weights.shape, sparsity_pct, block_size=14, seed=seed)
     weights_sparse = weights * mask
 
     actual_sparsity = 100.0 * (1.0 - np.count_nonzero(weights_sparse) / weights_sparse.size)
@@ -37,7 +37,7 @@ def create_mlp_weights(input_dim: int = 512, output_dim: int = 128, sparsity_pct
             "output_dim": output_dim,
             "target_sparsity": sparsity_pct,
             "actual_sparsity": float(actual_sparsity),
-            "block_size": 16,  # Changed from 8 to match 16×16 systolic array
+            "block_size": 14,  # Changed to match 14×14 systolic array (PYNQ-Z2)
         },
     }
 
@@ -70,8 +70,8 @@ def export_mlp_fixtures(output_dir: str = None):
         filepath = os.path.join(output_dir, name)
         np.savez_compressed(filepath, weights=mlp["weights"], bias=mlp["bias"])
 
-        # Build and save BSR with 16×16 blocks
-        bsr = build_bsr_from_dense(mlp["weights"], 16, 16)
+        # Build and save BSR with 14×14 blocks
+        bsr = build_bsr_from_dense(mlp["weights"], 14, 14)
 
         bsr_dir = os.path.join(output_dir, f"fc_{cfg['input_dim']}_{cfg['output_dim']}")
         os.makedirs(bsr_dir, exist_ok=True)

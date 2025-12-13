@@ -21,7 +21,7 @@ module bsr_scheduler #(
   parameter N_W  = 10,
   parameter K_W  = 12,
   parameter ADDR_W = 32,
-  parameter BLOCK_SIZE = 16  // Block dimension (8x8 or 16x16)
+  parameter BLOCK_SIZE = 14  // Block dimension (14x14 for PYNQ-Z2)
 )(
   input  wire                 clk,
   input  wire                 rst_n,
@@ -195,7 +195,7 @@ module bsr_scheduler #(
           wgt_rd_en <= 1;
           // Address = (Block Index * Block Size) + Row Offset
           // We use a shift if BLOCK_SIZE is power of 2, or multiply otherwise.
-          // For 16x16, this is (blk_ptr << 4).
+          // For 14x14, this is (blk_ptr * 14) which needs multiplier.
           wgt_addr <= (blk_ptr * BLOCK_SIZE) + load_cnt; 
           
           // FIX: Pipeline load_weight to match SRAM latency

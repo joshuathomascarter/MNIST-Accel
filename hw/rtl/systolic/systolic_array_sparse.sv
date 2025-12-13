@@ -6,13 +6,13 @@
 //  - Supports "Skip-Zero" logic via block_valid
 //  - Gates clock/enable when block_valid is low
 //  - Correctly chains activation pipeline (a_out -> a_in)
-//  - Parameterized for 8x8 or 16x16 configurations
+//  - Parameterized for 8x8 or 14x14 configurations
 //------------------------------------------------------------------------------
 `default_nettype none
 
 module systolic_array_sparse #(
-  parameter N_ROWS = 16,  // Default to 16x16 for higher throughput
-  parameter N_COLS = 16,
+  parameter N_ROWS = 14,  // Default to 14x14 for PYNQ-Z2 DSP budget
+  parameter N_COLS = 14,
   parameter DATA_W = 8,
   parameter ACC_W  = 32
 )(

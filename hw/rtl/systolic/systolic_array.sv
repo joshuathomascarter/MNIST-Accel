@@ -56,8 +56,8 @@
 //   load_weight: when high, PEs capture b_in and store stationary
 // -----------------------------------------------------------------------------
 module systolic_array #(
-  parameter N_ROWS = 16,
-  parameter N_COLS = 16,
+  parameter N_ROWS = 14,
+  parameter N_COLS = 14,
   parameter PIPE   = 1,
   parameter ENABLE_CLOCK_GATING = 1
 )(

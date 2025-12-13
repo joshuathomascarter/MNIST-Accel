@@ -31,7 +31,7 @@
 // ----------------------------------------------------------------------------
 
 module act_buffer #(
-    parameter TM = 16,          // Activation vector width (16 elements for 16×16 systolic array)
+    parameter TM = 14,          // Activation vector width (14 elements for 14×14 systolic array)
     parameter ADDR_WIDTH = 7,     // Address width (for tile depth, 2^7=128)
     parameter ENABLE_CLOCK_GATING = 1  // Enable clock gating (saves 85 mW)
 )(
