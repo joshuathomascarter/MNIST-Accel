@@ -114,8 +114,9 @@ void AcceleratorDriver::initialize() {
     (void)status;  // Suppress unused warning in release builds
     
     // Create performance counter interface
-    // 100 MHz clock, 196 PEs (14x14 systolic array)
-    constexpr double CLOCK_MHZ = 100.0;
+    // 200 MHz clock (Zynq-7020 target), 196 PEs (14x14 systolic array)
+    // Peak throughput: 2 * 196 * 200M = 78.4 GOPS
+    constexpr double CLOCK_MHZ = 200.0;
     constexpr std::size_t NUM_PES = csr::SYSTOLIC_ROWS * csr::SYSTOLIC_COLS;
     perf_ = std::make_unique<PerformanceCounters>(axi_.get(), CLOCK_MHZ, NUM_PES);
     

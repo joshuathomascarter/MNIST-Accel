@@ -21,7 +21,7 @@
  * ║  METRICS TO MEASURE:                                                      ║
  * ║                                                                           ║
  * ║  1. Throughput (TOPS - Tera Operations Per Second)                       ║
- * ║     - For 16x16 array at 100MHz: 16*16*2*100M = 51.2 GOPS peak          ║
+ * ║     - For 14x14 array at 200MHz: 14*14*2*200M = 78.4 GOPS peak          ║
  * ║     - Actual throughput depends on utilization                           ║
  * ║                                                                           ║
  * ║  2. Latency (cycles per operation)                                        ║
@@ -77,8 +77,8 @@
 // Configuration
 // =============================================================================
 
-static constexpr int N = 16;  // Block size
-static constexpr double CLOCK_MHZ = 100.0;  // Target clock frequency
+static constexpr int N = 14;  // Block size (14x14 systolic array)
+static constexpr double CLOCK_MHZ = 200.0;  // Target clock frequency (Zynq-7020)
 
 // =============================================================================
 // Benchmark Utilities
