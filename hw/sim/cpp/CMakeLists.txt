@@ -136,6 +136,7 @@ if(BUILD_TESTS)
         tests/test_end_to_end.cpp
         tests/test_stress.cpp
         tests/test_performance.cpp
+        tests/test_virtual_layer.cpp
     )
     
     foreach(TEST_SRC ${TEST_SOURCES})

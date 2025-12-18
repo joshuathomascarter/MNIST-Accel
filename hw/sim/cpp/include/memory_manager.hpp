@@ -462,7 +462,7 @@ public:
     void cache_flush(void*, std::size_t) override {}
     void cache_invalidate(void*, std::size_t) override {}
     
-    [[nodiscard]] std::sng_view name() const noexcept override { return "SimulationAllocator"; }
+    [[nodiscard]] std::string_view name() const noexcept override { return "SimulationAllocator"; }
     [[nodiscard]] bool is_simulation() const noexcept override { return true; }
 };
 

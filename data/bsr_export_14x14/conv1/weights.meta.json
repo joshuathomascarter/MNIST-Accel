@@ -1,0 +1,39 @@
+{
+  "layer_name": "conv1",
+  "shape": [
+    32,
+    9
+  ],
+  "padded_shape": [
+    42,
+    14
+  ],
+  "blocksize": [
+    14,
+    14
+  ],
+  "num_blocks": 3,
+  "num_block_rows": 3,
+  "num_block_cols": 1,
+  "density": 1.0,
+  "sparsity_pct": 0.0,
+  "row_ptr": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "col_idx": [
+    0,
+    0,
+    0
+  ],
+  "tiles_per_row": [
+    1,
+    1,
+    1
+  ],
+  "max_tiles_per_row": 1,
+  "bytes_per_block": 196,
+  "total_weight_bytes": 588
+}

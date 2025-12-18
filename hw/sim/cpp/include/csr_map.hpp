@@ -9,6 +9,19 @@
  * ║  Any mismatch will cause silent data corruption or control failures.     ║
  * ╠═══════════════════════════════════════════════════════════════════════════╣
  * ║                                                                           ║
+ * ║  HYBRID SCHEDULER ARCHITECTURE:                                           ║
+ * ║  ──────────────────────────────                                          ║
+ * ║  The accelerator supports two schedulers selectable at runtime:          ║
+ * ║                                                                           ║
+ * ║    BSR_CONFIG[0] = 0: BSR Sparse Scheduler (bsr_scheduler.sv)            ║
+ * ║                       For pruned/sparse layers with BSR weight format    ║
+ * ║                                                                           ║
+ * ║    BSR_CONFIG[0] = 1: Dense GEMM Scheduler (scheduler.sv)                ║
+ * ║                       For fully-connected layers (e.g., FC1 @ 100% dense)║
+ * ║                                                                           ║
+ * ║  Both schedulers share the same systolic array and buffers but have      ║
+ * ║  different state machines optimized for their respective data formats.   ║
+ * ║                                                                           ║
  * ║  Memory-Mapped Address Ranges (from ACCEL_BASE_ADDR):                    ║
  * ║    0x00 - 0x3F: Control & Configuration Registers                        ║
  * ║                 - Start/abort control, matrix dimensions, tile config    ║
@@ -18,6 +31,8 @@
  * ║                 - First 4 accumulator outputs for quick readout          ║
  * ║    0x90 - 0xBF: DMA Configuration                                        ║
  * ║                 - Source/dest addresses, transfer lengths, control       ║
+ * ║    0xC0 - 0xDF: BSR/Scheduler Configuration                              ║
+ * ║                 - Scheduler mode, BSR metadata addresses, block config   ║
  * ║                                                                           ║
  * ║  Register Types:                                                          ║
  * ║    R/W:   Standard read/write register                                   ║
@@ -55,7 +70,7 @@ namespace csr {
 /// Bits:
 ///   [0] start:   W1P - Write 1 to begin computation. Self-clears.
 ///   [1] abort:   W1P - Write 1 to abort current operation. Self-clears.
-///   [2] irq_en:  R/W - Enable interrupt on completion (TODO: implement IRQ)
+///   [2] irq_en:  R/W - Enable interrupt on completion (not yet implemented)
 constexpr uint32_t CTRL         = 0x00;
 
 /// DIMS_M (0x04): Matrix M Dimension (output rows)

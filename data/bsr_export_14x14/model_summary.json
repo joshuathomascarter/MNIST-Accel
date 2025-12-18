@@ -1,0 +1,87 @@
+{
+  "model": "MNIST CNN INT8 (14\u00d714 BSR)",
+  "hardware_block_size": 14,
+  "source": "int8_quantized",
+  "total_blocks": 6708,
+  "nonzero_blocks": 6708,
+  "overall_density": 1.0,
+  "overall_sparsity_pct": 0.0,
+  "layers": [
+    {
+      "name": "conv1",
+      "original_shape": [
+        32,
+        9
+      ],
+      "padded_shape": [
+        42,
+        14
+      ],
+      "blocksize": [
+        14,
+        14
+      ],
+      "num_blocks": 3,
+      "total_blocks": 3,
+      "density": 1.0,
+      "sparsity_pct": 0.0
+    },
+    {
+      "name": "conv2",
+      "original_shape": [
+        64,
+        288
+      ],
+      "padded_shape": [
+        70,
+        294
+      ],
+      "blocksize": [
+        14,
+        14
+      ],
+      "num_blocks": 105,
+      "total_blocks": 105,
+      "density": 1.0,
+      "sparsity_pct": 0.0
+    },
+    {
+      "name": "fc1",
+      "original_shape": [
+        128,
+        9216
+      ],
+      "padded_shape": [
+        140,
+        9226
+      ],
+      "blocksize": [
+        14,
+        14
+      ],
+      "num_blocks": 6590,
+      "total_blocks": 6590,
+      "density": 1.0,
+      "sparsity_pct": 0.0
+    },
+    {
+      "name": "fc2",
+      "original_shape": [
+        10,
+        128
+      ],
+      "padded_shape": [
+        14,
+        140
+      ],
+      "blocksize": [
+        14,
+        14
+      ],
+      "num_blocks": 10,
+      "total_blocks": 10,
+      "density": 1.0,
+      "sparsity_pct": 0.0
+    }
+  ]
+}

@@ -67,6 +67,7 @@
 #include <stdexcept>
 
 #include "csr_map.hpp"
+#include "performance_counters.hpp"
 
 namespace resnet_accel {
 
@@ -74,7 +75,6 @@ namespace resnet_accel {
 class AXIMaster;      // AXI transaction interface (hw/sim/cpp/include/axi_master.hpp)
 class AXIBackend;     // Backend implementation (FPGA mmap, Verilator VPI, etc.)
 class MemoryManager;  // DMA buffer allocation (hw/sim/cpp/include/memory_manager.hpp)
-class BSRPacker;      // BSR format utilities (hw/sim/cpp/include/bsr_packer.hpp)
 struct BSRMatrix;     // BSR matrix data structure
 
 // =============================================================================
@@ -150,7 +150,7 @@ struct LayerConfig {
     // -------------------------------------------------------------------------
     bool is_sparse;         ///< Use BSR sparse format (vs dense)
     bool has_relu;          ///< Apply ReLU activation to output
-    bool has_bias;          ///< Add bias before activation (TODO: implement)
+    bool has_bias;          ///< Add bias before activation (not yet implemented in hardware)
     
     /// Default constructor: Safe defaults for 14×14 systolic array
     LayerConfig()
@@ -340,7 +340,8 @@ public:
         DMA_ERROR,        ///< DMA transfer error (AXI error response)
         ILLEGAL_COMMAND,  ///< Invalid command for current state
         INVALID_CONFIG,   ///< LayerConfig validation failed
-        MEMORY_ERROR      ///< Memory allocation or mapping error
+        MEMORY_ERROR,     ///< Memory allocation or mapping error
+        NOT_READY         ///< Hardware not ready for operation
     };
     
     AcceleratorError(Code code, const std::string& message)
@@ -458,6 +459,15 @@ public:
     /// Set quantization scales (stored as IEEE 754 bits)
     void set_scales(float scale_act, float scale_wgt);
     
+    /// Set scheduler mode for hybrid scheduler architecture
+    /// @param use_dense  true = Dense GEMM scheduler (scheduler.sv) for FC layers
+    ///                   false = BSR sparse scheduler (bsr_scheduler.sv) for sparse layers
+    /// @note The accelerator has two schedulers sharing the same systolic array.
+    ///       BSR_CONFIG[0] selects which one drives the compute:
+    ///         0 = BSR scheduler (optimized for Block Sparse Row format)
+    ///         1 = Dense scheduler (traditional tiled GEMM)
+    void set_scheduler_mode(bool use_dense);
+    
     // =========================================================================
     // DMA Buffer Configuration
     // =========================================================================
@@ -530,6 +540,12 @@ public:
     /// Reset performance counters for new measurement
     void reset_perf_counters();
     
+    /// Print detailed performance report (throughput, bandwidth, utilization)
+    void print_perf_report(std::size_t data_bytes = 0, std::uint64_t mac_ops = 0);
+    
+    /// Get one-line performance summary string
+    std::string perf_summary(std::size_t data_bytes = 0, std::uint64_t mac_ops = 0);
+    
     // =========================================================================
     // Weight Management
     // =========================================================================
@@ -587,7 +603,7 @@ private:
     
     std::unique_ptr<AXIMaster> axi_;            ///< AXI backend for reg access
     std::unique_ptr<MemoryManager> memory_;     ///< DDR memory allocator
-    std::unique_ptr<BSRPacker> bsr_packer_;     ///< BSR format converter
+    std::unique_ptr<PerformanceCounters> perf_; ///< Performance counter interface
     
     std::vector<LayerConfig> layer_configs_;    ///< Per-layer configurations
     std::vector<std::vector<uint8_t>> layer_weights_;  ///< Packed BSR weights

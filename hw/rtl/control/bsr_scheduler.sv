@@ -157,6 +157,7 @@ module bsr_scheduler #(
      */
     output reg  [31:0]          meta_raddr,   // Metadata read address
     output reg                  meta_ren,     // Metadata read enable
+    input  wire                 meta_req_ready, // Metadata request ready (new input)
     input  wire [31:0]          meta_rdata,   // Metadata read data
     input  wire                 meta_rvalid,  // Metadata read valid
     output wire                 meta_ready,   // Always ready (no backpressure)
@@ -188,18 +189,19 @@ module bsr_scheduler #(
     // =========================================================================
     // FSM STATE ENCODING (One-Hot for Performance)
     // =========================================================================
-    localparam [8:0] 
-        S_IDLE        = 9'b000000001,  // Waiting for start
-        S_FETCH_PTR1  = 9'b000000010,  // Read row_ptr[k]
-        S_FETCH_PTR2  = 9'b000000100,  // Read row_ptr[k+1]
-        S_CALC_LEN    = 9'b000001000,  // Calculate block count for this row
-        S_FETCH_COL   = 9'b000010000,  // Read col_idx[blk] → n_tile
-        S_LOAD_WGT    = 9'b000100000,  // Load 14×14 weight block into PEs
-        S_STREAM_ACT  = 9'b001000000,  // Stream activations (loop over M)
-        S_NEXT_BLK    = 9'b010000000,  // Advance to next block in k-row
-        S_NEXT_K      = 9'b100000000;  // Advance to next k-row
+    localparam [9:0] 
+        S_IDLE        = 10'b0000000001,  // Waiting for start
+        S_FETCH_PTR1  = 10'b0000000010,  // Read row_ptr[k]
+        S_FETCH_PTR2  = 10'b0000000100,  // Read row_ptr[k+1]
+        S_CALC_LEN    = 10'b0000001000,  // Calculate block count for this row
+        S_FETCH_COL   = 10'b0000010000,  // Read col_idx[blk] → n_tile
+        S_LOAD_WGT    = 10'b0000100000,  // Load 14×14 weight block into PEs
+        S_WAIT_WGT    = 10'b0001000000,  // Wait 1 cycle for load_weight to deassert
+        S_STREAM_ACT  = 10'b0010000000,  // Stream activations (loop over M)
+        S_NEXT_BLK    = 10'b0100000000,  // Advance to next block in k-row
+        S_NEXT_K      = 10'b1000000000;  // Advance to next k-row
 
-    (* fsm_encoding = "one_hot"*) reg [8:0] state, state_n;
+    (* fsm_encoding = "one_hot"*) reg [9:0] state, state_n;
 
     // =========================================================================
     // INTERNAL REGISTERS
@@ -207,6 +209,7 @@ module bsr_scheduler #(
     reg [K_W-1:0] k_idx;      // Current K tile (row of sparse matrix)
     reg [M_W-1:0] m_idx;      // Current M tile (activation row)
     reg [4:0]     load_cnt;   // Weight load counter (0 to BLOCK_SIZE-1)
+    reg [4:0]     stream_cnt; // Activation stream counter (0 to BLOCK_SIZE-1)
     
     // Derived constant for load counter comparison
     // BLOCK_SIZE-1 = 13 for 14×14 blocks
@@ -222,6 +225,9 @@ module bsr_scheduler #(
 
     // Metadata latch for row_ptr[k] (needed across states)
     reg [31:0] ptr_start_reg;
+    
+    // Request tracking to prevent double-fetches
+    reg meta_req_sent;
 
   // ---------------------------------------------------------------------------
   // 3. Next State Logic
@@ -240,10 +246,15 @@ module bsr_scheduler #(
       
       S_FETCH_COL:  if (meta_rvalid) state_n = S_LOAD_WGT;
       
-      S_LOAD_WGT:   state_n = (load_cnt == LOAD_CNT_MAX[4:0]) ? S_STREAM_ACT : S_LOAD_WGT;
+      S_LOAD_WGT:   state_n = (load_cnt == LOAD_CNT_MAX[4:0] + 1) ? S_WAIT_WGT : S_LOAD_WGT;
       
-      S_STREAM_ACT: if (m_idx == MT - 1) state_n = S_NEXT_BLK;
-                    // Stream all M tiles against this Weight Block
+      // Wait for load_weight to propagate through all columns (BLOCK_SIZE cycles)
+      // The load_weight signal is pipelined through PEs, so it takes 14 cycles
+      // for the last column to finish loading after we de-assert load_weight_r
+      S_WAIT_WGT:   state_n = (load_cnt == LOAD_CNT_MAX[4:0]) ? S_STREAM_ACT : S_WAIT_WGT;
+      
+      S_STREAM_ACT: if (stream_cnt == LOAD_CNT_MAX[4:0]) state_n = S_NEXT_BLK;
+                    // Stream BLOCK_SIZE cycles for proper pipeline fill
       
       S_NEXT_BLK:   state_n = (blk_ptr < blk_end) ? S_FETCH_COL : S_NEXT_K;
       
@@ -262,6 +273,7 @@ module bsr_scheduler #(
       k_idx <= 0;
       m_idx <= 0;
       load_cnt <= 0;
+      stream_cnt <= 0;
       blk_ptr <= 0;
       blk_end <= 0;
       
@@ -273,8 +285,23 @@ module bsr_scheduler #(
       pe_en <= 0;
       busy <= 0;
       done <= 0;
+      meta_req_sent <= 0;
     end else begin
       state <= state_n;
+      
+      // Clear request sent flag on state transition
+      if (state != state_n) meta_req_sent <= 0;
+      
+      // Set request sent flag when handshake completes
+      if (meta_ren && meta_req_ready) meta_req_sent <= 1;
+      
+      // Debug: Print state transitions
+      // synthesis translate_off
+      if (state != state_n) begin
+        $display("[SCHED] @%0t state: %10b -> %10b  k=%0d m=%0d blk=%0d", 
+                 $time, state, state_n, k_idx, m_idx, blk_ptr);
+      end
+      // synthesis translate_on
       
       // Default Pulses
       meta_ren <= 0;
@@ -289,21 +316,34 @@ module bsr_scheduler #(
           busy <= 0;
           k_idx <= 0;
           load_cnt <= 0;
+          stream_cnt <= 0;
           load_weight_r <= 0;
           if (start) busy <= 1;
         end
 
         S_FETCH_PTR1: begin
           // Read row_ptr[k]
-          meta_ren <= 1;
-          meta_raddr <= k_idx; 
+          meta_ren <= !meta_req_sent;
+          meta_raddr <= k_idx;
+          // Debug: Print metadata requests
+          // synthesis translate_off
+          if (meta_rvalid)
+            $display("[SCHED] S_FETCH_PTR1: addr=%0d meta_rvalid=%b meta_rdata=%0d", 
+                   k_idx, meta_rvalid, meta_rdata);
+          // synthesis translate_on
           if (meta_rvalid) ptr_start_reg <= meta_rdata;
         end
 
         S_FETCH_PTR2: begin
           // Read row_ptr[k+1]
-          meta_ren <= 1;
+          meta_ren <= !meta_req_sent;
           meta_raddr <= k_idx + 1;
+          // Debug
+          // synthesis translate_off
+          if (meta_rvalid)
+            $display("[SCHED] S_FETCH_PTR2: addr=%0d meta_rvalid=%b meta_rdata=%0d", 
+                   k_idx + 1, meta_rvalid, meta_rdata);
+          // synthesis translate_on
           // meta_rdata will be ptr_end
         end
 
@@ -315,44 +355,76 @@ module bsr_scheduler #(
 
         S_FETCH_COL: begin
           // Read col_idx[blk_ptr]
-          meta_ren <= 1;
+          meta_ren <= !meta_req_sent;
           meta_raddr <= 128 + blk_ptr; // Offset 128 for col_idx table
           if (meta_rvalid) n_idx <= meta_rdata;
         end
 
         S_LOAD_WGT: begin
-          // Load Weight Block (B_k,n) - BLOCK_SIZE cycles
+          // Load Weight Block (B_k,n) - BLOCK_SIZE+1 cycles
+          // First cycle is prefetch (BRAM has 1-cycle latency)
           wgt_rd_en <= 1;
           // Address = (Block Index * Block Size) + Row Offset
-          // We use a shift if BLOCK_SIZE is power of 2, or multiply otherwise.
           // For 14x14, this is (blk_ptr * 14) which needs multiplier.
-          wgt_addr <= (blk_ptr * BLOCK_SIZE) + load_cnt; 
+          // Use load_cnt for addr, but data arrives 1 cycle later
+          if (load_cnt <= LOAD_CNT_MAX[4:0]) begin
+            wgt_addr <= (blk_ptr * BLOCK_SIZE) + load_cnt;
+          end
           
-          // FIX: Pipeline load_weight to match SRAM latency
-          load_weight_r <= 1;    
+          // FIX: Delay load_weight by 1 cycle to match BRAM latency
+          // Cycle 0: prefetch (load_weight=0), Cycle 1-14: load (load_weight=1)
+          if (load_cnt > 0) begin
+            load_weight_r <= 1;  // Enable loading starting cycle 1
+          end else begin
+            load_weight_r <= 0;  // First cycle is prefetch (data not ready)
+          end
           
           load_cnt <= load_cnt + 1;
           
-          if (load_cnt == LOAD_CNT_MAX[4:0]) begin
+          if (load_cnt == LOAD_CNT_MAX[4:0] + 1) begin
              m_idx <= 0;
              load_cnt <= 0; 
           end
         end
 
-        S_STREAM_ACT: begin
-          // Stop loading weights (delayed by 1 cycle effectively)
-          load_weight_r <= 0;
+        S_WAIT_WGT: begin
+          // Wait for load_weight to propagate through all columns
+          // The load_weight signal is pipelined through PEs (1 cycle per column)
+          // We need to wait BLOCK_SIZE cycles for all columns to finish loading
+          load_weight_r <= 0;  // Keep de-asserted
+          load_cnt <= load_cnt + 1;
+          
+          // Prefetch activations on the last wait cycle
+          // This ensures act_rd_data is valid on the first streaming cycle
+          if (load_cnt == LOAD_CNT_MAX[4:0]) begin
+            act_rd_en <= 1;
+            act_addr <= k_idx;
+          end
+          
+          if (load_cnt == LOAD_CNT_MAX[4:0]) begin
+            load_cnt <= 0;  // Reset for next block
+            stream_cnt <= 0;  // Reset stream counter before streaming
+          end
+          // Don't enable pe_en yet - that happens in S_STREAM_ACT
+        end
 
-          // Stream Activation Tile (A_m,k)
+        S_STREAM_ACT: begin
+          // Weights are now loaded, load_weight_r is 0
+          // Stream BLOCK_SIZE activations through the systolic array
+
+          // Stream Activation Column 
           act_rd_en <= 1;
-          // Address logic: A is stored row-major (M, K). 
-          // We need tile at (m_idx, k_idx).
-          // Assuming linear addressing: addr = m_idx * KT + k_idx
-          act_addr <= m_idx * KT + k_idx; 
+          // For weight-stationary: activations stored at k_idx (the K block we're processing)
+          // All 14 activations come from the same address since we load the full 112-bit row
+          act_addr <= k_idx;
           
           pe_en <= 1; // Enable MAC (block_valid = 1)
           
-          if (m_idx < MT - 1) m_idx <= m_idx + 1;
+          stream_cnt <= stream_cnt + 1;
+          
+          if (stream_cnt == LOAD_CNT_MAX[4:0]) begin
+            stream_cnt <= 0;
+          end
         end
 
         S_NEXT_BLK: begin

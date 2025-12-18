@@ -370,6 +370,11 @@ module accel_top #(
     wire [31:0] cfg_bsr_src_addr;           // BSR DMA source address
     wire [31:0] cfg_act_xfer_len;           // Activation transfer length (bytes)
     wire        cfg_act_dma_start;          // Activation DMA start pulse
+    wire [31:0] cfg_bsr_num_blocks;         // BSR non-zero blocks
+    wire [31:0] cfg_bsr_block_rows;         // BSR block rows (M/14)
+    wire [31:0] cfg_bsr_block_cols;         // BSR block cols (K/14)
+    wire [31:0] cfg_bsr_ptr_addr;           // BSR row_ptr address
+    wire [31:0] cfg_bsr_idx_addr;           // BSR col_idx address
 
     // -------------------------------------------------------------------------
     // DMA Control Signals
@@ -493,10 +498,10 @@ module accel_top #(
     wire [31:0]             meta_mem_rdata;     // BRAM read data (1-cycle latency)
 
     // -------------------------------------------------------------------------
-    // BSR Scheduler Interface
+    // Scheduler Interface (Shared between BSR and Dense schedulers)
     // -------------------------------------------------------------------------
-    // The scheduler traverses the BSR structure and generates control signals
-    // for the systolic array. It operates in a weight-stationary manner:
+    // The active scheduler generates control signals for the systolic array.
+    // Both schedulers operate in weight-stationary manner:
     // 1. Load weight block → 2. Stream activations → 3. Accumulate → 4. Next block
     //
     wire                    sched_start;        // Start traversal (from CSR)
@@ -509,21 +514,58 @@ module accel_top #(
     wire [9:0]              sched_MT;           // Tile rows (max 1023)
     wire [11:0]             sched_KT;           // Tile columns (max 4095)
 
-    // Systolic Array Control (scheduler → systolic_array)
+    // -------------------------------------------------------------------------
+    // BSR Scheduler Outputs (active when sched_mode=0)
+    // -------------------------------------------------------------------------
+    wire                    bsr_load_weight;
+    wire                    bsr_pe_en;
+    wire                    bsr_accum_en;
+    wire [(N_ROWS*N_COLS)-1:0] bsr_bypass_flat;
+    wire                    bsr_wgt_rd_en;
+    wire [AXI_ADDR_W-1:0]   bsr_wgt_rd_addr;
+    wire                    bsr_act_rd_en;
+    wire [AXI_ADDR_W-1:0]   bsr_act_rd_addr;
+    wire                    bsr_busy;
+    wire                    bsr_done;
+
+    // -------------------------------------------------------------------------
+    // Dense Scheduler Outputs (active when sched_mode=1)
+    // -------------------------------------------------------------------------
+    wire                    dense_load_weight;
+    wire                    dense_pe_en;
+    wire [(N_ROWS*N_COLS)-1:0] dense_bypass_flat;
+    wire                    dense_wgt_rd_en;
+    wire [9:0]              dense_wgt_addr;
+    wire                    dense_act_rd_en;
+    wire [9:0]              dense_act_addr;
+    wire                    dense_busy;
+    wire                    dense_done_tile;
+    wire                    dense_clr;
+
+    // -------------------------------------------------------------------------
+    // Scheduler Output Mux (selects active scheduler based on sched_mode)
+    // -------------------------------------------------------------------------
+    // sched_mode: 0=BSR Sparse, 1=Dense Tiled
     wire                    load_weight;        // Load weights into PE registers
     wire                    pe_en;              // Enable MAC operations
     wire                    accum_en;           // Enable accumulator update
-    
-    // Per-PE bypass signal for residual/skip connections
-    // When bypass[i]=1, PE[i] passes input through without MAC
-    // Flattened as 1D array: bypass_flat[row*N_COLS + col]
-    wire [(N_ROWS*N_COLS)-1:0] bypass_flat;
-
-    // Buffer Read Control (scheduler → buffers)
+    wire [(N_ROWS*N_COLS)-1:0] bypass_flat;     // Per-PE bypass
     wire                    wgt_rd_en;          // Weight buffer read enable
     wire [AXI_ADDR_W-1:0]   wgt_rd_addr;        // Weight buffer read address
     wire                    act_rd_en;          // Activation buffer read enable
     wire [AXI_ADDR_W-1:0]   act_rd_addr;        // Activation buffer read address
+
+    // Mux outputs based on scheduler mode
+    assign load_weight = sched_mode ? dense_load_weight : bsr_load_weight;
+    assign pe_en       = sched_mode ? dense_pe_en       : bsr_pe_en;
+    assign accum_en    = sched_mode ? dense_pe_en       : bsr_accum_en;  // Dense uses pe_en for accum
+    assign bypass_flat = sched_mode ? dense_bypass_flat : bsr_bypass_flat;
+    assign wgt_rd_en   = sched_mode ? dense_wgt_rd_en   : bsr_wgt_rd_en;
+    assign wgt_rd_addr = sched_mode ? {{(AXI_ADDR_W-10){1'b0}}, dense_wgt_addr} : bsr_wgt_rd_addr;
+    assign act_rd_en   = sched_mode ? dense_act_rd_en   : bsr_act_rd_en;
+    assign act_rd_addr = sched_mode ? {{(AXI_ADDR_W-10){1'b0}}, dense_act_addr} : bsr_act_rd_addr;
+    assign sched_busy  = sched_mode ? dense_busy        : bsr_busy;
+    assign sched_done  = sched_mode ? dense_done_tile   : bsr_done;
 
     // -------------------------------------------------------------------------
     // Activation Buffer Read Interface
@@ -691,7 +733,7 @@ module accel_top #(
         .perf_total_cycles      (perf_total_cycles),
         .perf_active_cycles     (perf_active_cycles),
         .perf_idle_cycles       (perf_idle_cycles),
-        .perf_cache_hits        (32'd0),  // TODO: Connect from meta_decode
+        .perf_cache_hits        (32'd0),  // Placeholder: connect from meta_decode when implemented
         .perf_cache_misses      (32'd0),
         .perf_decode_count      (32'd0),
         // Result Data (first 4 accumulators for quick read)
@@ -699,7 +741,7 @@ module accel_top #(
         // DMA Control/Status
         .dma_busy_in            (act_dma_busy | bsr_dma_busy),
         .dma_done_in            (act_dma_done & bsr_dma_done),
-        .dma_bytes_xferred_in   (32'd0),  // TODO: Add counters
+        .dma_bytes_xferred_in   (32'd0),  // Placeholder: add counters when needed
         .dma_src_addr           (cfg_bsr_src_addr),
         .dma_dst_addr           (),       // Not used (read-only DMAs)
         .dma_xfer_len           (),
@@ -707,8 +749,30 @@ module accel_top #(
         // Activation DMA
         .act_dma_src_addr       (cfg_act_src_addr),
         .act_dma_len            (cfg_act_xfer_len),
-        .act_dma_start_pulse    (cfg_act_dma_start)
+        .act_dma_start_pulse    (cfg_act_dma_start),
+        // BSR Control
+        .bsr_config             (cfg_bsr_config),
+        .bsr_num_blocks         (cfg_bsr_num_blocks),
+        .bsr_block_rows         (cfg_bsr_block_rows),
+        .bsr_block_cols         (cfg_bsr_block_cols),
+        .bsr_ptr_addr           (cfg_bsr_ptr_addr),
+        .bsr_idx_addr           (cfg_bsr_idx_addr)
     );
+
+    // -------------------------------------------------------------------------
+    // Scheduler Mode Selection (Hybrid Dense/Sparse Architecture)
+    // -------------------------------------------------------------------------
+    // BSR_CONFIG[0] selects the active scheduler:
+    //   0 = BSR Sparse Scheduler (for pruned/sparse weights)
+    //   1 = Dense Tiled Scheduler (for fully dense layers)
+    //
+    // This allows the host driver to select the optimal scheduler per-layer
+    // based on weight sparsity. For layers with <30% sparsity, dense mode
+    // avoids BSR metadata overhead. For pruned layers with >50% sparsity,
+    // BSR mode skips zero blocks for significant speedup.
+    wire [31:0] cfg_bsr_config;
+    wire        sched_mode;  // 0=BSR, 1=Dense
+    assign sched_mode = cfg_bsr_config[0];
 
     // -------------------------------------------------------------------------
     // CSR → DMA/Scheduler Signal Routing
@@ -725,15 +789,12 @@ module accel_top #(
 
     // Scheduler control signals
     // - sched_start: Single-cycle pulse to begin BSR traversal
-    // - sched_MT: Block rows = M / BLOCK_SIZE (right-shift by 3 since BLOCK_SIZE ≠ 8)
-    //   NOTE: The shift by 3 assumes BLOCK_SIZE=8. For 14×14 blocks, this should
-    //   be division by 14, but hardware division is expensive. Either:
-    //   1. Use fixed block sizes that are powers of 2
-    //   2. Pre-compute MT/KT on the host and store in CSR
-    //   Current implementation uses shift-by-3 as placeholder.
+    // - sched_MT: Block rows = M / BLOCK_SIZE
+    // - sched_KT: Block cols = K / BLOCK_SIZE
+    // These are now pre-computed by the driver and provided via CSR.
     assign sched_start = start_pulse;
-    assign sched_MT    = cfg_M[9:0] >> 3;   // TODO: Fix for non-power-of-2 block size
-    assign sched_KT    = cfg_K[11:0] >> 3;  // TODO: Fix for non-power-of-2 block size
+    assign sched_MT    = cfg_bsr_block_rows[9:0];
+    assign sched_KT    = cfg_bsr_block_cols[11:0];
 
     // -------------------------------------------------------------------------
     // 3. AXI DMA Bridge (Arbitrates act_dma and bsr_dma to single AXI Master)
@@ -788,7 +849,7 @@ module accel_top #(
         .s1_rresp       (act_rresp),
         .s1_rlast       (act_rlast),
         .s1_rvalid      (act_rvalid),
-        .s1_rready      (act_rready),
+        .s1_rready       (act_rready),
         // Master to DDR
         .m_arid         (m_axi_arid),
         .m_araddr       (m_axi_araddr),
@@ -886,6 +947,10 @@ module accel_top #(
         // Control
         .start              (bsr_dma_start),
         .src_addr           (bsr_dma_src_addr),
+        // CSR inputs for BSR dimensions (driver-provided)
+        .csr_num_rows       (cfg_bsr_block_rows),
+        .csr_num_cols       (cfg_bsr_block_cols),
+        .csr_total_blocks   (cfg_bsr_num_blocks),
         .done               (bsr_dma_done),
         .busy               (bsr_dma_busy),
         .error              (bsr_dma_error),
@@ -940,7 +1005,7 @@ module accel_top #(
     // -------------------------------------------------------------------------
     // row_ptr[i] = index of first non-zero block in row i
     // row_ptr[num_rows] = total number of non-zero blocks
-    reg [31:0] row_ptr_bram [0:(1<<BRAM_ADDR_W)-1];
+    reg [31:0] row_ptr_bram [0:(1<<BRAM_ADDR_W)-1] /* verilator public */;
     reg [31:0] row_ptr_rdata_r;
 
     always @(posedge clk) begin
@@ -948,6 +1013,15 @@ module accel_top #(
             row_ptr_bram[row_ptr_waddr] <= row_ptr_wdata;
         // Read port: address from meta_decode module
         row_ptr_rdata_r <= row_ptr_bram[meta_mem_addr[BRAM_ADDR_W-1:0]];
+        
+        // Debug
+        // synthesis translate_off
+        if (meta_mem_en && meta_mem_addr < 128) begin
+             $display("[TOP] row_ptr read: addr=%0d data=%0d", 
+                      meta_mem_addr[BRAM_ADDR_W-1:0], 
+                      row_ptr_bram[meta_mem_addr[BRAM_ADDR_W-1:0]]);
+        end
+        // synthesis translate_on
     end
 
     // -------------------------------------------------------------------------
@@ -955,14 +1029,18 @@ module accel_top #(
     // -------------------------------------------------------------------------
     // col_idx[j] = column block index for j-th non-zero block
     // Used by scheduler to compute activation address offset
-    reg [15:0] col_idx_bram [0:(1<<BRAM_ADDR_W)-1];
+    reg [15:0] col_idx_bram [0:(1<<BRAM_ADDR_W)-1] /* verilator public */;
     reg [15:0] col_idx_rdata_r;
+    
+    // Registered read for col_idx - use same address as meta_decode requests
+    // Col_idx is at offset 128 in metadata address space
+    wire [BRAM_ADDR_W-1:0] col_idx_rd_addr = meta_mem_addr[BRAM_ADDR_W-1:0] - 128;
 
     always @(posedge clk) begin
         if (col_idx_we)
             col_idx_bram[col_idx_waddr] <= col_idx_wdata;
-        // Read port: Currently unused (scheduler reads via meta_decode)
-        // TODO: Add read interface if direct col_idx access needed
+        // Read port: for scheduler col_idx access
+        col_idx_rdata_r <= col_idx_bram[col_idx_rd_addr];
     end
 
     // -------------------------------------------------------------------------
@@ -973,22 +1051,33 @@ module accel_top #(
     //
     // Address format: wgt_waddr[BRAM_ADDR_W+6:0] = {block_idx, word_offset}
     // - block_idx: Which non-zero block (0 to nnz_blocks-1)
-    // - word_offset: 0-24 within block (5 bits, but only 25 used)
+    // - word_offset: 0-13 within block (one row of 14 INT8 values per address)
     //
     // Read interface uses wgt_rd_addr from scheduler.
-    reg [63:0] wgt_block_bram [0:(1<<BRAM_ADDR_W)-1];
-    reg [63:0] wgt_block_rdata_r;
+    // Width: N_COLS × DATA_W = 14 × 8 = 112 bits (one row of weight block)
+    reg [N_COLS*DATA_W-1:0] wgt_block_bram [0:(1<<BRAM_ADDR_W)-1] /* verilator public */;
+    reg [N_COLS*DATA_W-1:0] wgt_block_rdata_r;
 
     always @(posedge clk) begin
+        // Write port: For Verilator testing, use direct access
+        // For synthesis, need packing logic from 64-bit DMA to 112-bit BRAM
         if (wgt_we)
-            wgt_block_bram[wgt_waddr[BRAM_ADDR_W-1:0]] <= wgt_wdata;
+            wgt_block_bram[wgt_waddr[BRAM_ADDR_W-1:0]] <= {{(N_COLS*DATA_W-64){1'b0}}, wgt_wdata};
         // Read port: Scheduler requests weight data
         wgt_block_rdata_r <= wgt_block_bram[wgt_rd_addr[BRAM_ADDR_W-1:0]];
     end
 
     // Connect row_ptr read data to metadata interface
-    // Future: Mux between row_ptr and col_idx based on meta_mem_addr MSB
-    assign meta_mem_rdata = row_ptr_rdata_r;
+    // Mux between row_ptr and col_idx based on meta_mem_addr bit 7 (offset 128)
+    // Address 0-127: row_ptr_bram
+    // Address 128+:  col_idx_bram
+    // Note: Both reads are registered, so latency is the same
+    reg meta_is_col_idx_r;
+    always @(posedge clk) begin
+        meta_is_col_idx_r <= meta_mem_addr[7];
+    end
+    assign meta_mem_rdata = meta_is_col_idx_r ? {16'b0, col_idx_rdata_r}
+                                              : row_ptr_rdata_r;
 
     // -------------------------------------------------------------------------
     // 7. Metadata Decoder (Cache for BSR Metadata)
@@ -1025,7 +1114,7 @@ module accel_top #(
     );
 
     // -------------------------------------------------------------------------
-    // 8. BSR Scheduler (Traverses Sparse Blocks)
+    // 8. BSR Scheduler (Traverses Sparse Blocks) - Active when sched_mode=0
     // -------------------------------------------------------------------------
     // Iterates through the BSR structure and generates control signals for
     // the systolic array. Implements weight-stationary dataflow:
@@ -1052,30 +1141,100 @@ module accel_top #(
         .clk            (clk),
         .rst_n          (rst_n),
         // Control
-        .start          (sched_start),
+        .start          (sched_start & ~sched_mode),  // Only start when in BSR mode
         .abort          (abort_pulse),
-        .busy           (sched_busy),
-        .done           (sched_done),
+        .busy           (bsr_busy),
+        .done           (bsr_done),
         // Configuration
         .MT             (sched_MT),
         .KT             (sched_KT),
         // Metadata Interface
         .meta_raddr     (meta_req_addr),
         .meta_ren       (meta_req_valid),
+        .meta_req_ready (meta_req_ready),
         .meta_rdata     (meta_rdata),
         .meta_rvalid    (meta_valid),
         .meta_ready     (meta_ready),
         // Buffer Interfaces
-        .wgt_rd_en      (wgt_rd_en),
-        .wgt_addr       (wgt_rd_addr),
-        .act_rd_en      (act_rd_en),
-        .act_addr       (act_rd_addr),
+        .wgt_rd_en      (bsr_wgt_rd_en),
+        .wgt_addr       (bsr_wgt_rd_addr),
+        .act_rd_en      (bsr_act_rd_en),
+        .act_addr       (bsr_act_rd_addr),
         // Systolic Control
-        .load_weight    (load_weight),
-        .pe_en          (pe_en),
-        .accum_en       (accum_en),
-        .bypass_out     (bypass_flat)  // Per-PE bypass for residual connections
+        .load_weight    (bsr_load_weight),
+        .pe_en          (bsr_pe_en),
+        .accum_en       (bsr_accum_en),
+        .bypass_out     (bsr_bypass_flat)  // Per-PE bypass for residual connections
     );
+
+    // -------------------------------------------------------------------------
+    // 8b. Dense Scheduler (Tiled GEMM) - Active when sched_mode=1
+    // -------------------------------------------------------------------------
+    // Simple tiled matrix multiplication for fully-dense weight matrices.
+    // No BSR metadata overhead - directly iterates through M×N×K tiles.
+    //
+    // For MNIST FC layers with no sparsity, this scheduler is more efficient
+    // as it avoids the row_ptr/col_idx lookups of BSR format.
+    //
+    // Uses ping-pong buffering and handles edge tiles automatically.
+    scheduler #(
+        .M_W         (10),          // log2(max M)
+        .N_W         (10),          // log2(max N)
+        .K_W         (12),          // log2(max K)
+        .TM_W        (6),           // log2(max Tm)
+        .TN_W        (6),           // log2(max Tn)
+        .TK_W        (6),           // log2(max Tk)
+        .ADDR_W      (10),          // Buffer address width
+        .PREPRIME    (0),           // No pre-prime (accept 1-cycle bubble)
+        .USE_CSR_COUNTS (1),        // Use CSR-provided tile counts
+        .MAX_TM      (64),          // Max tile M dimension
+        .MAX_TN      (64),          // Max tile N dimension
+        .ENABLE_CLOCK_GATING (0)    // Disable clock gating for simulation
+    ) u_dense_scheduler (
+        .clk            (clk),
+        .rst_n          (rst_n),
+        // CSR/Config
+        .start          (sched_start & sched_mode),  // Only start when in dense mode
+        .abort          (abort_pulse),
+        .M              (cfg_M[9:0]),
+        .N              (cfg_N[9:0]),
+        .K              (cfg_K[11:0]),
+        .Tm             (6'd14),            // Fixed tile size = array size
+        .Tn             (6'd14),
+        .Tk             (6'd14),
+        .MT_csr         (sched_MT),         // Pre-computed tile counts
+        .NT_csr         (10'd1),            // For MNIST FC: single N tile
+        .KT_csr         (sched_KT[9:0]),
+        // Bank readiness (always ready for Verilator testing)
+        .valid_A_ping   (1'b1),
+        .valid_A_pong   (1'b1),
+        .valid_B_ping   (1'b1),
+        .valid_B_pong   (1'b1),
+        // Buffer Interface
+        .rd_en          (dense_wgt_rd_en),
+        .k_idx          (),                 // Not used
+        .wgt_addr       (dense_wgt_addr),
+        .act_addr       (dense_act_addr),
+        .bank_sel_rd_A  (),                 // Not used (single bank)
+        .bank_sel_rd_B  (),
+        .clr            (dense_clr),
+        .en             (dense_pe_en),
+        .load_weight    (dense_load_weight),
+        .en_mask_row    (),                 // Not used (full tiles)
+        .en_mask_col    (),
+        .bypass_out     (dense_bypass_flat),
+        // Status
+        .busy           (dense_busy),
+        .done_tile      (dense_done_tile),
+        .m_tile         (),
+        .n_tile         (),
+        .k_tile         (),
+        .cycles_tile    (),
+        .stall_cycles   ()
+    );
+    
+    // Dense scheduler also reads activations when enabled
+    assign dense_act_rd_en = dense_wgt_rd_en;
 
     // -------------------------------------------------------------------------
     // 9. Activation Buffer (Dense Activation Storage)
@@ -1086,32 +1245,31 @@ module accel_top #(
     // For the full design, use act_buffer.sv module with ping-pong banks
     // and clock gating. This inline version is for integration testing.
     //
-    // Capacity: 1024 × 64 bits = 8 KB (holds ~8192 INT8 activations)
-    // For a 14×14 tile, need 196 bytes. This buffer can hold ~40 tiles.
-    reg [AXI_DATA_W-1:0] act_buffer_ram [0:(1<<BRAM_ADDR_W)-1];
-    reg [AXI_DATA_W-1:0] act_rd_data_r;
+    // Capacity: 1024 × 112 bits = 14 KB (holds ~14336 INT8 activations)
+    // Each entry holds one row of 14 INT8 values for systolic array input.
+    // Width: N_ROWS × DATA_W = 14 × 8 = 112 bits
+    reg [N_ROWS*DATA_W-1:0] act_buffer_ram [0:(1<<BRAM_ADDR_W)-1] /* verilator public */;
+    reg [N_ROWS*DATA_W-1:0] act_rd_data_r;
 
     always @(posedge clk) begin
-        // Write port: DMA stores incoming activations
+        // Write port: For Verilator testing, use direct access
+        // For synthesis, need packing logic from 64-bit DMA to 112-bit BRAM
         if (act_buf_we)
-            act_buffer_ram[act_buf_waddr[BRAM_ADDR_W-1:0]] <= act_buf_wdata;
+            act_buffer_ram[act_buf_waddr[BRAM_ADDR_W-1:0]] <= {{(N_ROWS*DATA_W-64){1'b0}}, act_buf_wdata};
         // Read port: Scheduler fetches activations for systolic array
         if (act_rd_en)
             act_rd_data_r <= act_buffer_ram[act_rd_addr[BRAM_ADDR_W-1:0]];
     end
 
-    // Extract N_ROWS (14) INT8 values from 64-bit read data
-    // Only lower 112 bits (14 × 8) are used; upper 16 bits ignored
+    // Extract N_ROWS (14) INT8 values from 112-bit BRAM output
+    // Width matches: N_ROWS × DATA_W = 14 × 8 = 112 bits
     assign act_rd_data = act_rd_data_r[N_ROWS*DATA_W-1:0];
 
     // -------------------------------------------------------------------------
     // 10. Weight Read Path (Block data from wgt_block_bram)
     // -------------------------------------------------------------------------
-    // Extracts one row of weights (14 INT8 values) from 64-bit BRAM output.
-    // The scheduler controls which row of the current block is read.
-    //
-    // Note: Full 14×14 block needs 196 bytes. With 64-bit reads, need 25 reads
-    // to fetch entire block (3 bytes wasted in last read).
+    // One row of weights (14 INT8 values = 112 bits) per BRAM entry.
+    // BRAM width now matches systolic array input width.
     assign wgt_rd_data = wgt_block_rdata_r[N_COLS*DATA_W-1:0];
 
     // -------------------------------------------------------------------------
@@ -1164,7 +1322,7 @@ module accel_top #(
     //   - Utilization = active_cycles / total_cycles
     //   - Throughput = (M × N × K × 2) / total_cycles ops/cycle
     //
-    // TODO: Add cache hit/miss counters from meta_decode for memory analysis
+    // Note: Cache hit/miss counters from meta_decode are placeholder until module is connected.
     perf #(
         .COUNTER_WIDTH(32)          // 32-bit counters (43 sec @ 100 MHz)
     ) u_perf (
@@ -1174,7 +1332,7 @@ module accel_top #(
         .start_pulse            (start_pulse),  // Begin measurement
         .done_pulse             (sched_done),   // End measurement
         .busy_signal            (busy),         // Active computation
-        // Cache Stats (TODO: Connect from meta_decode)
+        // Cache Stats (Placeholder: connect from meta_decode when implemented)
         .meta_cache_hits        (32'd0),
         .meta_cache_misses      (32'd0),
         .meta_decode_cycles     (32'd0),

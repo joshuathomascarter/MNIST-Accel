@@ -678,7 +678,5 @@ inline int run_all_tests() {
 
 } // namespace resnet_accel
 
-}
-
 #endif // BSR_PACKER_HPP
 

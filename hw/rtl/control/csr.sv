@@ -166,7 +166,15 @@ module csr #(
   // NEW: DMA control outputs (Activation)
   output wire [31:0]       act_dma_src_addr,
   output wire [31:0]       act_dma_len,
-  output wire              act_dma_start_pulse
+  output wire              act_dma_start_pulse,
+
+  // NEW: BSR control outputs
+  output wire [31:0]       bsr_config,
+  output wire [31:0]       bsr_num_blocks,
+  output wire [31:0]       bsr_block_rows,
+  output wire [31:0]       bsr_block_cols,
+  output wire [31:0]       bsr_ptr_addr,
+  output wire [31:0]       bsr_idx_addr
 );
 
   // ========================================================================
@@ -234,6 +242,19 @@ module csr #(
   localparam [7:0] ACT_DMA_LEN       = 8'hA4; // Activation Length
   localparam [7:0] ACT_DMA_CTRL      = 8'hA8; // Activation Start
 
+  // ------------------------------------------------------------------
+  // BSR (Block Sparse Row) CSR registers
+  // Addresses chosen in remaining CSR space (0xC0 - 0xDC)
+  localparam BSR_CONFIG      = 8'hC0; // R/W - enable/flags/version
+  localparam BSR_NUM_BLOCKS  = 8'hC4; // R/W - total non-zero blocks
+  localparam BSR_BLOCK_ROWS  = 8'hC8; // R/W - block rows (M/14)
+  localparam BSR_BLOCK_COLS  = 8'hCC; // R/W - block cols (K/14)
+
+  localparam BSR_STATUS      = 8'hD0; // R/W1C - ready/busy/done/error + processed
+  localparam BSR_ERROR_CODE  = 8'hD4; // RO   - error detail code
+  localparam BSR_PTR_ADDR    = 8'hD8; // R/W  - row_ptr address (low32)
+  localparam BSR_IDX_ADDR    = 8'hDC; // R/W  - col_idx address (low32)
+
   // Backing regs
   reg        r_irq_en;
   reg [31:0] r_M, r_N, r_K;
@@ -256,6 +277,18 @@ module csr #(
   reg [31:0] r_dma_dst_addr;
   reg [31:0] r_dma_xfer_len;
   reg        st_dma_done;
+
+  // BSR registers/backing storage
+  reg [31:0] r_bsr_config;
+  reg [31:0] r_bsr_num_blocks;
+  reg [31:0] r_bsr_block_rows;
+  reg [31:0] r_bsr_block_cols;
+  reg [31:0] r_bsr_ptr_addr;
+  reg [31:0] r_bsr_idx_addr;
+  reg [15:0] r_bsr_blocks_processed;
+  reg        st_bsr_done;
+  reg        st_bsr_error;
+  reg [3:0]  r_bsr_state;
 
   // NEW: DMA registers (Activation)
   reg [31:0] r_act_dma_src_addr;
@@ -297,6 +330,17 @@ module csr #(
       r_act_dma_src_addr <= 32'h0;
       r_act_dma_len      <= 32'h0;
       st_act_dma_done    <= 1'b0;
+  // BSR defaults
+  r_bsr_config       <= 32'h00000100; // version v1.0 in upper half by convention
+  r_bsr_num_blocks   <= 32'h0;
+  r_bsr_block_rows   <= 32'h0;
+  r_bsr_block_cols   <= 32'h0;
+  r_bsr_ptr_addr     <= 32'h0;
+  r_bsr_idx_addr     <= 32'h0;
+  r_bsr_blocks_processed <= 16'h0;
+  st_bsr_done        <= 1'b0;
+  st_bsr_error       <= 1'b0;
+  r_bsr_state        <= 4'h0;
     end else begin
       // Sticky setters
       if (core_done_tile_pulse) st_done_tile <= 1'b1;
@@ -349,6 +393,18 @@ module csr #(
             if (csr_wdata[2]) st_act_dma_done <= 1'b0;
             // Start bit (bit 0) is W1P, handled by w_dma_start logic
           end
+          // BSR registers
+          BSR_CONFIG:      r_bsr_config      <= csr_wdata;
+          BSR_NUM_BLOCKS:  r_bsr_num_blocks  <= csr_wdata;
+          BSR_BLOCK_ROWS:  r_bsr_block_rows  <= csr_wdata;
+          BSR_BLOCK_COLS:  r_bsr_block_cols  <= csr_wdata;
+          BSR_PTR_ADDR:    r_bsr_ptr_addr    <= csr_wdata;
+          BSR_IDX_ADDR:    r_bsr_idx_addr    <= csr_wdata;
+          BSR_STATUS: begin
+            // W1C for done and error bits
+            if (csr_wdata[2]) st_bsr_done  <= 1'b0;
+            if (csr_wdata[3]) st_bsr_error <= 1'b0;
+          end
           default: ;
         endcase
       end
@@ -399,6 +455,14 @@ module csr #(
   assign act_dma_len      = r_act_dma_len;
   assign act_dma_start_pulse = w_act_dma_start;
 
+  // NEW: Expose BSR config
+  assign bsr_config     = r_bsr_config;
+  assign bsr_num_blocks = r_bsr_num_blocks;
+  assign bsr_block_rows = r_bsr_block_rows;
+  assign bsr_block_cols = r_bsr_block_cols;
+  assign bsr_ptr_addr   = r_bsr_ptr_addr;
+  assign bsr_idx_addr   = r_bsr_idx_addr;
+
   // Read mux (note CTRL start/abort read as 0)
   always @(*) begin
     unique case (csr_addr)
@@ -428,11 +492,11 @@ module csr #(
       PERF_CACHE_HITS:   csr_rdata = perf_cache_hits;
       PERF_CACHE_MISSES: csr_rdata = perf_cache_misses;
       PERF_DECODE_COUNT: csr_rdata = perf_decode_count;
-      // Result registers (Read-Only)
-      RESULT_0:     csr_rdata = r_result_0;
-      RESULT_1:     csr_rdata = r_result_1;
-      RESULT_2:     csr_rdata = r_result_2;
-      RESULT_3:     csr_rdata = r_result_3;
+      // Result registers (Read-Only) - directly read from systolic output
+      RESULT_0:     csr_rdata = result_data[31:0];
+      RESULT_1:     csr_rdata = result_data[63:32];
+      RESULT_2:     csr_rdata = result_data[95:64];
+      RESULT_3:     csr_rdata = result_data[127:96];
       // DMA registers
       DMA_SRC_ADDR: csr_rdata = r_dma_src_addr;
       DMA_DST_ADDR: csr_rdata = r_dma_dst_addr;
@@ -444,6 +508,15 @@ module csr #(
       ACT_DMA_SRC_ADDR: csr_rdata = r_act_dma_src_addr;
       ACT_DMA_LEN:      csr_rdata = r_act_dma_len;
       ACT_DMA_CTRL:     csr_rdata = {29'b0, st_act_dma_done, 1'b0, 1'b0}; // Busy bit needs input
+  // BSR readback
+  BSR_CONFIG:      csr_rdata = r_bsr_config;
+  BSR_NUM_BLOCKS:  csr_rdata = r_bsr_num_blocks;
+  BSR_BLOCK_ROWS:  csr_rdata = r_bsr_block_rows;
+  BSR_BLOCK_COLS:  csr_rdata = r_bsr_block_cols;
+  BSR_STATUS:      csr_rdata = {16'd0, 4'd0, r_bsr_state, st_bsr_error, st_bsr_done, 1'b0, 1'b1};
+  BSR_ERROR_CODE:  csr_rdata = 32'd0; // No detailed error code implemented yet
+  BSR_PTR_ADDR:    csr_rdata = r_bsr_ptr_addr;
+  BSR_IDX_ADDR:    csr_rdata = r_bsr_idx_addr;
       
       default:      csr_rdata = 32'hDEAD_BEEF;
     endcase

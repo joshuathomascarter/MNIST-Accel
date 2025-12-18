@@ -169,8 +169,8 @@ module act_buffer #(
      * Size per bank: TM × 8 × 2^ADDR_WIDTH bits
      * For TM=14, ADDR_WIDTH=7: 14 × 8 × 128 = 14,336 bits per bank
      */
-    reg [TM*8-1:0] mem0 [0:(1<<ADDR_WIDTH)-1];
-    reg [TM*8-1:0] mem1 [0:(1<<ADDR_WIDTH)-1];
+    reg [TM*8-1:0] mem0 [0:(1<<ADDR_WIDTH)-1] /* verilator public */;
+    reg [TM*8-1:0] mem1 [0:(1<<ADDR_WIDTH)-1] /* verilator public */;
 
     // =========================================================================
     // ASSERTIONS (Simulation-Only Safety Checks)

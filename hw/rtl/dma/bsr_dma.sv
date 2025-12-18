@@ -153,6 +153,11 @@ module bsr_dma #(
     /** src_addr - Base address of BSR data in DDR (must be 64-bit aligned) */
     input  wire [AXI_ADDR_W-1:0] src_addr,
     
+    /** NEW: CSR inputs to replace header (single source of truth) */
+    input  wire [31:0]           csr_num_rows,
+    input  wire [31:0]           csr_num_cols,
+    input  wire [31:0]           csr_total_blocks,
+    
     /** done - Pulses HIGH when transfer completes (check error flag) */
     output reg                   done,
     
@@ -435,75 +440,19 @@ module bsr_dma #(
                         busy <= 1'b1;
                         error <= 1'b0;
                         current_axi_addr <= src_addr;
-                        state <= READ_HEADER;
+                        
+                        // Use CSR values directly (Production Mode)
+                        num_rows     <= csr_num_rows;
+                        num_cols     <= csr_num_cols;
+                        total_blocks <= csr_total_blocks;
+                        
+                        state <= SETUP_ROW_PTR;
                     end
                 end
 
-                // =============================================================
-                // PHASE 1: HEADER READ (12 bytes = 3 × 32-bit words)
-                // =============================================================
-                /**
-                 * Header is packed as:
-                 *   Beat 0: [num_cols(63:32), num_rows(31:0)]
-                 *   Beat 1: [padding(63:32), total_blocks(31:0)]
-                 *
-                 * We read 2 beats (16 bytes) to safely capture all 3 words.
-                 * Magic number: arlen = 1 means 2 beats.
-                 */
-                READ_HEADER: begin
-                    m_axi_araddr <= current_axi_addr;
-                    m_axi_arlen  <= 8'd1;         // 2 beats = 16 bytes
-                    m_axi_arsize <= AXI_SIZE_64;  // 8 bytes per beat
-                    m_axi_arburst <= AXI_BURST_INCR;
-                    m_axi_arvalid <= 1'b1;
-                    m_axi_rready <= 1'b1;
-                    
-                    header_word_idx <= 0;
-                    
-                    if (m_axi_arready && m_axi_arvalid) begin
-                        m_axi_arvalid <= 1'b0;    // Handshake complete
-                        state <= WAIT_HEADER;
-                    end
-                end
-
-                WAIT_HEADER: begin
-                    m_axi_rready <= 1'b1;
-                    if (m_axi_rvalid) begin
-                        if (m_axi_rresp != 2'b00) begin
-                            // AXI Error - abort transfer
-                            error <= 1'b1;
-                            busy <= 1'b0;
-                            done <= 1'b1;
-                            state <= IDLE;
-                        end else begin
-                            /**
-                             * HEADER UNPACKING:
-                             * Beat 0 (idx=0): Extract num_rows[31:0], num_cols[63:32]
-                             * Beat 1 (idx=2): Extract total_blocks[31:0]
-                             *
-                             * Note: idx jumps 0→2 because we consumed 2 words per beat
-                             */
-                            case (header_word_idx)
-                                0: begin
-                                    num_rows <= m_axi_rdata[31:0];     // Rows in lower 32
-                                    num_cols <= m_axi_rdata[63:32];    // Cols in upper 32
-                                    header_word_idx <= 2;  // Next beat has 3rd word
-                                end
-                                2: begin
-                                    total_blocks <= m_axi_rdata[31:0];  // Total sparse blocks
-                                    header_word_idx <= 3;  // Mark header complete
-                                end
-                            endcase
-                            
-                            if (m_axi_rlast) begin
-                                // Advance address past header (16 bytes for alignment)
-                                // Magic number: 16 = 2 beats × 8 bytes
-                                current_axi_addr <= current_axi_addr + 16;
-                                state <= SETUP_ROW_PTR;
-                            end
-                        end
-                    end
-                end
+                // PHASE 1: HEADER READ (Skipped in Production Mode)
+                READ_HEADER: state <= IDLE; 
+                WAIT_HEADER: state <= IDLE;
 
                 // =============================================================
                 // PHASE 2: ROW POINTER READ ((num_rows + 1) × 32-bit words)

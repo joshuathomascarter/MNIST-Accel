@@ -28,40 +28,70 @@ VERILATOR_FLAGS = \
 	-Wno-WIDTH \
 	-Wno-UNUSED \
 	-Wno-UNOPTFLAT \
+	-Wno-PINCONNECTEMPTY \
+	-Wno-TIMESCALEMOD \
+	-Wno-SELRANGE \
+	-Wno-GENUNNAMED \
+	-Wno-DECLFILENAME \
+	-Wno-ALWNEVER \
+	-Wno-UNDRIVEN \
+	-Wno-CASEINCOMPLETE \
+	-Wno-SYNCASYNCNET \
 	--top-module accel_top \
-	-CFLAGS "-std=c++14 -O3" \
+	-CFLAGS "-std=c++17 -O2" \
 	-LDFLAGS "-lpthread"
 
 # RTL source files
-RTL_DIR = ../../rtl
+RTL_DIR = ../rtl
 RTL_SOURCES = \
+	$(RTL_DIR)/mac/mac8.sv \
 	$(RTL_DIR)/systolic/pe.sv \
 	$(RTL_DIR)/systolic/systolic_array.sv \
-	$(RTL_DIR)/mac/mac8.sv \
+	$(RTL_DIR)/systolic/systolic_array_sparse.sv \
 	$(RTL_DIR)/buffer/act_buffer.sv \
 	$(RTL_DIR)/buffer/wgt_buffer.sv \
+	$(RTL_DIR)/buffer/output_accumulator.sv \
 	$(RTL_DIR)/control/scheduler.sv \
+	$(RTL_DIR)/control/bsr_scheduler.sv \
 	$(RTL_DIR)/control/csr.sv \
+	$(RTL_DIR)/control/pulse_sync.sv \
+	$(RTL_DIR)/control/sync_2ff.sv \
+	$(RTL_DIR)/control/block_reorder_buffer.sv \
+	$(RTL_DIR)/control/multi_layer_buffer.sv \
 	$(RTL_DIR)/dma/bsr_dma.sv \
-	$(RTL_DIR)/dma/dma_lite.sv \
-	$(RTL_DIR)/uart/uart_rx.sv \
-	$(RTL_DIR)/uart/uart_tx.sv \
+	$(RTL_DIR)/dma/act_dma.sv \
+	$(RTL_DIR)/host_iface/axi_lite_slave.sv \
+	$(RTL_DIR)/host_iface/axi_dma_bridge.sv \
+	$(RTL_DIR)/meta/meta_decode.sv \
 	$(RTL_DIR)/monitor/perf.sv \
 	$(RTL_DIR)/top/accel_top.sv
 
 # C++ testbench
 CPP_SOURCES = test_accel_verilator.cpp
 
+# MNIST BSR test
+CPP_MNIST = test_mnist_bsr.cpp
+
 # Output executable
 EXEC = obj_dir/Vaccel_top
+EXEC_MNIST = obj_dir/Vmnist_bsr
 
 # =============================================================================
 # Targets
 # =============================================================================
 
-.PHONY: all run wave clean help
+.PHONY: all mnist run wave clean help
 
 all: $(EXEC)
+
+mnist: $(RTL_SOURCES) $(CPP_MNIST)
+	@echo "=========================================="
+	@echo "Building MNIST BSR test with Verilator..."
+	@echo "=========================================="
+	$(VERILATOR) $(VERILATOR_FLAGS) -o Vmnist_bsr $(RTL_SOURCES) $(CPP_MNIST)
+	@echo ""
+	@echo "✅ Build complete: obj_dir/Vmnist_bsr"
+	@echo ""
 
 $(EXEC): $(RTL_SOURCES) $(CPP_SOURCES)
 	@echo "=========================================="
