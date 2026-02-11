@@ -1,6 +1,6 @@
 """
 ACCEL-BSR Exporters
-Export sparse weights for Transformer, MLP, and Conv layers in BSR format.
+Export sparse MNIST weights in BSR format for hardware.
 """
 
-__all__ = ["export_transformer", "export_mlp", "export_conv"]
+__all__ = []

@@ -1,8 +1,0 @@
-{
-  "in_channels": 32,
-  "out_channels": 64,
-  "kernel_size": 3,
-  "target_sparsity": 70.0,
-  "actual_sparsity": 69.96527777777779,
-  "block_size": 4
-}
