@@ -299,8 +299,11 @@ module csr #(
   // NEW: Act DMA Start Pulse
   wire w_act_dma_start = (csr_wen && csr_addr==ACT_DMA_CTRL && csr_wdata[0]);
 
-  // Illegal start guard (e.g., zero tiles or start while busy)
-  wire dims_illegal  = (r_Tm==0 || r_Tn==0 || r_Tk==0);
+  // Illegal start guard: BSR-only mode checks block dimensions.
+  // Dense-mode Tm/Tn/Tk also accepted for backward compatibility.
+  wire bsr_illegal   = (r_bsr_block_rows == 0 || r_bsr_block_cols == 0);
+  wire dense_illegal = (r_Tm == 0 || r_Tn == 0 || r_Tk == 0);
+  wire dims_illegal  = bsr_illegal && dense_illegal;
   assign start_pulse = w_start && !core_busy && !dims_illegal;
   assign abort_pulse = w_abort;
   // set illegal if blocked
@@ -393,7 +396,7 @@ module csr #(
       BSR_NUM_BLOCKS:  csr_rdata = r_bsr_num_blocks;
       BSR_BLOCK_ROWS:  csr_rdata = r_bsr_block_rows;
       BSR_BLOCK_COLS:  csr_rdata = r_bsr_block_cols;
-      BSR_STATUS:      csr_rdata = {16'd0, 4'd0, r_bsr_state, st_bsr_error, st_bsr_done, 1'b0, 1'b1};
+      BSR_STATUS:      csr_rdata = {16'd0, 4'd0, 4'd0, r_bsr_state, st_bsr_error, st_bsr_done, 1'b0, 1'b1};
       BSR_ERROR_CODE:  csr_rdata = 32'd0;
       BSR_PTR_ADDR:    csr_rdata = r_bsr_ptr_addr;
       BSR_IDX_ADDR:    csr_rdata = r_bsr_idx_addr;

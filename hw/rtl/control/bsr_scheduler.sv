@@ -64,6 +64,10 @@ module bsr_scheduler #(
 
     (* fsm_encoding = "one_hot" *) reg [9:0] state, state_n;
 
+    // MT input is part of the configuration interface but unused by this
+    // scheduler variant (BSR iterates K-rows via row_ptr, not M-rows).
+    wire _unused_MT = &{1'b0, MT};
+
     // ---------- Internal Registers ----------
     reg [K_W-1:0] k_idx;
     reg [M_W-1:0] m_idx;
@@ -76,7 +80,6 @@ module bsr_scheduler #(
 
     reg [31:0]    blk_ptr;       // Current block index
     reg [31:0]    blk_end;       // End index for current k-row
-    reg [31:0]    n_idx;         // Column tile from col_idx[blk_ptr]
 
     reg load_weight_r;
     assign load_weight = load_weight_r;
@@ -157,7 +160,7 @@ module bsr_scheduler #(
 
         S_FETCH_PTR1: begin
           meta_ren   <= !meta_req_sent;
-          meta_raddr <= k_idx;
+          meta_raddr <= {{(32-K_W){1'b0}}, k_idx};
           // synthesis translate_off
           if (meta_rvalid)
             $display("[SCHED] S_FETCH_PTR1: addr=%0d rdata=%0d",
@@ -168,7 +171,7 @@ module bsr_scheduler #(
 
         S_FETCH_PTR2: begin
           meta_ren   <= !meta_req_sent;
-          meta_raddr <= k_idx + 1;
+          meta_raddr <= {{(32-K_W){1'b0}}, k_idx} + 32'd1;
           // synthesis translate_off
           if (meta_rvalid)
             $display("[SCHED] S_FETCH_PTR2: addr=%0d rdata=%0d",
@@ -184,13 +187,12 @@ module bsr_scheduler #(
         S_FETCH_COL: begin
           meta_ren   <= !meta_req_sent;
           meta_raddr <= COL_IDX_BASE + blk_ptr;  // Use parameter, not magic 128
-          if (meta_rvalid) n_idx <= meta_rdata;
         end
 
         S_LOAD_WGT: begin
           wgt_rd_en <= 1;
           if (load_cnt <= LOAD_CNT_MAX)
-            wgt_addr <= (blk_ptr * BLOCK_SIZE) + load_cnt;
+            wgt_addr <= (blk_ptr * BLOCK_SIZE) + {{(32-$clog2(2*BLOCK_SIZE)-1){1'b0}}, load_cnt};
 
           load_weight_r <= (load_cnt > 0);
           load_cnt <= load_cnt + 1;
@@ -208,7 +210,7 @@ module bsr_scheduler #(
 
           if (wait_cnt == LOAD_CNT_MAX) begin
             act_rd_en  <= 1;
-            act_addr   <= (k_idx * BLOCK_SIZE);
+            act_addr   <= ({{(32-K_W){1'b0}}, k_idx} * BLOCK_SIZE);
             wait_cnt   <= 0;
             stream_cnt <= 0;
           end
@@ -221,7 +223,7 @@ module bsr_scheduler #(
 
           if (stream_cnt < BLOCK_SIZE) begin
             act_rd_en <= 1;
-            act_addr  <= (k_idx * BLOCK_SIZE) + stream_cnt;
+            act_addr  <= ({{(32-K_W){1'b0}}, k_idx} * BLOCK_SIZE) + {{(32-$clog2(2*BLOCK_SIZE)-1){1'b0}}, stream_cnt};
           end
 
           if (stream_cnt == STREAM_CNT_MAX)
@@ -238,6 +240,11 @@ module bsr_scheduler #(
             done <= 1;
             busy <= 0;
           end
+        end
+
+        default: begin
+          // Should not reach here; return to safe state
+          busy <= 0;
         end
       endcase
 

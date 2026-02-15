@@ -60,13 +60,24 @@ module act_dma #(
 
     assign m_axi_arid = STREAM_ID[AXI_ID_W-1:0];
 
+    // m_axi_rid: AXI read-data ID tag — unused because this DMA uses a single
+    // fixed STREAM_ID and never needs to match responses.
+    wire _unused_act_axi_rid = &{1'b0, m_axi_rid};
+
     // R13: 4KB boundary guard — cap burst to stay within current page
-    wire [9:0] page_max_beats = (13'h1000 - {1'b0, current_axi_addr[11:0]}) >> 3;
-    // WIDTHTRUNC fix: explicitly cast burst length calculation to 32-bit
+    // page_max_beats computed directly in beat units (byte_rem >> 3).
+    // page_byte_rem[2:0] are sub-beat offsets, unused for beat counting.
+    wire [12:0] page_byte_rem  = (13'h1000 - {1'b0, current_axi_addr[11:0]});
+    wire [9:0]  page_max_beats = page_byte_rem[12:3];
+    wire _unused_page_byte_lo  = &{1'b0, page_byte_rem[2:0]};
+    // Explicitly cast burst length calculation to 32-bit to avoid truncation
     wire [31:0] max_burst_bytes = 32'd8 * (32'd1 + {24'd0, BURST_LEN});
-    wire [7:0] data_arlen     = (bytes_remaining > max_burst_bytes)
-                               ? BURST_LEN
-                               : ((bytes_remaining + 32'd7) >> 3) - 8'd1;
+    // data_arlen_w upper bits are always 0 (burst lengths fit in 8 bits)
+    wire [31:0] data_arlen_w   = (bytes_remaining > max_burst_bytes)
+                               ? {24'd0, BURST_LEN}
+                               : ((bytes_remaining + 32'd7) >> 3) - 32'd1;
+    wire [7:0] data_arlen      = data_arlen_w[7:0];
+    wire _unused_arlen_hi      = &{1'b0, data_arlen_w[31:8]};
     wire [7:0] safe_arlen     = ({2'b0, data_arlen} + 10'd1 > page_max_beats)
                                ? page_max_beats[7:0] - 8'd1
                                : data_arlen;
@@ -132,7 +143,7 @@ module act_dma #(
 
                             if (m_axi_rlast) begin
                                 m_axi_rready     <= 1'b0;
-                                current_axi_addr <= current_axi_addr + ((m_axi_arlen + 1) * 8);
+                                current_axi_addr <= current_axi_addr + (({24'd0, m_axi_arlen} + 32'd1) * 32'd8);
 
                                 if (bytes_remaining <= 8)
                                     state <= DONE_STATE;

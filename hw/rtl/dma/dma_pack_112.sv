@@ -32,7 +32,7 @@ module dma_pack_112 #(
         if (!rst_n) begin
             have_beat0 <= 1'b0;
             buf_we     <= 1'b0;
-            buf_waddr  <= 0;
+            buf_waddr  <= {ADDR_W{1'b1}};  // wraps to 0 on first increment
             beat0      <= 64'd0;
         end else begin
             buf_we <= 1'b0;  // default

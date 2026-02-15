@@ -39,9 +39,9 @@ module systolic_array #(
 
     // Triangular skew: row i gets i delay stages
     for (ui = 0; ui < N_ROWS; ui = ui + 1)
-      if (ui == 0) begin
+      if (ui == 0) begin : gen_no_delay
         assign a_in[ui] = a_in_raw[ui];
-      end else begin
+      end else begin : gen_delay
         reg signed [7:0] delay_regs [0:ui-1];
         integer k;
         always @(posedge clk or negedge rst_n) begin

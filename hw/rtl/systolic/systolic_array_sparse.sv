@@ -87,8 +87,15 @@ module systolic_array_sparse #(
 
         wire signed [DATA_W-1:0] b_src = b_in[c];
 
-        // All columns in the selected row latch simultaneously
+        // Sparse direct-addressing: ALL columns in the selected row latch
+        // simultaneously via load_ptr match.  This differs from the dense
+        // systolic_array.sv which chains load_weight_out PE-to-PE across
+        // columns (load_weight_src = prev PE's load_weight_out).  Because
+        // every column latches in the same cycle here, the chain output
+        // from the PE is architecturally vestigial.
         wire load_weight_src = load_weight && (load_ptr == r[$clog2(N_ROWS)-1:0]);
+
+        wire _unused_lw_out;  // PE chain output — unused in direct-addressing mode
 
         pe #(.PIPE(1)) u_pe (
           .clk            (clk),
@@ -99,7 +106,7 @@ module systolic_array_sparse #(
           .a_in           (a_src),
           .b_in           (b_src),
           .a_out          (a_fwd[r][c]),
-          .load_weight_out(/* unused */              ),
+          .load_weight_out(_unused_lw_out),
           .acc            (c_out_flat[(r*N_COLS + c)*ACC_W +: ACC_W])
         );
       end

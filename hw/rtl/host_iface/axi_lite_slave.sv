@@ -31,6 +31,11 @@ module axi_lite_slave #(
     logic                      got_waddr, got_wdata;
     assign axi_error = 1'b0;
 
+    // AXI4-Lite protocol ports — present per spec, unused by this implementation:
+    //   s_axi_awprot/arprot: Protection encoding (no privilege checks).
+    //   s_axi_wstrb: Byte strobes (always full-word writes in this design).
+    wire _unused_axi_proto = &{1'b0, s_axi_awprot, s_axi_arprot, s_axi_wstrb};
+
     // Write requires both address and data channels
     assign s_axi_awready = !got_waddr && !s_axi_bvalid;
     assign s_axi_wready  = !got_wdata && !s_axi_bvalid;

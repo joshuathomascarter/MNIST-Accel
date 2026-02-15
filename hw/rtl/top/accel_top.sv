@@ -271,6 +271,40 @@ module accel_top #(
     output wire                  m_axi_rready,
 
     // =========================================================================
+    // AXI4 Master Write Interface (Output DMA → DDR via Zynq HP Port)
+    // =========================================================================
+    // Separate from read channels — AXI4 supports full-duplex read/write.
+    // Only one write master (out_dma), so no arbitration needed.
+    //
+    // -------------------------------------------------------------------------
+    // Write Address Channel
+    // -------------------------------------------------------------------------
+    output wire [AXI_ID_W-1:0]   m_axi_awid,
+    output wire [AXI_ADDR_W-1:0] m_axi_awaddr,
+    output wire [7:0]            m_axi_awlen,
+    output wire [2:0]            m_axi_awsize,
+    output wire [1:0]            m_axi_awburst,
+    output wire                  m_axi_awvalid,
+    input  wire                  m_axi_awready,
+
+    // -------------------------------------------------------------------------
+    // Write Data Channel
+    // -------------------------------------------------------------------------
+    output wire [AXI_DATA_W-1:0] m_axi_wdata,
+    output wire [AXI_DATA_W/8-1:0] m_axi_wstrb,
+    output wire                  m_axi_wlast,
+    output wire                  m_axi_wvalid,
+    input  wire                  m_axi_wready,
+
+    // -------------------------------------------------------------------------
+    // Write Response Channel
+    // -------------------------------------------------------------------------
+    input  wire [AXI_ID_W-1:0]   m_axi_bid,
+    input  wire [1:0]            m_axi_bresp,
+    input  wire                  m_axi_bvalid,
+    output wire                  m_axi_bready,
+
+    // =========================================================================
     // AXI4-Lite Slave Interface (CSR from Zynq GP Port)
     // =========================================================================
     // This interface connects to Zynq M_AXI_GP0 through an AXI Interconnect.
@@ -331,8 +365,12 @@ module accel_top #(
     // done: Computation complete (tile/layer finished)
     output wire done,
     
-    // error: DMA error occurred (address fault, bus error)
-    output wire error
+    // error: DMA or AXI error occurred (address fault, bus error)
+    output wire error,
+
+    // irq: Active-high interrupt to Zynq PS (active when done && irq_en)
+    // Connect to IRQ_F2P[0] on Zynq PS for interrupt-driven completion
+    output wire irq
 );
 
     // =========================================================================
@@ -359,7 +397,6 @@ module accel_top #(
     wire                    abort_pulse;    // Emergency stop (clears all state)
 
     // CSR Configuration Outputs (directly from register values)
-    wire [31:0] cfg_M, cfg_N, cfg_K;        // Matrix dimensions
     wire [31:0] cfg_act_src_addr;           // Activation DMA source address
     wire [31:0] cfg_bsr_src_addr;           // BSR DMA source address
     wire [31:0] cfg_act_xfer_len;           // Activation transfer length (bytes)
@@ -367,8 +404,6 @@ module accel_top #(
     wire [31:0] cfg_bsr_num_blocks;         // BSR non-zero blocks
     wire [31:0] cfg_bsr_block_rows;         // BSR block rows (M/14)
     wire [31:0] cfg_bsr_block_cols;         // BSR block cols (K/14)
-    wire [31:0] cfg_bsr_ptr_addr;           // BSR row_ptr address
-    wire [31:0] cfg_bsr_idx_addr;           // BSR col_idx address
 
     // -------------------------------------------------------------------------
     // DMA Control Signals
@@ -444,7 +479,7 @@ module accel_top #(
     // Activation Buffer Write (from act_dma → act_buffer_ram)
     // - 64-bit writes, address incremented by 8 per beat
     wire                    act_buf_we;         // Write enable
-    wire [AXI_ADDR_W-1:0]   act_buf_waddr;      // Byte address
+    wire [AXI_ADDR_W-1:0]   _unused_act_waddr;  // DMA address (packer generates its own)
     wire [AXI_DATA_W-1:0]   act_buf_wdata;      // 8 INT8 values
 
     // BSR Row Pointer Write (from bsr_dma → row_ptr_bram)
@@ -466,7 +501,7 @@ module accel_top #(
     // - Address includes block index and intra-block offset
     // - BRAM_ADDR_W+6:0 = 17 bits: [16:7] block index, [6:0] intra-block offset
     wire                    wgt_we;
-    wire [BRAM_ADDR_W+6:0]  wgt_waddr;          // {block_idx, offset}
+    wire [BRAM_ADDR_W+6:0]  _unused_wgt_waddr;  // DMA address (packer generates its own)
     wire [63:0]             wgt_wdata;          // 8 INT8 weights
 
     // -------------------------------------------------------------------------
@@ -476,7 +511,6 @@ module accel_top #(
     // Address 0..127 → row_ptr_bram, 128+ → col_idx_bram (offset by 128).
     wire [31:0]             sched_meta_addr;    // Metadata address from scheduler
     wire                    sched_meta_ren;     // Read-enable from scheduler
-    wire                    sched_meta_ready;   // Scheduler accepting data
     reg                     meta_rvalid_r;      // 1-cycle delayed valid
     wire [31:0]             meta_rdata_r;       // Muxed BRAM read data
 
@@ -502,12 +536,13 @@ module accel_top #(
     // -------------------------------------------------------------------------
     wire                    load_weight;        // Load weights into PE registers
     wire                    pe_en;              // Enable MAC operations (block_valid)
-    wire                    accum_en;           // Enable accumulator update
     wire                    pe_clr;             // Clear PE accumulators (on abort)
-    wire                    wgt_rd_en;          // Weight buffer read enable
     wire [AXI_ADDR_W-1:0]   wgt_rd_addr;        // Weight buffer read address
     wire                    act_rd_en;          // Activation buffer read enable
     wire [AXI_ADDR_W-1:0]   act_rd_addr;        // Activation buffer read address
+    wire                    _unused_wgt_rd_en;  // Weight read-enable (unused in BSR)
+    wire                    _unused_accum_en;   // Accumulate enable (unused in BSR)
+    wire                    _unused_meta_ready; // BRAM always ready, never checked
 
     // -------------------------------------------------------------------------
     // Activation Buffer Read Interface
@@ -545,19 +580,29 @@ module accel_top #(
     wire [31:0] perf_dma_bytes;         // Total bytes transferred by both DMAs
     wire [31:0] perf_blocks_processed;  // BSR non-zero blocks computed
     wire [31:0] perf_stall_cycles;      // Cycles scheduler busy but PE idle
-    wire        perf_done;              // Measurement complete
 
     // -------------------------------------------------------------------------
     // Output Accumulator Interface
     // -------------------------------------------------------------------------
     // Captures systolic array results at end of each block row,
     // applies ReLU + INT32→INT8 quantization, and provides DMA readout.
-    wire        accum_dma_ready;        // Inactive bank ready for DMA
+    // Output DMA
+    wire        out_dma_done;           // Output written to DDR
+    wire        out_dma_busy;           // Output DMA in progress
+    wire [31:0] cfg_dma_dst_addr;       // DDR destination for output
+
+    // Output Accumulator
     wire        accum_busy;             // Accumulation in progress
     wire        accum_bank_sel;         // Current active bank
-    wire [31:0] accum_debug;            // First accumulator (debug)
-    wire [63:0] accum_dma_rd_data;      // 8×INT8 packed output for DMA
     wire [31:0] cfg_sa_bits;            // Quantization scale from CSR (Q16.16)
+
+    // Output Accumulator ↔ Output DMA wiring
+    wire        out_dma_rd_en;
+    wire [BRAM_ADDR_W-1:0] out_dma_rd_addr;
+    wire [63:0] out_dma_rd_data;
+    wire        out_dma_ready;
+    wire [31:0] _unused_accum_debug;      // Debug accumulator (unused in prod)
+    wire        _unused_perf_done;        // Perf measurement-done (read via CSR)
 
     // Row completion detection for BSR mode
     // PEs have clr hardwired to 0 — accumulators persist across all blocks.
@@ -573,9 +618,38 @@ module accel_top #(
     // - busy: Any module is actively processing
     // - done: Scheduler has finished all blocks
     // - error: Any DMA reported an error (address fault, bus error, etc.)
-    assign busy  = act_dma_busy | bsr_dma_busy | sched_busy | accum_busy;
-    assign done  = sched_done;
-    assign error = bsr_dma_error | act_dma_error;
+    assign busy  = act_dma_busy | bsr_dma_busy | sched_busy | accum_busy | out_dma_busy;
+    assign done  = out_dma_done;
+    assign error = bsr_dma_error | act_dma_error | axi_error;
+
+    // Interrupt: assert when computation completes and interrupts are enabled
+    wire        axi_error;              // AXI-Lite protocol error (from slave)
+    wire        irq_en;                 // Interrupt enable (from CSR)
+    assign irq = done & irq_en;
+
+    // -------------------------------------------------------------------------
+    // Intentionally-Unused Signal Aggregation
+    // -------------------------------------------------------------------------
+    // Wires prefixed with "_unused" suppress UNUSEDSIGNAL lint warnings.
+    // Partial-width unused bits are collected here.
+    //
+    // s_axi_a[wr]addr upper bits: AXI spec requires 32-bit addresses but
+    //   CSR space only uses [CSR_ADDR_W-1:0] = 8 bits.
+    // cfg_bsr_config: only bit [1] (relu_en) is used; bits [31:2] and [0]
+    //   are reserved for future features.
+    // sched_meta_addr / wgt_rd_addr / act_rd_addr: scheduler outputs 32-bit
+    //   addresses but BRAMs only use [BRAM_ADDR_W-1:0] = 10 bits.
+    // cfg_bsr_block_cols[31:12]: scheduler KT uses only 12 bits (max 4096
+    //   tile columns); upper CSR bits are for software readback only.
+    wire _unused_addr_bits = &{1'b0,
+        s_axi_awaddr[AXI_ADDR_W-1:CSR_ADDR_W],
+        s_axi_araddr[AXI_ADDR_W-1:CSR_ADDR_W],
+        cfg_bsr_config[31:2], cfg_bsr_config[0],
+        cfg_bsr_block_cols[31:12],
+        sched_meta_addr[31:BRAM_ADDR_W],
+        wgt_rd_addr[AXI_ADDR_W-1:BRAM_ADDR_W],
+        act_rd_addr[AXI_ADDR_W-1:BRAM_ADDR_W]
+    };
 
     // =========================================================================
     // Module Instantiations
@@ -635,8 +709,39 @@ module accel_top #(
         .csr_ren        (csr_ren),
         .csr_wdata      (csr_wdata),
         .csr_rdata      (csr_rdata),
-        .axi_error      ()
+        .axi_error      (axi_error)
     );
+
+    // -------------------------------------------------------------------------
+    // Software-Only CSR Registers (not consumed by hardware datapath)
+    // -------------------------------------------------------------------------
+    // The CSR module provides these outputs because the host writes and reads
+    // them for its own configuration tracking. The BSR-only hardware datapath
+    // does NOT consume them for the following architectural reasons:
+    //
+    //   cfg_M/N/K:  Host provides raw matrix dimensions for software QA.
+    //               Hardware uses MT/KT (block counts from bsr_block_rows/cols).
+    //   Tm/Tn/Tk:   Dense-mode tile sizes. BSR scheduler generates its own.
+    //   m/n/k_idx:  Dense-mode tile loop counters. BSR iterates row_ptr.
+    //   bank_sel_*: Legacy double-buffer selection. Output accumulator
+    //               manages bank_sel internally.
+    //   Sw_bits:    Weight quantization scale. Host pre-combines Sa*Sw into
+    //               Sa_bits so hardware only needs one scale factor.
+    //   dma_dst_addr/xfer_len: For future write-DMA (output to DDR).
+    //               Currently results are read via CSR result_data registers.
+    //   bsr_ptr/idx_addr: Separate DDR addresses for BSR sub-arrays.
+    //               bsr_dma reads the entire BSR structure sequentially from
+    //               one base address, so split addressing is not used.
+    //
+    // Prefixed _unused so Verilator suppresses UNUSEDSIGNAL lint.
+    wire [31:0] _unused_cfg_M, _unused_cfg_N, _unused_cfg_K;
+    wire [31:0] _unused_Tm, _unused_Tn, _unused_Tk;
+    wire [31:0] _unused_m_idx, _unused_n_idx, _unused_k_idx;
+    wire        _unused_bank_sel_wr_A, _unused_bank_sel_wr_B;
+    wire        _unused_bank_sel_rd_A, _unused_bank_sel_rd_B;
+    wire [31:0] _unused_Sw_bits;
+    wire [31:0] _unused_dma_xfer_len;
+    wire [31:0] _unused_bsr_ptr_addr, _unused_bsr_idx_addr;
 
     // -------------------------------------------------------------------------
     // 2. CSR Module (Configuration & Control Registers)
@@ -673,26 +778,26 @@ module accel_top #(
         // Control Outputs
         .start_pulse            (start_pulse),
         .abort_pulse            (abort_pulse),
-        .irq_en                 (),
+        .irq_en                 (irq_en),
         // Matrix Dimensions
-        .M                      (cfg_M),
-        .N                      (cfg_N),
-        .K                      (cfg_K),
+        .M                      (_unused_cfg_M),
+        .N                      (_unused_cfg_N),
+        .K                      (_unused_cfg_K),
         // Tile Sizes (not used in sparse mode, but kept for compatibility)
-        .Tm                     (),
-        .Tn                     (),
-        .Tk                     (),
-        .m_idx                  (),
-        .n_idx                  (),
-        .k_idx                  (),
+        .Tm                     (_unused_Tm),
+        .Tn                     (_unused_Tn),
+        .Tk                     (_unused_Tk),
+        .m_idx                  (_unused_m_idx),
+        .n_idx                  (_unused_n_idx),
+        .k_idx                  (_unused_k_idx),
         // Bank Selection (legacy, unused in sparse)
-        .bank_sel_wr_A          (),
-        .bank_sel_wr_B          (),
-        .bank_sel_rd_A          (),
-        .bank_sel_rd_B          (),
+        .bank_sel_wr_A          (_unused_bank_sel_wr_A),
+        .bank_sel_wr_B          (_unused_bank_sel_wr_B),
+        .bank_sel_rd_A          (_unused_bank_sel_rd_A),
+        .bank_sel_rd_B          (_unused_bank_sel_rd_B),
         // Scaling Factors (for quantization)
         .Sa_bits                (cfg_sa_bits),
-        .Sw_bits                (),
+        .Sw_bits                (_unused_Sw_bits),
         // Performance Counters
         .perf_total_cycles      (perf_total_cycles),
         .perf_active_cycles     (perf_active_cycles),
@@ -707,8 +812,8 @@ module accel_top #(
         .dma_done_in            (act_dma_done & bsr_dma_done),
         .dma_bytes_xferred_in   (perf_dma_bytes),
         .dma_src_addr           (cfg_bsr_src_addr),
-        .dma_dst_addr           (),       // Not used (read-only DMAs)
-        .dma_xfer_len           (),
+        .dma_dst_addr           (cfg_dma_dst_addr),
+        .dma_xfer_len           (_unused_dma_xfer_len),
         .dma_start_pulse        (bsr_dma_start),
         // Activation DMA
         .act_dma_src_addr       (cfg_act_src_addr),
@@ -719,8 +824,8 @@ module accel_top #(
         .bsr_num_blocks         (cfg_bsr_num_blocks),
         .bsr_block_rows         (cfg_bsr_block_rows),
         .bsr_block_cols         (cfg_bsr_block_cols),
-        .bsr_ptr_addr           (cfg_bsr_ptr_addr),
-        .bsr_idx_addr           (cfg_bsr_idx_addr)
+        .bsr_ptr_addr           (_unused_bsr_ptr_addr),
+        .bsr_idx_addr           (_unused_bsr_idx_addr)
     );
 
     // BSR config register (sched_mode removed — BSR-only architecture)
@@ -864,7 +969,7 @@ module accel_top #(
         .m_axi_rready       (act_rready),
         // Buffer Write Interface
         .act_we             (act_buf_we),
-        .act_addr           (act_buf_waddr),
+        .act_addr           (_unused_act_waddr),
         .act_wdata          (act_buf_wdata)
     );
 
@@ -901,7 +1006,6 @@ module accel_top #(
         .src_addr           (bsr_dma_src_addr),
         // CSR inputs for BSR dimensions (driver-provided)
         .csr_num_rows       (cfg_bsr_block_rows),
-        .csr_num_cols       (cfg_bsr_block_cols),
         .csr_total_blocks   (cfg_bsr_num_blocks),
         .done               (bsr_dma_done),
         .busy               (bsr_dma_busy),
@@ -928,7 +1032,7 @@ module accel_top #(
         .col_idx_addr       (col_idx_waddr),
         .col_idx_wdata      (col_idx_wdata),
         .wgt_we             (wgt_we),
-        .wgt_addr           (wgt_waddr),
+        .wgt_addr           (_unused_wgt_waddr),
         .wgt_wdata          (wgt_wdata)
     );
 
@@ -957,12 +1061,16 @@ module accel_top #(
     // -------------------------------------------------------------------------
     // row_ptr[i] = index of first non-zero block in row i
     // row_ptr[num_rows] = total number of non-zero blocks
-    reg [31:0] row_ptr_bram [0:(1<<BRAM_ADDR_W)-1]; /* verilator public */
+    reg [31:0] row_ptr_bram [0:(1<<BRAM_ADDR_W)-1];
     reg [31:0] row_ptr_rdata_r;
 
     always @(posedge clk) begin
-        if (row_ptr_we)
+        if (row_ptr_we) begin
             row_ptr_bram[row_ptr_waddr] <= row_ptr_wdata;
+            // synthesis translate_off
+            $display("[BRAM] row_ptr[%0d] = %0d  @ %0t", row_ptr_waddr, row_ptr_wdata, $time);
+            // synthesis translate_on
+        end
         // Read port: address directly from scheduler
         row_ptr_rdata_r <= row_ptr_bram[sched_meta_addr[BRAM_ADDR_W-1:0]];
     end
@@ -972,7 +1080,7 @@ module accel_top #(
     // -------------------------------------------------------------------------
     // col_idx[j] = column block index for j-th non-zero block
     // Used by scheduler to compute activation address offset
-    reg [15:0] col_idx_bram [0:(1<<BRAM_ADDR_W)-1]; /* verilator public */
+    reg [15:0] col_idx_bram [0:(1<<BRAM_ADDR_W)-1];
     reg [15:0] col_idx_rdata_r;
 
     // Col_idx is at offset COL_IDX_BASE(256) in scheduler address space
@@ -1010,7 +1118,7 @@ module accel_top #(
         .buf_wdata  (wgt_pack_wdata)
     );
 
-    reg [N_COLS*DATA_W-1:0] wgt_block_bram [0:(1<<BRAM_ADDR_W)-1]; /* verilator public */
+    reg [N_COLS*DATA_W-1:0] wgt_block_bram [0:(1<<BRAM_ADDR_W)-1];
     reg [N_COLS*DATA_W-1:0] wgt_block_rdata_r;
 
     always @(posedge clk) begin
@@ -1080,16 +1188,16 @@ module accel_top #(
         .meta_req_ready (1'b1),           // BRAM always ready (no cache stall)
         .meta_rdata     (meta_rdata_r),
         .meta_rvalid    (meta_rvalid_r),
-        .meta_ready     (sched_meta_ready),
+        .meta_ready     (_unused_meta_ready),
         // Buffer Interfaces
-        .wgt_rd_en      (wgt_rd_en),
+        .wgt_rd_en      (_unused_wgt_rd_en),
         .wgt_addr       (wgt_rd_addr),
         .act_rd_en      (act_rd_en),
         .act_addr       (act_rd_addr),
         // Systolic Control
         .load_weight    (load_weight),
         .pe_en          (pe_en),
-        .accum_en       (accum_en),
+        .accum_en       (_unused_accum_en),
         .pe_clr         (pe_clr)
     );
 
@@ -1120,7 +1228,7 @@ module accel_top #(
         .buf_wdata  (act_pack_wdata)
     );
 
-    reg [N_ROWS*DATA_W-1:0] act_buffer_ram [0:(1<<BRAM_ADDR_W)-1] /* verilator public */;
+    reg [N_ROWS*DATA_W-1:0] act_buffer_ram [0:(1<<BRAM_ADDR_W)-1];
     reg [N_ROWS*DATA_W-1:0] act_rd_data_r;
 
     always @(posedge clk) begin
@@ -1226,19 +1334,67 @@ module accel_top #(
         .scale_factor   (cfg_sa_bits),          // Q16.16 scale from CSR
         // Systolic Array Input
         .systolic_out   (systolic_out_flat),    // 196 × INT32 accumulators
-        // DMA Read Interface (future: connect to write DMA)
-        .dma_rd_en      (1'b0),
-        .dma_rd_addr    ({BRAM_ADDR_W{1'b0}}),
-        .dma_rd_data    (accum_dma_rd_data),
-        .dma_ready      (accum_dma_ready),
+        // DMA Read Interface (connected to output write DMA)
+        .dma_rd_en      (out_dma_rd_en),
+        .dma_rd_addr    (out_dma_rd_addr),
+        .dma_rd_data    (out_dma_rd_data),
+        .dma_ready      (out_dma_ready),
         // Status
         .busy           (accum_busy),
         .bank_sel       (accum_bank_sel),
-        .acc_debug      (accum_debug)
+        .acc_debug      (_unused_accum_debug)
     );
 
     // -------------------------------------------------------------------------
-    // 14. Performance Monitor
+    // 14. Output Write DMA (Drains Accumulator → DDR via AXI4 Write)
+    // -------------------------------------------------------------------------
+    // Auto-triggered by sched_done. Reads 25 × 64-bit words from the
+    // output accumulator's inactive bank (196 INT8 values, ReLU'd and
+    // quantized) and writes them to DDR at cfg_dma_dst_addr.
+    //
+    // If cfg_dma_dst_addr == 0, the output DMA immediately signals done,
+    // preserving the legacy CSR-only readback path.
+    out_dma #(
+        .AXI_ADDR_W  (AXI_ADDR_W),
+        .AXI_DATA_W  (AXI_DATA_W),
+        .AXI_ID_W    (AXI_ID_W),
+        .BRAM_ADDR_W (BRAM_ADDR_W),
+        .NUM_ACCS    (N_ROWS * N_COLS),   // 196
+        .STREAM_ID   (2)                  // ID=2 for output writes
+    ) u_out_dma (
+        .clk            (clk),
+        .rst_n          (rst_n),
+        // Control
+        .start          (sched_done),       // Auto-trigger on compute done
+        .dst_addr       (cfg_dma_dst_addr), // From CSR DMA_DST_ADDR register
+        .done           (out_dma_done),
+        .busy           (out_dma_busy),
+        // Output Accumulator Read Interface
+        .accum_rd_en    (out_dma_rd_en),
+        .accum_rd_addr  (out_dma_rd_addr),
+        .accum_rd_data  (out_dma_rd_data),
+        .accum_ready    (out_dma_ready),
+        // AXI4 Write (direct to top-level, no arbitration)
+        .m_axi_awid     (m_axi_awid),
+        .m_axi_awaddr   (m_axi_awaddr),
+        .m_axi_awlen    (m_axi_awlen),
+        .m_axi_awsize   (m_axi_awsize),
+        .m_axi_awburst  (m_axi_awburst),
+        .m_axi_awvalid  (m_axi_awvalid),
+        .m_axi_awready  (m_axi_awready),
+        .m_axi_wdata    (m_axi_wdata),
+        .m_axi_wstrb    (m_axi_wstrb),
+        .m_axi_wlast    (m_axi_wlast),
+        .m_axi_wvalid   (m_axi_wvalid),
+        .m_axi_wready   (m_axi_wready),
+        .m_axi_bid      (m_axi_bid),
+        .m_axi_bresp    (m_axi_bresp),
+        .m_axi_bvalid   (m_axi_bvalid),
+        .m_axi_bready   (m_axi_bready)
+    );
+
+    // -------------------------------------------------------------------------
+    // 15. Performance Monitor
     // -------------------------------------------------------------------------
     // Tracks execution cycles for profiling and optimization.
     //
@@ -1275,7 +1431,7 @@ module accel_top #(
         .dma_bytes_count        (perf_dma_bytes),
         .blocks_processed_count (perf_blocks_processed),
         .stall_cycles_count     (perf_stall_cycles),
-        .measurement_done       (perf_done)
+        .measurement_done       (_unused_perf_done)
     );
 
 endmodule

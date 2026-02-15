@@ -21,7 +21,6 @@ module bsr_dma #(
     input  wire                  start,
     input  wire [AXI_ADDR_W-1:0] src_addr,
     input  wire [31:0]           csr_num_rows,
-    input  wire [31:0]           csr_num_cols,
     input  wire [31:0]           csr_total_blocks,
     output reg                   done,
     output reg                   busy,
@@ -91,15 +90,34 @@ module bsr_dma #(
     assign m_axi_arsize  = AXI_SIZE_64;
     assign m_axi_arburst = AXI_BURST_INCR;
 
-    // 4KB AXI boundary guard: beats remaining before page crossing
-    wire [9:0] page_max_beats = 10'd512 - {2'b0, current_axi_addr[11:3]};
+    // m_axi_rid: AXI protocol requires this port, but since this DMA uses
+    // a single fixed STREAM_ID, we never need to match response IDs.
+    wire _unused_bsr_rid = &{1'b0, m_axi_rid};
 
-    function automatic [7:0] safe_arlen(input [31:0] desired);
-        if (desired[9:0] + 10'd1 > page_max_beats)
+    // rdata_reg[15:0]: In READ_COL_IDX, the first 16-bit col_idx is extracted
+    // directly from m_axi_rdata[15:0] (live data). Only the upper three words
+    // (bits 31:16, 47:32, 63:48) are extracted from rdata_reg in subsequent
+    // unpack cycles. So bits [15:0] of the latch are written but never read.
+    wire _unused_rdata_lo = &{1'b0, rdata_reg[15:0]};
+
+    // 4KB AXI boundary guard: beats remaining before page crossing.
+    // Full 11-bit range: 0..512 beats (0..4096 bytes).
+    // When address is page-aligned, page_max = 512 (full page available).
+    wire [10:0] page_max_beats = 11'd512 - {2'b0, current_axi_addr[11:3]};
+
+    function automatic [7:0] safe_arlen(input [9:0] desired);
+        if ({1'b0, desired} + 11'd1 > page_max_beats)
             safe_arlen = page_max_beats[7:0] - 8'd1;
         else
             safe_arlen = desired[7:0];
     endfunction
+
+    // Pre-computed burst lengths (10-bit) for each DMA phase.
+    // words_remaining is bounded by num_rows+1 (row_ptr), total_blocks (col_idx/wgt).
+    // After shift, the beat count fits in 10 bits (max 512 beats = 4KB page).
+    wire [9:0] rowptr_arlen_short = 10'(((words_remaining + 32'd1) >> 1) - 32'd1);
+    wire [9:0] colidx_arlen_short = 10'(((words_remaining + 32'd3) >> 2) - 32'd1);
+    wire [9:0] wgt_arlen_short    = words_remaining[9:0] - 10'd1;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -142,7 +160,7 @@ module bsr_dma #(
 
                 SETUP_ROW_PTR: begin
                     words_remaining <= num_rows + 1;
-                    row_ptr_addr    <= 0;
+                    row_ptr_addr    <= {BRAM_ADDR_W{1'b1}};  // -1: first +1 wraps to 0
                     state           <= READ_ROW_PTR;
                 end
 
@@ -150,9 +168,9 @@ module bsr_dma #(
                     if (!m_axi_arvalid && !m_axi_rvalid && words_remaining > 0) begin
                         m_axi_araddr <= current_axi_addr;
                         if (words_remaining > 32)
-                            m_axi_arlen <= safe_arlen({24'd0, BURST_LEN});
+                            m_axi_arlen <= safe_arlen({2'd0, BURST_LEN});
                         else
-                            m_axi_arlen <= safe_arlen(((words_remaining + 1) >> 1) - 32'd1);
+                            m_axi_arlen <= safe_arlen(rowptr_arlen_short);
                         m_axi_arvalid <= 1'b1;
                     end
 
@@ -179,7 +197,7 @@ module bsr_dma #(
                                 m_axi_rready <= 1'b0; // throttle for upper-word unpack
                                 state <= WRITE_ROW_PTR_HIGH;
                             end else if (m_axi_rlast) begin
-                                current_axi_addr <= current_axi_addr + ((m_axi_arlen + 1) * 8);
+                                current_axi_addr <= current_axi_addr + (({24'd0, m_axi_arlen} + 32'd1) * 32'd8);
                                 if (words_remaining <= 1) state <= SETUP_COL_IDX;
                             end
                         end
@@ -194,7 +212,7 @@ module bsr_dma #(
                     words_remaining <= words_remaining - 1;
 
                     if (rlast_reg) begin
-                        current_axi_addr <= current_axi_addr + ((m_axi_arlen + 1) * 8);
+                        current_axi_addr <= current_axi_addr + (({24'd0, m_axi_arlen} + 32'd1) * 32'd8);
                         if (words_remaining <= 1) state <= SETUP_COL_IDX;
                         else state <= READ_ROW_PTR;
                     end else begin
@@ -207,7 +225,7 @@ module bsr_dma #(
 
                 SETUP_COL_IDX: begin
                     words_remaining <= total_blocks;
-                    col_idx_addr    <= 0;
+                    col_idx_addr    <= {BRAM_ADDR_W{1'b1}};  // -1: first +1 wraps to 0
                     state           <= READ_COL_IDX;
                 end
 
@@ -215,9 +233,9 @@ module bsr_dma #(
                     if (!m_axi_arvalid && !m_axi_rvalid && words_remaining > 0) begin
                         m_axi_araddr <= current_axi_addr;
                         if (words_remaining > 64)
-                            m_axi_arlen <= safe_arlen({24'd0, BURST_LEN});
+                            m_axi_arlen <= safe_arlen({2'd0, BURST_LEN});
                         else
-                            m_axi_arlen <= safe_arlen(((words_remaining + 3) >> 2) - 32'd1);
+                            m_axi_arlen <= safe_arlen(colidx_arlen_short);
                         m_axi_arvalid <= 1'b1;
                     end
 
@@ -244,7 +262,7 @@ module bsr_dma #(
                                 m_axi_rready <= 1'b0;
                                 state <= WRITE_COL_IDX_1;
                             end else if (m_axi_rlast) begin
-                                current_axi_addr <= current_axi_addr + ((m_axi_arlen + 1) * 8);
+                                current_axi_addr <= current_axi_addr + (({24'd0, m_axi_arlen} + 32'd1) * 32'd8);
                                 if (words_remaining <= 1) state <= SETUP_WEIGHTS;
                             end
                         end
@@ -260,7 +278,7 @@ module bsr_dma #(
 
                     if (words_remaining > 1) state <= WRITE_COL_IDX_2;
                     else if (rlast_reg) begin
-                        current_axi_addr <= current_axi_addr + ((m_axi_arlen + 1) * 8);
+                        current_axi_addr <= current_axi_addr + (({24'd0, m_axi_arlen} + 32'd1) * 32'd8);
                         state <= SETUP_WEIGHTS;
                     end else state <= READ_COL_IDX;
                 end
@@ -274,7 +292,7 @@ module bsr_dma #(
 
                     if (words_remaining > 1) state <= WRITE_COL_IDX_3;
                     else if (rlast_reg) begin
-                        current_axi_addr <= current_axi_addr + ((m_axi_arlen + 1) * 8);
+                        current_axi_addr <= current_axi_addr + (({24'd0, m_axi_arlen} + 32'd1) * 32'd8);
                         state <= SETUP_WEIGHTS;
                     end else state <= READ_COL_IDX;
                 end
@@ -287,7 +305,7 @@ module bsr_dma #(
                     words_remaining <= words_remaining - 1;
 
                     if (rlast_reg) begin
-                        current_axi_addr <= current_axi_addr + ((m_axi_arlen + 1) * 8);
+                        current_axi_addr <= current_axi_addr + (({24'd0, m_axi_arlen} + 32'd1) * 32'd8);
                         if (words_remaining <= 1) state <= SETUP_WEIGHTS;
                         else state <= READ_COL_IDX;
                     end else state <= READ_COL_IDX;
@@ -309,9 +327,9 @@ module bsr_dma #(
                     if (!m_axi_arvalid && !m_axi_rvalid && words_remaining > 0) begin
                         m_axi_araddr <= current_axi_addr;
                         if (words_remaining > {24'd0, BURST_LEN})
-                            m_axi_arlen <= safe_arlen({24'd0, BURST_LEN});
+                            m_axi_arlen <= safe_arlen({2'd0, BURST_LEN});
                         else
-                            m_axi_arlen <= safe_arlen(words_remaining - 32'd1);
+                            m_axi_arlen <= safe_arlen(wgt_arlen_short);
                         m_axi_arvalid <= 1'b1;
                     end
 
@@ -328,7 +346,7 @@ module bsr_dma #(
                             words_remaining <= words_remaining - 1;
 
                             if (m_axi_rlast) begin
-                                current_axi_addr <= current_axi_addr + ((m_axi_arlen + 1) * 8);
+                                current_axi_addr <= current_axi_addr + (({24'd0, m_axi_arlen} + 32'd1) * 32'd8);
                                 if (words_remaining <= 1) state <= DONE_STATE;
                             end
                         end

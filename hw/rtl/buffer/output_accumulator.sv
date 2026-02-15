@@ -198,7 +198,9 @@ module output_accumulator #(
     // LOCAL PARAMETERS
     // =========================================================================
     localparam NUM_ACCS = N_ROWS * N_COLS;  // 196 for 14x14 array
-    localparam BANK_DEPTH = NUM_ACCS;       // One accumulator per output
+    // Round up to multiple of 8 so the last DMA read (8 accumulators per
+    // 64-bit word) never indexes past array bounds.  Extra entries stay 0.
+    localparam BANK_DEPTH = ((NUM_ACCS + 7) / 8) * 8;  // 200
     
     // =========================================================================
     // DOUBLE-BUFFERED ACCUMULATOR BANKS
@@ -347,9 +349,11 @@ module output_accumulator #(
     reg signed [ACC_W-1:0] rd_acc_4, rd_acc_5, rd_acc_6, rd_acc_7;
     reg rd_valid_d1;
 
-    // Proper-width index: 8 bits covers 0..195 (196 accumulators)
-    // WIDTHTRUNC fix: use proper bit slicing from 10-bit address (shift right by 3 for word index)
-    wire [7:0] rd_base_idx = dma_rd_addr[10:3];
+    // dma_rd_addr is the starting accumulator index (0, 8, 16, ..., 192).
+    // Each read returns 8 consecutive INT8 outputs packed into 64 bits.
+    // Only bits [7:0] are needed (max index 199 < 256); upper bits unused.
+    wire [7:0] rd_base_idx = dma_rd_addr[7:0];
+    wire _unused_dma_rd_addr_hi = &{1'b0, dma_rd_addr[ADDR_W-1:8]};
     
     always @(posedge clk) begin
         rd_valid_d1 <= dma_rd_en;
@@ -358,23 +362,23 @@ module output_accumulator #(
             // Read 8 consecutive accumulators for 64-bit output
             // Note: bank_sel=1 means we accumulate to bank1, read from bank0
             if (bank_sel == 1'b1) begin  // Read from bank 0
-                rd_acc_0 <= acc_bank0[rd_base_idx];
-                rd_acc_1 <= acc_bank0[rd_base_idx | 8'd1];
-                rd_acc_2 <= acc_bank0[rd_base_idx | 8'd2];
-                rd_acc_3 <= acc_bank0[rd_base_idx | 8'd3];
-                rd_acc_4 <= acc_bank0[rd_base_idx | 8'd4];
-                rd_acc_5 <= acc_bank0[rd_base_idx | 8'd5];
-                rd_acc_6 <= acc_bank0[rd_base_idx | 8'd6];
-                rd_acc_7 <= acc_bank0[rd_base_idx | 8'd7];
+                rd_acc_0 <= acc_bank0[rd_base_idx + 8'd0];
+                rd_acc_1 <= acc_bank0[rd_base_idx + 8'd1];
+                rd_acc_2 <= acc_bank0[rd_base_idx + 8'd2];
+                rd_acc_3 <= acc_bank0[rd_base_idx + 8'd3];
+                rd_acc_4 <= acc_bank0[rd_base_idx + 8'd4];
+                rd_acc_5 <= acc_bank0[rd_base_idx + 8'd5];
+                rd_acc_6 <= acc_bank0[rd_base_idx + 8'd6];
+                rd_acc_7 <= acc_bank0[rd_base_idx + 8'd7];
             end else begin               // Read from bank 1
-                rd_acc_0 <= acc_bank1[rd_base_idx];
-                rd_acc_1 <= acc_bank1[rd_base_idx | 8'd1];
-                rd_acc_2 <= acc_bank1[rd_base_idx | 8'd2];
-                rd_acc_3 <= acc_bank1[rd_base_idx | 8'd3];
-                rd_acc_4 <= acc_bank1[rd_base_idx | 8'd4];
-                rd_acc_5 <= acc_bank1[rd_base_idx | 8'd5];
-                rd_acc_6 <= acc_bank1[rd_base_idx | 8'd6];
-                rd_acc_7 <= acc_bank1[rd_base_idx | 8'd7];
+                rd_acc_0 <= acc_bank1[rd_base_idx + 8'd0];
+                rd_acc_1 <= acc_bank1[rd_base_idx + 8'd1];
+                rd_acc_2 <= acc_bank1[rd_base_idx + 8'd2];
+                rd_acc_3 <= acc_bank1[rd_base_idx + 8'd3];
+                rd_acc_4 <= acc_bank1[rd_base_idx + 8'd4];
+                rd_acc_5 <= acc_bank1[rd_base_idx + 8'd5];
+                rd_acc_6 <= acc_bank1[rd_base_idx + 8'd6];
+                rd_acc_7 <= acc_bank1[rd_base_idx + 8'd7];
             end
         end
     end
@@ -402,7 +406,7 @@ module output_accumulator #(
         
         reg signed [63:0] scaled;
         reg signed [ACC_W-1:0] relu_val;
-        reg signed [15:0] quant_val;
+        reg signed [OUT_W-1:0] quant_val;
     begin
         // Step 1: ReLU activation (max(0, x))
         // Common in CNNs - introduces non-linearity
@@ -424,9 +428,9 @@ module output_accumulator #(
         else if (scaled < -128)
             quant_val = -128;
         else
-            quant_val = scaled[15:0];
+            quant_val = scaled[OUT_W-1:0];
         
-        quantize_relu = quant_val[OUT_W-1:0];
+        quantize_relu = quant_val;
     end
     endfunction
 
