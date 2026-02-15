@@ -1,4 +1,4 @@
-# C++ File Specifications for ResNet-18 Sparse Accelerator
+# C++ File Specifications for ACCEL-v1 Sparse Accelerator
 
 > **PURPOSE**: This document describes every C++ file you need to write for the hackathon.
 > Each section tells you what the file does, what Python file it replaces, the key data structures,
@@ -420,7 +420,7 @@ Top-level driver that ties everything together. This is what you call to run inf
 - `AXIMaster axi_` - AXI interface
 - `MemoryManager memory_` - DMA buffers
 - `bool is_initialized_`
-- `vector<LayerConfig> layers_` - ResNet-18 layer configs
+- `vector<LayerConfig> layers_` - MNIST CNN layer configs
 
 **Key methods:**
 
@@ -429,7 +429,7 @@ Top-level driver that ties everything together. This is what you call to run inf
 - Check version register
 - Allocate maximum-size buffers
 
-**`void load_resnet18_weights(const string& weight_dir)`**
+**`void load_mnist_weights(const string& weight_dir)`**
 - For each layer:
   - Load `{layer}_weight_int8.npy`
   - Load `{layer}_weight_scales.npy`

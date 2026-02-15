@@ -19,7 +19,7 @@ from golden.gemm_bsr_int8 import gemm_bsr_int8
 from training.export_bsr import build_bsr_from_dense
 
 
-def build_bsr_from_dense(weight, block_h=8, block_w=8, threshold=1e-10):
+def build_bsr_from_dense(weight, block_h=14, block_w=14, threshold=1e-10):
     """Build BSR format from dense matrix (simplified version)"""
     height, width = weight.shape
 
@@ -69,17 +69,17 @@ def test_empty_rows():
     print("TEST 1: Empty Rows (Block Rows with No Non-Zero Blocks)")
     print("=" * 60)
 
-    # Create weight matrix: [16, 64] with 8×8 blocks
-    # Only rows 0, 8 have non-zero values, rows 1-7, 9-15 are empty
-    B = np.zeros((16, 64), dtype=np.float32)
-    B[0:8, 0:8] = np.random.randn(8, 8) * 0.1  # Block (0, 0)
-    B[8:16, 16:24] = np.random.randn(8, 8) * 0.1  # Block (1, 2)
+    # Create weight matrix: [28, 56] with 14×14 blocks
+    # Only block-row 0 col 0, and block-row 1 col 1 are non-zero
+    B = np.zeros((28, 56), dtype=np.float32)
+    B[0:14, 0:14] = np.random.randn(14, 14) * 0.1    # Block (0, 0)
+    B[14:28, 14:28] = np.random.randn(14, 14) * 0.1  # Block (1, 1)
 
     # Input matrix
-    A = np.random.randn(2, 64).astype(np.float32)
+    A = np.random.randn(2, 56).astype(np.float32)
 
     # Build BSR
-    bsr_B = build_bsr_from_dense(B, 8, 8)
+    bsr_B = build_bsr_from_dense(B, 14, 14)
 
     print(f"Weight shape: {B.shape}")
     print(f"BSR blocks: {bsr_B['num_blocks']} (only 2 non-zero)")
@@ -95,14 +95,19 @@ def test_empty_rows():
     scales_B = np.maximum(scales_B, 1e-12).flatten()
 
     # Dense reference
+    C_dense = (A_int8.astype(np.int32) @ B.astype(np.int32)).astype(np.float32) * scale_A
 
     # BSR sparse
     C_sparse = gemm_bsr_int8(A_int8, bsr_B, scale_A, scales_B)
 
-    # Validate
-    # Removed dense comparison
+    # Validate: BSR result shape matches dense
+    assert C_sparse.shape == C_dense.shape, (
+        f"Shape mismatch: sparse {C_sparse.shape} vs dense {C_dense.shape}")
+    assert bsr_B['num_blocks'] == 2, (
+        f"Expected 2 non-zero blocks, got {bsr_B['num_blocks']}")
     print(f"\nResults:")
-    print(f"  Test: {'PASS ✓'}")
+    print(f"  Sparse shape: {C_sparse.shape}")
+    print(f"  Test: PASS ✓")
 
 
 def test_100_percent_dense():
@@ -112,14 +117,14 @@ def test_100_percent_dense():
     print("=" * 60)
 
     # Fully dense matrix
-    B = np.random.randn(16, 64).astype(np.float32) * 0.1
-    A = np.random.randn(2, 64).astype(np.float32)
+    B = np.random.randn(28, 56).astype(np.float32) * 0.1
+    A = np.random.randn(2, 56).astype(np.float32)
 
-    bsr_B = build_bsr_from_dense(B, 8, 8)
+    bsr_B = build_bsr_from_dense(B, 14, 14)
 
     print(f"Weight shape: {B.shape}")
     print(f"BSR blocks: {bsr_B['num_blocks']} (all blocks present)")
-    print(f"Block density: {bsr_B['num_blocks'] / (2 * 8) * 100:.1f}%")
+    print(f"Block density: {bsr_B['num_blocks'] / (2 * 4) * 100:.1f}%")
 
     # Quantize
     scale_A = np.max(np.abs(A)) / 127.0
@@ -131,10 +136,16 @@ def test_100_percent_dense():
     # BSR sparse result
     C_sparse = gemm_bsr_int8(A_int8, bsr_B, scale_A, scales_B)
 
+    # 100% dense should have all blocks present (2 block-rows × 4 block-cols = 8)
+    expected_blocks = 2 * 4
+    assert bsr_B['num_blocks'] == expected_blocks, (
+        f"Expected {expected_blocks} blocks for dense matrix, got {bsr_B['num_blocks']}")
+    assert C_sparse.shape[0] > 0, "Output should have rows"
+    assert np.any(C_sparse != 0), "Dense matrix should produce non-zero output"
     print(f"\nResults:")
     print(f"  Output shape: {C_sparse.shape}")
-    print(f"  All blocks present: {bsr_B['num_blocks'] == 16}")
-    print(f"  Test: {'PASS ✓'}")
+    print(f"  All blocks present: {bsr_B['num_blocks'] == expected_blocks}")
+    print(f"  Test: PASS ✓")
 
 
 def test_100_percent_sparse():
@@ -144,10 +155,10 @@ def test_100_percent_sparse():
     print("=" * 60)
 
     # All-zero matrix
-    B = np.zeros((16, 64), dtype=np.float32)
-    A = np.random.randn(2, 64).astype(np.float32)
+    B = np.zeros((28, 56), dtype=np.float32)
+    A = np.random.randn(2, 56).astype(np.float32)
 
-    bsr_B = build_bsr_from_dense(B, 8, 8)
+    bsr_B = build_bsr_from_dense(B, 14, 14)
 
     print(f"Weight shape: {B.shape}")
     print(f"BSR blocks: {bsr_B['num_blocks']} (should be 0)")
@@ -156,15 +167,19 @@ def test_100_percent_sparse():
     # Quantize
     scale_A = np.max(np.abs(A)) / 127.0
     A_int8 = np.clip(np.rint(A / scale_A), -128, 127).astype(np.int8)
-    scales_B = np.ones(16) * 1e-6  # Dummy scales
+    scales_B = np.ones(28) * 1e-6  # Dummy scales
 
     # BSR sparse (should be all zeros)
     C_sparse = gemm_bsr_int8(A_int8, bsr_B, scale_A, scales_B)
 
     max_val = np.max(np.abs(C_sparse))
+    assert bsr_B['num_blocks'] == 0, (
+        f"All-zero matrix should produce 0 BSR blocks, got {bsr_B['num_blocks']}")
+    assert max_val < 1e-6, (
+        f"All-zero weights should produce near-zero output, got max={max_val}")
     print(f"\nResults:")
     print(f"  Max output value: {max_val:.6f}")
-    print(f"  Test: {'PASS ✓'}")
+    print(f"  Test: PASS ✓")
 
 
 def test_single_block():
@@ -173,11 +188,11 @@ def test_single_block():
     print("TEST 4: Single Block Matrix")
     print("=" * 60)
 
-    # Single 8×8 block
-    B = np.random.randn(8, 8).astype(np.float32) * 0.1
-    A = np.random.randn(1, 8).astype(np.float32)
+    # Single 14×14 block
+    B = np.random.randn(14, 14).astype(np.float32) * 0.1
+    A = np.random.randn(1, 14).astype(np.float32)
 
-    bsr_B = build_bsr_from_dense(B, 8, 8)
+    bsr_B = build_bsr_from_dense(B, 14, 14)
 
     print(f"Weight shape: {B.shape}")
     print(f"BSR blocks: {bsr_B['num_blocks']}")
@@ -192,9 +207,14 @@ def test_single_block():
     # BSR sparse result
     C_sparse = gemm_bsr_int8(A_int8, bsr_B, scale_A, scales_B)
 
+    assert bsr_B['num_blocks'] == 1, (
+        f"Single block matrix should have 1 block, got {bsr_B['num_blocks']}")
+    assert C_sparse.shape == (1, 14), (
+        f"Output shape should be (1, 14), got {C_sparse.shape}")
+    assert np.any(C_sparse != 0), "Single non-zero block should produce non-zero output"
     print(f"\nResults:")
     print(f"  Output shape: {C_sparse.shape}")
-    print(f"  Test: PASS ✓ (single block works)")
+    print(f"  Test: PASS ✓")
 
 
 if __name__ == "__main__":

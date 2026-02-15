@@ -1,10 +1,10 @@
 """
 Systolic Array Simulator
 ========================
-This script simulates the propagation of data through a 16x16 systolic array.
+This script simulates the propagation of data through a 14x14 systolic array.
 It verifies that the skewed input from C++ produces the correct wavefront behavior.
 
-Golden Model: Tests that data takes exactly 30 cycles from PE[0][0] to PE[15][15].
+Golden Model: Tests that data takes exactly 26 cycles from PE[0][0] to PE[13][13].
 """
 
 import numpy as np
@@ -28,8 +28,8 @@ class SystolicPE:
 
 
 class SystolicArray:
-    """16x16 Systolic Array Simulator"""
-    def __init__(self, size=16):
+    """14x14 Systolic Array Simulator"""
+    def __init__(self, size=14):
         self.size = size
         self.pe_grid = [[SystolicPE(r, c) for c in range(size)] for r in range(size)]
         self.cycle_count = 0
@@ -131,13 +131,13 @@ def load_cpp_output(filename):
     return data_4x4
 
 
-def expand_to_16x16(small_matrix):
+def expand_to_14x14(small_matrix):
     """
-    Expand a 4x4 matrix to 16x16 by tiling (for testing purposes).
-    In production, you'd generate actual 16x16 data.
+    Expand a 4x4 matrix to 14x14 by tiling (for testing purposes).
+    In production, you'd generate actual 14x14 data.
     """
     size_small = len(small_matrix)
-    size_large = 16
+    size_large = 14
     tile_factor = size_large // size_small
     
     large_matrix = []
@@ -186,26 +186,26 @@ def main():
     for row in small_data:
         print(f"  {row}")
     
-    # Step 2: Expand to 16x16
-    print("\n[Step 2] Expanding to 16x16 array...")
-    data_16x16 = expand_to_16x16(small_data)
-    print(f"Expanded to 16x16")
+    # Step 2: Expand to 14x14
+    print("\n[Step 2] Expanding to 14x14 array...")
+    data_14x14 = expand_to_14x14(small_data)
+    print(f"Expanded to 14x14")
     
     # Step 3: Create skewed input stream
     print("\n[Step 3] Creating skewed input stream...")
-    skewed_stream = create_skewed_stream_python(data_16x16)
+    skewed_stream = create_skewed_stream_python(data_14x14)
     print(f"Stream length: {len(skewed_stream)} cycles")
     print(f"Bus width: {len(skewed_stream[0])} rows")
     
     # Step 4: Simulate
     print("\n[Step 4] Running systolic array simulation...")
-    array = SystolicArray(size=16)
+    array = SystolicArray(size=14)
     
     # Need extra cycles for data to propagate to the end
-    total_sim_cycles = len(skewed_stream) + 32  # Extra buffer for propagation
+    total_sim_cycles = len(skewed_stream) + 28  # Extra buffer for propagation
     final_value = array.simulate(skewed_stream, total_sim_cycles)
     
-    print(f"\nFinal value at PE[15][15]: {final_value}")
+    print(f"\nFinal value at PE[13][13]: {final_value}")
     
     # Step 5: Verify
     print("\n[Step 5] Verifying wavefront property...")

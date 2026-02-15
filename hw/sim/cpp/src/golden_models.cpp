@@ -88,7 +88,7 @@ namespace golden {
  *
  * Accumulator Sizing Math:
  *   Worst case per multiply: (-128) × (-128) = 16,384
- *   Maximum K dimension: ~4096 (for ResNet-18 FC layers)
+ *   Maximum K dimension: ~9216 (for MNIST CNN fc1 layer)
  *   Worst case sum: 4096 × 16,384 = 67,108,864 (fits in INT32: ±2.1B)
  *
  * Loop Order: M → N → K (output-stationary)
@@ -866,7 +866,7 @@ void im2col_int8(const std::int8_t* input,
  *
  * Memory Overhead:
  *   im2col buffer size = C_in × K × K × H_out × W_out bytes
- *   For ResNet-18 conv1: 3 × 7 × 7 × 112 × 112 = 1.8 MB
+ *   For MNIST conv2: 32 × 3 × 3 × 24 × 24 = 166 KB
  *   Tradeoff: More memory for much better performance
  *
  * @param input    Input tensor [C_in × H × W], INT8

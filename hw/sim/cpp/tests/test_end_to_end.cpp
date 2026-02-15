@@ -20,11 +20,11 @@
  * ║     - Run on test input                                                  ║
  * ║     - Compare to golden output                                           ║
  * ║                                                                           ║
- * ║  2. test_basic_block()                                                    ║
- * ║     - Two conv layers + residual                                         ║
- * ║     - Verify residual addition                                           ║
+ * ║  2. test_mnist_fc()                                                      ║
+ * ║     - FC layer with BSR sparse weights                                    ║
+ * ║     - Verify against golden reference                                     ║
  * ║                                                                           ║
- * ║  3. test_full_resnet18()                                                  ║
+ * ║  3. test_full_mnist_cnn()                                                  ║
  * ║     - All layers                                                         ║
  * ║     - End-to-end accuracy                                                ║
  * ║                                                                           ║
@@ -32,9 +32,9 @@
  * ║     - Multiple images                                                    ║
  * ║     - Throughput measurement                                             ║
  * ║                                                                           ║
- * ║  5. test_imagenet_sample()                                                ║
- * ║     - Real ImageNet image                                                ║
- * ║     - Known correct class                                                ║
+ * ║  5. test_mnist_sample()                                                    ║
+ * ║     - Real MNIST digit image                                             ║
+ * ║     - Known correct digit                                                ║
  * ║                                                                           ║
  * ╚═══════════════════════════════════════════════════════════════════════════╝
  */
@@ -44,7 +44,6 @@
 #include <chrono>
 #include <cmath>
 
-#include "../include/resnet_inference.hpp"
 #include "../include/golden_models.hpp"
 #include "../include/bsr_packer.hpp"
 #include "../include/accelerator_driver.hpp"
@@ -108,45 +107,24 @@ bool test_single_layer_conv() {
     return true;
 }
 
-bool test_basic_block() {
+bool test_mnist_fc() {
     // TODO: Implement
     //
-    // // ResNet basic block: conv1 -> relu -> conv2 -> add(residual) -> relu
-    //
-    // std::vector<int8_t> input(56 * 56 * 64);
-    // // Initialize with pattern
-    //
-    // // Run through golden model
-    // std::vector<int8_t> golden_out(56 * 56 * 64);
-    // // golden::basic_block(...);
-    //
-    // // Run through accelerator
-    // std::vector<int8_t> hw_out(56 * 56 * 64);
-    // // accel.run_basic_block(...);
-    //
-    // // Compare
-    // if (!compare_outputs(hw_out.data(), golden_out.data(), 56 * 56 * 64)) {
-    //     return false;
-    // }
+    // FC layer test (e.g. fc1: 9216 -> 128)
+    // Load BSR weights from data/bsr_export_14x14/fc1/
+    // Create test input, run golden model, compare with accelerator
     
     return true;
 }
 
-bool test_full_resnet18() {
+bool test_full_mnist_cnn() {
     // TODO: Implement
     //
-    // ResNetInference model(true);  // Use accelerator
-    // model.load_model("../../../data/int8/");
+    // Full MNIST CNN: conv1 -> conv2 -> fc1 -> fc2
+    // Load all layer weights from data/bsr_export_14x14/
     //
-    // // Test image
-    // std::vector<uint8_t> image(224 * 224 * 3);
-    // // Load or generate test image
-    //
-    // // Run inference
-    // auto result = model.run_inference(image.data());
-    //
-    // // Run golden model (Python export reference)
-    // // Compare top-5 predictions
+    // Test with golden input from sw/golden/mnist_inputs.npy
+    // Compare final logits with sw/golden/mnist_logits_fp32.npy
     
     return true;
 }
@@ -180,24 +158,12 @@ bool test_batch_inference() {
     return true;
 }
 
-bool test_imagenet_sample() {
+bool test_mnist_sample() {
     // TODO: Implement
     //
-    // ResNetInference model(true);
-    // model.load_model("../../../data/int8/");
-    // model.load_labels("../../../data/imagenet_labels.txt");
-    //
-    // // Load known test image (e.g., cat image -> should predict cat class)
-    // auto result = model.run_inference_file("../../../data/test_images/cat.jpg");
-    //
-    // // Cat classes in ImageNet: 281-285
-    // if (result.predicted_class < 281 || result.predicted_class > 285) {
-    //     std::cerr << "Expected cat class (281-285), got " << result.predicted_class << std::endl;
-    //     return false;
-    // }
-    //
-    // std::cout << "Predicted: " << result.class_name 
-    //           << " (" << result.confidence * 100 << "%)" << std::endl;
+    // Load a known MNIST digit (e.g., a "7" from golden inputs)
+    // Run through full CNN pipeline on accelerator
+    // Verify predicted digit matches expected label
     
     return true;
 }
@@ -210,10 +176,10 @@ int main() {
     std::cout << "=== End-to-End Tests ===" << std::endl;
     
     TEST(test_single_layer_conv);
-    TEST(test_basic_block);
-    TEST(test_full_resnet18);
+    TEST(test_mnist_fc);
+    TEST(test_full_mnist_cnn);
     TEST(test_batch_inference);
-    TEST(test_imagenet_sample);
+    TEST(test_mnist_sample);
     
     std::cout << std::endl;
     std::cout << "Passed: " << passed << "/" << (passed + failed) << std::endl;

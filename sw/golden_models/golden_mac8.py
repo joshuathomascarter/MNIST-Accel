@@ -1,8 +1,8 @@
 """golden_mac8.py - Golden checker for mac8 testbench CSV
 Reads tb/unit/mac8_results.csv produced by tb_mac8.v and reproduces the INT8xINT8
-multiply-accumulate into a 32-bit signed accumulator with optional bypass (residual).
+multiply-accumulate into a 32-bit signed accumulator with optional bypass (adder).
 
-NEW: Supports bypass mode (0=MAC, 1=Adder for ResNet skip connections)
+Supports bypass mode (0=MAC, 1=Adder for accumulation bypass)
 """
 
 import csv
@@ -99,14 +99,13 @@ class GoldenMAC8:
             
         else:  # bypass == 1
             # ─────────────────────────────────────────────────────
-            # BYPASS MODE (bypass=1): Residual Addition
+            # BYPASS MODE (bypass=1): Accumulation Bypass
             # ─────────────────────────────────────────────────────
             # acc_new = acc_old + a  (skip the multiply)
-            # Used for skip connections in ResNet
             
-            a_extended = sign_extend_8_to_32(a)  # Convert 8-bit to 32-bit
-            sum_raw = self.acc + a_extended      # Add to accumulator
-            self.acc = to_s32(sum_raw)           # Wrap to 32-bit signed
+            a_extended = interpret_8bit_as_signed(a)  # Convert 8-bit to signed 32-bit
+            sum_raw = self.acc + a_extended            # Add to accumulator
+            self.acc = to_s32(sum_raw)                 # Wrap to 32-bit signed
         
         return self.acc
 

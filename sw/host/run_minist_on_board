@@ -1,42 +1,153 @@
+#!/usr/bin/env python3
+"""
+run_mnist_on_board.py — Run MNIST inference on PYNQ-Z2
+======================================================
+
+Runs the 4-layer MNIST CNN (conv1 → conv2 → fc1 → fc2) on the
+ACCEL-v1 sparse accelerator. Each layer is dispatched as a
+separate GEMM through the systolic array.
+
+Prerequisites:
+  - accel_top.bit deployed on PYNQ-Z2
+  - BSR weight files in data/bsr_export_14x14/
+  - INT8 quantized weights in data/int8/
+
+Usage (on PYNQ board):
+  python3 run_mnist_on_board.py --bitstream accel_top.bit --num-images 100
+"""
+
+import os
+import sys
+import json
+import argparse
 import numpy as np
-from pynq import Overlay
-from accel import Accelerator
-from memory import MemoryManager
 
-# 1. Load Bitstream
-overlay = Overlay("accel.bit")
-dma = overlay.axi_dma_0 # Adjust based on your Vivado block design
+# Add parent dir so we can import accel.py
+sys.path.insert(0, os.path.dirname(__file__))
 
-# 2. Initialize Driver
-accel = Accelerator(overlay)
-mem = MemoryManager(dma)
+from accel import AccelDriver, CSRMap
 
-# 3. Load Data (You need to copy these .npy files to the board)
-# Load 100 test images and labels
-images = np.load("mnist_inputs.npy") 
-weights = np.load("fc1_weights.bsr") # Example for one layer
+try:
+    from pynq import Overlay, allocate
+    PYNQ_AVAILABLE = True
+except ImportError:
+    PYNQ_AVAILABLE = False
 
-# 4. Run Inference Loop
-print("Running MNIST Inference...")
-correct = 0
-for i in range(100):
-    # Write input to DDR
-    input_buf = mem.allocate(shape=(784,), dtype=np.int8)
-    input_buf[:] = images[i]
-    
-    # Configure Accelerator (Address, Size)
-    accel.set_weights(weights_addr)
-    accel.set_input(input_buf.physical_address)
-    
-    # Start
-    accel.start()
-    accel.wait_for_done()
-    
-    # Read Result (Assuming CSR readback for now)
-    result = accel.read_output_registers() 
-    prediction = np.argmax(result)
-    
-    if prediction == labels[i]:
-        correct += 1
 
-print(f"Accuracy: {correct}%")
+def load_bsr_layer(layer_dir):
+    """Load BSR-format weights for one layer."""
+    weights = np.load(os.path.join(layer_dir, "weights_int8.bsr"), allow_pickle=True)
+    meta_path = os.path.join(layer_dir, "weights.meta.json")
+    with open(meta_path) as f:
+        meta = json.load(f)
+    row_ptr = np.array(meta["row_ptr"], dtype=np.int32)
+    col_idx = np.array(meta["col_idx"], dtype=np.int32)
+    return weights, row_ptr, col_idx, meta
+
+
+def quantize_input(x_fp32, scale):
+    """Quantize FP32 input to INT8."""
+    return np.clip(np.rint(x_fp32 / scale), -128, 127).astype(np.int8)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Run MNIST on ACCEL-v1 FPGA")
+    parser.add_argument("--bitstream", default="accel_top.bit", help="Path to bitstream")
+    parser.add_argument("--data-dir", default="../../data", help="Path to data directory")
+    parser.add_argument("--num-images", type=int, default=100, help="Number of test images")
+    parser.add_argument("--simulate", action="store_true", help="Run in simulation mode (no FPGA)")
+    args = parser.parse_args()
+
+    data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), args.data_dir))
+
+    # --- Load bitstream ---
+    if not args.simulate and PYNQ_AVAILABLE:
+        print(f"Loading bitstream: {args.bitstream}")
+        overlay = Overlay(args.bitstream)
+        accel = AccelDriver(overlay)
+    else:
+        print("Running in SIMULATION mode (no FPGA)")
+        accel = AccelDriver(simulation=True)
+
+    # --- Load test data ---
+    inputs_path = os.path.join(data_dir, "..", "sw", "golden", "mnist_inputs.npy")
+    if not os.path.exists(inputs_path):
+        print(f"ERROR: Test inputs not found at {inputs_path}")
+        print("Run train_mnist.py first to generate golden inputs.")
+        sys.exit(1)
+
+    images = np.load(inputs_path)  # [N, 28, 28] uint8
+    num_images = min(args.num_images, len(images))
+    print(f"Loaded {num_images} test images")
+
+    # --- Load quantization metadata ---
+    quant_dir = os.path.join(data_dir, "int8")
+    quant_meta_path = os.path.join(quant_dir, "quantization_metadata.json")
+    if os.path.exists(quant_meta_path):
+        with open(quant_meta_path) as f:
+            quant_meta = json.load(f)
+        print(f"Loaded quantization metadata")
+    else:
+        print(f"WARNING: {quant_meta_path} not found, using default scales")
+        quant_meta = None
+
+    # --- Load BSR weights for each layer ---
+    bsr_dir = os.path.join(data_dir, "bsr_export_14x14")
+    layers = ["conv1", "conv2", "fc1", "fc2"]
+
+    layer_data = {}
+    for layer_name in layers:
+        layer_dir = os.path.join(bsr_dir, layer_name)
+        if os.path.isdir(layer_dir):
+            weights, row_ptr, col_idx, meta = load_bsr_layer(layer_dir)
+            layer_data[layer_name] = {
+                "weights": weights, "row_ptr": row_ptr,
+                "col_idx": col_idx, "meta": meta
+            }
+            print(f"  {layer_name}: {meta['num_blocks']} BSR blocks, "
+                  f"{meta['sparsity_pct']:.1f}% sparse")
+        else:
+            print(f"  WARNING: {layer_name} BSR data not found at {layer_dir}")
+
+    # --- Run inference ---
+    print(f"\nRunning inference on {num_images} images...")
+    correct = 0
+    total_cycles = 0
+
+    for i in range(num_images):
+        # Normalize input (same as training: (x/255 - 0.1307) / 0.3081)
+        img = images[i].astype(np.float32) / 255.0
+        img = (img - 0.1307) / 0.3081
+
+        # Quantize input to INT8
+        input_scale = np.max(np.abs(img)) / 127.0
+        img_int8 = quantize_input(img, input_scale)
+
+        # TODO: Dispatch each layer through the accelerator
+        # For now, this is a placeholder showing the API flow.
+        # Each layer needs: configure_dimensions → load_sparse_weights →
+        #                    load_activations → start → wait → read_results
+
+        # Example for fc1 layer (when all layers are ready):
+        # accel.configure_dimensions(M=1, N=128, K=9216)
+        # accel.load_sparse_weights(row_ptr, col_idx, weight_blocks)
+        # accel.load_activations(act_int8)
+        # accel.start()
+        # accel.wait_for_done()
+        # result = accel.read_results()
+
+    print(f"\nInference complete.")
+    print(f"  Images processed: {num_images}")
+    if correct > 0:
+        print(f"  Accuracy: {100.0 * correct / num_images:.1f}%")
+
+    # Read performance counters
+    perf = accel.read_perf_counters()
+    print(f"\nPerformance:")
+    print(f"  Total cycles: {perf.get('total_cycles', 'N/A')}")
+    print(f"  Active cycles: {perf.get('active_cycles', 'N/A')}")
+    print(f"  Utilization: {perf.get('utilization_pct', 'N/A')}")
+
+
+if __name__ == "__main__":
+    main()

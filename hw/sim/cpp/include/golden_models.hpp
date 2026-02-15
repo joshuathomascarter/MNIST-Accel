@@ -78,7 +78,7 @@
  * ║  │   - 2D max pooling (typically 2x2 with stride 2)                   │ ║
  * ║  │                                                                     │ ║
  * ║  │ golden_avgpool_global_int8(input, output, H, W, C)                 │ ║
- * ║  │   - Global average pooling (used before FC layer in ResNet)        │ ║
+ * ║  │   - Global average pooling (used before FC layer)                  │ ║
  * ║  └─────────────────────────────────────────────────────────────────────┘ ║
  * ║                                                                           ║
  * ║  ┌─────────────────────────────────────────────────────────────────────┐ ║
@@ -224,7 +224,7 @@ void maxpool2d_int8(const int8_t* input, int8_t* output,
                     size_t pool_size, size_t stride);
 
 /**
- * Global Average Pooling (for ResNet before FC layer)
+ * Global Average Pooling (before FC layer)
  * 
  * @param input   [C, H, W], INT8
  * @param output  [C], INT32 (sum, will be divided later)

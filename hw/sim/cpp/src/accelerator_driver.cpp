@@ -2,7 +2,7 @@
  * ╔═══════════════════════════════════════════════════════════════════════════╗
  * ║                       ACCELERATOR_DRIVER.CPP                              ║
  * ╠═══════════════════════════════════════════════════════════════════════════╣
- * ║  Implementation of the ResNet-18 sparse accelerator driver.               ║
+ * ║  Implementation of the sparse accelerator driver.                         ║
  * ║  Replaces: sw/host/accel.py                                               ║
  * ╚═══════════════════════════════════════════════════════════════════════════╝
  */

@@ -1,123 +1,16 @@
-// =============================================================================
-// axi_dma_bridge.sv — 2:1 AXI4 Read Arbiter for DMA Masters
-// =============================================================================
-//
-// DESCRIPTION:
-// ------------
-// Arbitrates between two AXI4 read masters (bsr_dma and act_dma) to share
-// a single AXI4 master port connected to Zynq HP for DDR access.
-//
-// This design implements a simple round-robin arbiter with:
-// - Burst-level arbitration (grants held for entire burst)
-// - ID-based response routing (ID bit distinguishes masters)
-// - Watchdog timeout for hung transactions
-//
-// ARCHITECTURE:
-// -------------
-//   ┌──────────┐          ┌────────────────┐          ┌──────────┐
-//   │ bsr_dma  │──S0_AR──►│                │          │          │
-//   │ (Master0)│◄──S0_R───│  axi_dma_      │──M_AR───►│   DDR    │
-//   └──────────┘          │     bridge     │◄──M_R────│ (Slave)  │
-//   ┌──────────┐          │                │          │          │
-//   │ act_dma  │──S1_AR──►│  (Round-Robin) │          │  via HP  │
-//   │ (Master1)│◄──S1_R───│                │          │  Port    │
-//   └──────────┘          └────────────────┘          └──────────┘
-//
-// ARBITRATION POLICY:
-// -------------------
-// Round-robin with slight priority to S0 (bsr_dma):
-//   1. If S0 requests AND (S1 not requesting OR S1 was last granted): Grant S0
-//   2. Else if S1 requests: Grant S1
-//
-// This gives weight loading (typically on critical path) slight priority
-// while maintaining fairness for concurrent operation.
-//
-// FSM STATES:
-// -----------
-//   IDLE ─────────┐
-//   │             │
-//   │ s0_arvalid  │ s1_arvalid
-//   │ or          │ (no s0)
-//   │ s1_arvalid  │
-//   ▼             ▼
-//   ADDR_PHASE────────── Wait for m_arready
-//   │
-//   │ m_arready & m_arvalid
-//   ▼
-//   DATA_PHASE────────── Wait for m_rlast
-//   │                    (or watchdog timeout)
-//   │ m_rvalid & m_rready & m_rlast
-//   ▼
-//   IDLE
-//
-// TIMING EXAMPLE:
-// ---------------
-// S0 (bsr_dma) requests 4-beat burst while S1 (act_dma) waits:
-//
-//   Cycle:  1    2    3    4    5    6    7    8    9    10
-//   state:  IDLE ADDR ADDR DATA DATA DATA DATA IDLE ADDR DATA...
-//   master:      S0   S0   S0   S0   S0   S0        S1   S1
-//           ▲         ▲                   ▲    ▲
-//           │         │                   │    └─ S1 granted (round-robin)
-//           │         │                   └─ rlast, transaction complete
-//           │         └─ arready handshake, move to DATA_PHASE
-//           └─ S0 wins arbitration
-//
-// WATCHDOG TIMER:
-// ---------------
-// 10-bit counter (1024 cycles @ 100 MHz = ~10 µs timeout)
-// - Counts during DATA_PHASE only
-// - On timeout (0x3FF), force return to IDLE
-// - Protects against hung DDR controller or simulation bugs
-// - Fires warning at 0x3FE for debugging
-//
-// ID ROUTING:
-// -----------
-// Masters set their AXI ID in transactions:
-// - S0 (bsr_dma): STREAM_ID = 0
-// - S1 (act_dma): STREAM_ID = 1
-// The bridge routes responses based on current_master state, not ID field,
-// since transactions are serialized (only one in flight at a time).
-//
-// LIMITATIONS:
-// ------------
-// - Read-only: No write channel support (DMAs only read from DDR)
-// - No outstanding transactions: One transaction at a time per master
-// - No QoS support: Fixed priority, no urgency signaling
-//
-// RESOURCE ESTIMATES:
-// -------------------
-//   - LUTs: ~200 (FSM, muxes, watchdog)
-//   - FFs: ~50 (state, current_master, watchdog counter)
-//   - Critical path: Combinational mux from s*_ar* to m_ar*
-//
-// =============================================================================
+// axi_dma_bridge.sv — 2:1 AXI4 Read Arbiter (bsr_dma priority > act_dma)
+// Arbitrates DDR access at burst level. Watchdog: 1024 cycles timeout.
 
 `timescale 1ns/1ps
 `default_nettype none
 
 module axi_dma_bridge #(
-    // =========================================================================
-    // PARAMETERS
-    // =========================================================================
-    // DATA_WIDTH: AXI data bus width (64-bit for Zynq HP port)
-    // - Matches DDR interface width for maximum bandwidth
     parameter DATA_WIDTH = 64,
-    
-    // ADDR_WIDTH: AXI address width (32-bit for Zynq DDR space)
-    // - Covers 0x0000_0000 to 0xFFFF_FFFF address range
     parameter ADDR_WIDTH = 32,
-    
-    // ID_WIDTH: AXI transaction ID width
-    // - 4 bits allows 16 unique IDs (only 2 used: 0 and 1)
-    // - ID LSB indicates source DMA (0=bsr, 1=act)
     parameter ID_WIDTH   = 4
 )(
-    // =========================================================================
-    // SYSTEM SIGNALS
-    // =========================================================================
-    input  wire                     clk,        // AXI clock (100 MHz typical)
-    input  wire                     rst_n,      // Active-low async reset
+    input  wire                     clk,
+    input  wire                     rst_n,
 
     // =========================================================================
     // SLAVE PORT 0: BSR DMA (Read Address Channel)

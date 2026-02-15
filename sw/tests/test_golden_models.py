@@ -38,7 +38,7 @@ class TestBSRInt8GEMM:
         B_int8, scales_B = quantize_per_channel(B_fp32.T)
         B_int8_T = B_int8.T
 
-        bsr = build_bsr_from_dense(B_int8_T, 8, 8)
+        bsr = build_bsr_from_dense(B_int8_T, 14, 14)
 
         # Run BSR GEMM
         C_bsr = gemm_bsr_int8(A_int8, bsr, scale_A, scales_B)
@@ -49,14 +49,14 @@ class TestBSRInt8GEMM:
 
     def test_sparse_bsr_gemm(self):
         """Verify BSR GEMM handles 50% sparsity"""
-        M, K, N = 4, 64, 8
+        M, K, N = 4, 56, 14
         A_fp32 = np.random.randn(M, K).astype(np.float32) * 0.1
         B_fp32 = np.random.randn(K, N).astype(np.float32) * 0.1
 
         # Make B sparse (zero out half the blocks)
-        for i in range(0, K, 8):
-            if i // 8 % 2 == 0:
-                B_fp32[i : i + 8, :] = 0
+        for i in range(0, K, 14):
+            if i // 14 % 2 == 0:
+                B_fp32[i : i + 14, :] = 0
 
         # Quantize
         scale_A = np.max(np.abs(A_fp32)) / 127.0
@@ -65,7 +65,7 @@ class TestBSRInt8GEMM:
         B_int8, scales_B = quantize_per_channel(B_fp32.T)
         B_int8_T = B_int8.T
 
-        bsr = build_bsr_from_dense(B_int8_T, 8, 8)
+        bsr = build_bsr_from_dense(B_int8_T, 14, 14)
 
         # Run BSR GEMM
         C_bsr = gemm_bsr_int8(A_int8, bsr, scale_A, scales_B)
@@ -78,7 +78,7 @@ class TestBSRInt8GEMM:
 
     def test_all_zero_column(self):
         """Verify BSR GEMM handles completely zero columns"""
-        M, K, N = 4, 64, 8
+        M, K, N = 4, 56, 14
         A_fp32 = np.ones((M, K), dtype=np.float32) * 0.1
         B_fp32 = np.random.randn(K, N).astype(np.float32) * 0.1
 
@@ -94,7 +94,7 @@ class TestBSRInt8GEMM:
         scales_per_col = np.maximum(scales_per_col, 1e-12)  # Avoid division by zero
         B_int8 = np.clip(np.round(B_fp32 / scales_per_col), -128, 127).astype(np.int8)
 
-        bsr = build_bsr_from_dense(B_int8, 8, 8)
+        bsr = build_bsr_from_dense(B_int8, 14, 14)
 
         # Run BSR GEMM
         C_bsr = gemm_bsr_int8(A_int8, bsr, scale_A, scales_per_col)
@@ -106,37 +106,36 @@ class TestBSRInt8GEMM:
 class TestBSRStructure:
     def test_row_ptr_indexing(self):
         """Verify indptr correctly indexes blocks"""
-        B = np.random.randn(64, 8).astype(np.float32)
+        B = np.random.randn(56, 14).astype(np.float32)
 
-        # Make first 8 rows zero (first block-row)
-        B[0:8, :] = 0
+        # Make first 14 rows zero (first block-row)
+        B[0:14, :] = 0
 
-        bsr = build_bsr_from_dense(B, 8, 8)
+        bsr = build_bsr_from_dense(B, 14, 14)
 
         # First indptr should have no blocks
         assert bsr["indptr"][1] - bsr["indptr"][0] == 0, "Empty block-row should have indptr[i+1] == indptr[i]"
 
     def test_block_count(self):
         """Verify num_blocks matches data array"""
-        B = np.random.randn(64, 8).astype(np.float32)
+        B = np.random.randn(56, 14).astype(np.float32)
 
         # Zero out half
-        B[:32, :] = 0
+        B[:28, :] = 0
 
-        bsr = build_bsr_from_dense(B, 8, 8)
+        bsr = build_bsr_from_dense(B, 14, 14)
 
         expected_blocks = bsr["data"].shape[0]
         assert bsr["num_blocks"] == expected_blocks, f"num_blocks {bsr['num_blocks']} != {expected_blocks}"
 
     def test_sparsity_calculation(self):
         """Verify sparsity percentage calculation"""
-        B = np.zeros((64, 8), dtype=np.float32)
+        B = np.zeros((56, 14), dtype=np.float32)
 
-        # Fill 25% of blocks
-        B[0:8, 0:8] = np.random.randn(8, 8)
-        B[16:24, 0:8] = np.random.randn(8, 8)
+        # Fill 25% of blocks (1 out of 4 block-rows)
+        B[0:14, 0:14] = np.random.randn(14, 14)
 
-        bsr = build_bsr_from_dense(B, 8, 8)
+        bsr = build_bsr_from_dense(B, 14, 14)
 
         # Should report ~75% sparse
         assert 70.0 <= bsr["sparsity_pct"] <= 80.0, f"Sparsity {bsr['sparsity_pct']} out of expected range"

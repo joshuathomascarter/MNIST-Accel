@@ -68,38 +68,39 @@ def gemm_bsr_int8(A_int8, bsr_B, scale_A, scales_B):
             # Get block data (FP32)
             block = blocks[block_idx]  # [block_h, block_w]
 
-            # Quantize block to INT8 using per-channel scales
-            # Each row of the block belongs to an output channel
-            block_int8_list = []
-            for local_row in range(block_h):
-                global_row = block_row * block_h + local_row
-                scale = scales_B[global_row] if global_row < len(scales_B) else scales_B[0]
-                row_int8 = np.clip(np.rint(block[local_row, :] / scale), -128, 127).astype(np.int8)
-                block_int8_list.append(row_int8)
-            block_int8 = np.stack(block_int8_list, axis=0)  # [block_h, block_w]
+            # Quantize block to INT8 using per-output-channel scales
+            # block_col indexes the N (output channel) dimension
+            block_int8 = np.zeros((block_h, block_w), dtype=np.int8)
+            for local_col in range(block_w):
+                global_col = block_col * block_w + local_col
+                if global_col < N:
+                    scale = scales_B[global_col] if global_col < len(scales_B) else scales_B[0]
+                    block_int8[:, local_col] = np.clip(
+                        np.rint(block[:, local_col] / max(scale, 1e-12)), -128, 127
+                    ).astype(np.int8)
 
             # Compute which rows and columns this block affects
+            # block_row indexes K (reduction dimension)
+            # block_col indexes N (output channel dimension)
             row_start = block_row * block_h
             row_end = min(row_start + block_h, K)
             col_start = block_col * block_w
             col_end = min(col_start + block_w, N)
 
-            # Extract corresponding slice of A
-            A_slice = A_int8[:, row_start:row_end]  # [M, block_h]
+            actual_h = row_end - row_start
+            actual_w = col_end - col_start
 
-            # INT8 matrix multiply: A_slice @ block_int8.T
-            C_tile_int32 = A_slice.astype(np.int32) @ block_int8.T.astype(np.int32)  # [M, block_w]
+            # Extract corresponding slice of A (reduction dimension)
+            A_slice = A_int8[:, row_start:row_end]  # [M, actual_h]
 
-            # Dequantize: apply scales
-            for local_row in range(block_h):
-                global_row = block_row * block_h + local_row
-                if global_row >= K:
-                    break
-                scale = scales_B[global_row] if global_row < len(scales_B) else scales_B[0]
-                C_tile_fp32 = C_tile_int32[:, :block_w].astype(np.float32) * scale_A * scale
+            # INT8 matrix multiply: A_slice @ block_int8[:actual_h, :actual_w]
+            C_tile_int32 = A_slice.astype(np.int32) @ block_int8[:actual_h, :actual_w].astype(np.int32)  # [M, actual_w]
 
-                # Accumulate into output
-                C[:, col_start:col_end] += C_tile_fp32[:, : col_end - col_start]
+            # Dequantize per output channel and accumulate (once, not per block_h)
+            for local_col in range(actual_w):
+                global_col = col_start + local_col
+                scale = scales_B[global_col] if global_col < len(scales_B) else scales_B[0]
+                C[:, global_col] += C_tile_int32[:, local_col].astype(np.float32) * scale_A * scale
 
     return C
 
@@ -138,21 +139,22 @@ def gemm_bsr_int8_simple(A_int8, bsr_B, scale_A, scales_B):
             block_col = col_idx[block_idx]
             block_data = blocks[block_idx]  # [8, 8]
 
-            # Compute output position
-            out_row_start = block_row * block_h
+            # block_row indexes K (reduction), block_col indexes N (output)
+            k_start = block_row * block_h
             out_col_start = block_col * block_w
 
-            # Extract A slice for this block
-            A_slice = A_int8[:, out_row_start : out_row_start + block_h]  # [M, 8]
+            # Extract A slice for this block (reduction dimension)
+            A_slice = A_int8[:, k_start : k_start + block_h]  # [M, 8]
 
-            # Quantize B block to INT8
+            # Quantize B block to INT8 per output channel
             block_int8 = np.zeros((block_h, block_w), dtype=np.int8)
-            for r in range(block_h):
-                global_row = out_row_start + r
-                scale = scales_B[global_row]
-                block_int8[r, :] = np.clip(np.rint(block_data[r, :] / scale), -128, 127)
+            for c in range(block_w):
+                global_col = out_col_start + c
+                if global_col < N:
+                    scale = scales_B[global_col]
+                    block_int8[:, c] = np.clip(np.rint(block_data[:, c] / max(scale, 1e-12)), -128, 127)
 
-            # INT8 multiply: C_tile = A_slice @ block_int8^T
+            # INT8 multiply: C_tile = A_slice @ block_int8
             C_tile = np.zeros((M, block_w), dtype=np.int32)
             for m in range(M):
                 for n in range(block_w):
@@ -161,12 +163,12 @@ def gemm_bsr_int8_simple(A_int8, bsr_B, scale_A, scales_B):
                         acc += int(A_slice[m, k]) * int(block_int8[k, n])
                     C_tile[m, n] = acc
 
-            # Dequantize and accumulate
-            for m in range(M):
-                for n in range(block_w):
-                    global_row = out_row_start + (n % block_h)  # Simplified
-                    scale = scales_B[global_row]
-                    C[m, out_col_start + n] += C_tile[m, n] * scale_A * scale
+            # Dequantize and accumulate (once per output channel, not per block_h)
+            for n in range(block_w):
+                global_col = out_col_start + n
+                if global_col < N:
+                    scale = scales_B[global_col]
+                    C[:, global_col] += C_tile[:, n].astype(np.float32) * scale_A * scale
 
     return C
 
@@ -177,32 +179,34 @@ if __name__ == "__main__":
     print("=" * 60)
 
     # Simple test case
-    M, K, N = 2, 16, 16
+    M, K, N = 2, 28, 14
 
     # Create sparse weight matrix (50% sparse)
     B = np.random.randn(K, N).astype(np.float32) * 0.1
-    B[8:16, 0:8] = 0  # Make some blocks zero
-    B[0:8, 8:16] = 0
+    B[14:28, :] = 0  # Make second block-row zero
 
     # Input matrix
     A = np.random.randn(M, K).astype(np.float32)
 
     # Build BSR format
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
     from training.export_bsr import build_bsr_from_dense
 
-    bsr_B = build_bsr_from_dense(B, 8, 8)
+    bsr_B = build_bsr_from_dense(B, 14, 14)
 
     print(f"\nMatrix shapes:")
     print(f"  A: {A.shape}")
     print(f"  B: {B.shape}")
-    print(f"  BSR blocks: {bsr_B['num_blocks']} (out of {2*2} total)")
+    print(f"  BSR blocks: {bsr_B['num_blocks']} (out of {2*1} total)")
     print(f"  Sparsity: {bsr_B['sparsity_pct']:.1f}%")
 
     # Quantize
     scale_A = np.max(np.abs(A)) / 127.0
     A_int8 = np.clip(np.rint(A / scale_A), -128, 127).astype(np.int8)
 
-    scales_B = np.max(np.abs(B), axis=1, keepdims=True) / 127.0
+    # Per output channel (column of B) scales
+    scales_B = np.max(np.abs(B), axis=0) / 127.0  # axis=0 -> per column (N dimension)
     scales_B = np.maximum(scales_B.flatten(), 1e-12)
 
     # Compute sparse GEMM

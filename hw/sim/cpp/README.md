@@ -1,15 +1,15 @@
-# ResNet-18 Sparse Accelerator - C++ Simulation & Driver Code
+# ACCEL-v1 Sparse Accelerator - C++ Simulation & Driver Code
 
 ```
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║                    16×16 SYSTOLIC ARRAY ACCELERATOR                          ║
+║                    14×14 SYSTOLIC ARRAY ACCELERATOR                          ║
 ║                     INT8 Quantized • BSR Sparse Format                       ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 ```
 
 ## Overview
 
-This directory contains the C++ code for simulating and driving the ResNet-18 sparse neural network accelerator. The code serves two purposes:
+This directory contains the C++ code for simulating and driving the ACCEL-v1 sparse neural network accelerator (MNIST CNN). The code serves two purposes:
 
 1. **Simulation**: Verilator-based cycle-accurate RTL simulation
 2. **FPGA Driver**: Host-side code for running on Zynq-7020 with PYNQ
@@ -210,8 +210,8 @@ Dense Matrix (32×32):        BSR Representation:
 | Metric | Target | Notes |
 |--------|--------|-------|
 | Peak Throughput | 51.2 GOPS | 16×16×2×100MHz |
-| Inference Latency | <100ms | Full ResNet-18 |
-| Throughput | >10 FPS | ImageNet inference |
+| Inference Latency | <1ms | Full MNIST CNN |
+| Throughput | >3000 FPS | MNIST inference |
 | Sparsity Speedup | 1.5-2× | At 50% sparsity |
 
 ## Testing

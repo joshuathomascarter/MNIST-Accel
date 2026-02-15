@@ -41,7 +41,7 @@ module sync_2ff #(
     input  wire                 dst_clk,      // Destination clock domain
     input  wire                 dst_rst_n,    // Destination reset (async, active-low)
     input  wire [WIDTH-1:0]     src_signal,   // Input signal (src_clk domain)
-    output reg  [WIDTH-1:0]     dst_signal    // Output signal (dst_clk domain)
+    output wire [WIDTH-1:0]     dst_signal    // Output signal (dst_clk domain)
 );
 
     // ========================================================================

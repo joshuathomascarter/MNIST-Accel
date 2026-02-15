@@ -11,7 +11,6 @@
  * ║                                                                           ║
  * ║  OUTPUT:                                                                  ║
  * ║    - Platform comparison table (clock, GOPS, power, efficiency)          ║
- * ║    - ResNet-18 inference time estimates                                  ║
  * ║    - MNIST CNN inference time estimates                                  ║
  * ║                                                                           ║
  * ╚═══════════════════════════════════════════════════════════════════════════╝
@@ -28,7 +27,7 @@ using namespace resnet_accel;
 int main() {
     std::cout << "\n";
     std::cout << "╔═══════════════════════════════════════════════════════════════════════════════╗\n";
-    std::cout << "║              RESNET-ACCEL PERFORMANCE MODEL                                   ║\n";
+    std::cout << "║              ACCEL-v1 PERFORMANCE MODEL                                       ║\n";
     std::cout << "║              14×14 Systolic Array INT8 Accelerator                            ║\n";
     std::cout << "╚═══════════════════════════════════════════════════════════════════════════════╝\n";
     
@@ -47,10 +46,8 @@ int main() {
     // Print platform table
     print_platform_table();
     
-    // Print ResNet-18 estimates
-    print_resnet18_estimates();
-    
     // Print MNIST CNN estimates
+    print_mnist_estimates();
     std::cout << "\n";
     std::cout << "╔═══════════════════════════════════════════════════════════════════════════════╗\n";
     std::cout << "║                    MNIST CNN INFERENCE ESTIMATES                              ║\n";

@@ -159,11 +159,16 @@ torch.save(
 )
 
 # Golden outputs for HW tests
+# IMPORTANT: Must apply same normalization as training transform
 with torch.no_grad():
     golden_inputs = test_dataset.data[:32].numpy()
-    golden_logits = model(test_dataset.data[:32].unsqueeze(1).float().to(device)).cpu().detach().numpy()
-    np.save("python/golden/mnist_inputs.npy", golden_inputs)
-    np.save("python/golden/mnist_logits_fp32.npy", golden_logits)
+    # Normalize inputs the same way as training: (x/255 - 0.1307) / 0.3081
+    golden_input_tensor = test_dataset.data[:32].unsqueeze(1).float() / 255.0
+    golden_input_tensor = (golden_input_tensor - 0.1307) / 0.3081
+    golden_logits = model(golden_input_tensor.to(device)).cpu().detach().numpy()
+    os.makedirs("../golden", exist_ok=True)
+    np.save("../golden/mnist_inputs.npy", golden_inputs)
+    np.save("../golden/mnist_logits_fp32.npy", golden_logits)
 
 # Print final test accuracy and best_acc
 print(f"Final test accuracy: {test_accuracy:.2f}%")

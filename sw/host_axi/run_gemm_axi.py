@@ -31,7 +31,7 @@ from dataclasses import dataclass
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from host.axi_driver import AXIDriver, AXILiteCSR
-from host_uart.csr_map import Config, pack_u32, unpack_u32
+from host_axi.csr_map import Config, pack_u32, pack_f32, unpack_u32
 
 
 @dataclass
@@ -193,9 +193,9 @@ class HostAXITiler:
             return False
         
         # Write scales (default to 1.0 in fixed-point)
-        if not self.csr_write(0x28, pack_u32(1.0)):
+        if not self.csr_write(0x28, pack_f32(1.0)):
             return False  # Sa
-        if not self.csr_write(0x30, pack_u32(1.0)):
+        if not self.csr_write(0x30, pack_f32(1.0)):
             return False  # Sw
 
         self.log(f"Configured for tile [{m_idx}, {n_idx}, {k_idx}]")

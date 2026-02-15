@@ -1,6 +1,6 @@
-# ResNet-Accel Project Structure
+# ACCEL-v1 Project Structure
 
-This document describes the professional organization of the ResNet-Accel FPGA accelerator project.
+This document describes the organization of the ACCEL-v1 sparse CNN accelerator project.
 
 ## Directory Layout
 
@@ -183,10 +183,10 @@ python accel.py --bitstream design.bit
    make -f Makefile.cocotb
    ```
 
-3. **Export a model**
+3. **Export weights for hardware**
    ```bash
-   cd sw
-   python exporters/export_conv.py --model resnet18 --output data/models/
+   cd sw/training
+   python export_bsr_14x14.py --from-int8
    ```
 
 4. **Synthesize for FPGA**

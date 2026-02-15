@@ -1,100 +1,5 @@
-// =============================================================================
 // csr.sv — Accelerator Control/Status Register Block
-// =============================================================================
-//
-// OVERVIEW
-// ========
-// This module implements the Control/Status Register (CSR) block, providing
-// the software interface between the ARM CPU and the accelerator hardware.
-// It is the single source of truth for all accelerator configuration and status.
-//
-// HOST-ACCELERATOR INTERFACE
-// ==========================
-//
-//   ┌─────────────────┐                      ┌─────────────────┐
-//   │   ARM CPU       │    AXI-Lite Bus      │   CSR Block     │
-//   │   (PS)          │ ──────────────────── │   (This Module) │
-//   └─────────────────┘                      └────────┬────────┘
-//                                                     │
-//           ┌─────────────────────────────────────────┴───────────┐
-//           │                                                      │
-//           ▼                                                      ▼
-//   ┌───────────────┐                                    ┌───────────────┐
-//   │   Scheduler   │                                    │     DMA       │
-//   │  (start,dims) │                                    │  (src,len)    │
-//   └───────────────┘                                    └───────────────┘
-//
-// ADDRESS MAP (256 bytes, 8-bit addressing)
-// ==========================================
-// The address map is organized into logical groups:
-//
-// ┌───────────┬──────────────┬────────────────────────────────────────────┐
-// │  Address  │    Name      │              Description                   │
-// ├───────────┼──────────────┼────────────────────────────────────────────┤
-// │ CONTROL & CONFIGURATION (0x00 - 0x3C)                                 │
-// ├───────────┼──────────────┼────────────────────────────────────────────┤
-// │   0x00    │    CTRL      │ [0]=start(W1P) [1]=abort(W1P) [2]=irq_en   │
-// │   0x04    │    DIMS_M    │ Matrix M dimension                         │
-// │   0x08    │    DIMS_N    │ Matrix N dimension                         │
-// │   0x0C    │    DIMS_K    │ Matrix K dimension                         │
-// │   0x10    │    TILES_Tm  │ Tile size M (14 for our array)             │
-// │   0x14    │    TILES_Tn  │ Tile size N (14 for our array)             │
-// │   0x18    │    TILES_Tk  │ Tile size K (14 for our array)             │
-// │   0x1C    │    INDEX_m   │ Current M tile index                       │
-// │   0x20    │    INDEX_n   │ Current N tile index                       │
-// │   0x24    │    INDEX_k   │ Current K tile index                       │
-// │   0x28    │    BUFF      │ [0]=wr_bank_A [1]=wr_bank_B [8:9]=rd(RO)   │
-// │   0x2C    │    SCALE_Sa  │ Activation scale (float32 bits)            │
-// │   0x30    │    SCALE_Sw  │ Weight scale (float32 bits)                │
-// │   0x3C    │    STATUS    │ [0]=busy(RO) [1]=done(W1C) [9]=err(W1C)    │
-// ├───────────┼──────────────┼────────────────────────────────────────────┤
-// │ PERFORMANCE COUNTERS (0x40 - 0x5C)                                    │
-// ├───────────┼──────────────┼────────────────────────────────────────────┤
-// │   0x40    │  PERF_TOTAL  │ Total cycles from start to done (RO)       │
-// │   0x44    │  PERF_ACTIVE │ Cycles with busy=1 (RO)                    │
-// │   0x48    │  PERF_IDLE   │ Cycles with busy=0 (RO)                    │
-// │   0x4C    │  CACHE_HITS  │ BSR metadata cache hits (RO)               │
-// │   0x50    │  CACHE_MISS  │ BSR metadata cache misses (RO)             │
-// │   0x54    │  DECODE_CNT  │ BSR decode operations (RO)                 │
-// ├───────────┼──────────────┼────────────────────────────────────────────┤
-// │ RESULT REGISTERS (0x80 - 0x8C)                                        │
-// ├───────────┼──────────────┼────────────────────────────────────────────┤
-// │   0x80    │   RESULT_0   │ Output word 0 (debug/test)                 │
-// │   0x84    │   RESULT_1   │ Output word 1                              │
-// │   0x88    │   RESULT_2   │ Output word 2                              │
-// │   0x8C    │   RESULT_3   │ Output word 3                              │
-// ├───────────┼──────────────┼────────────────────────────────────────────┤
-// │ DMA CONTROL (0x90 - 0xBC)                                             │
-// ├───────────┼──────────────┼────────────────────────────────────────────┤
-// │   0x90    │  DMA_SRC     │ BSR weight source address in DDR           │
-// │   0x94    │  DMA_DST     │ Destination buffer select                  │
-// │   0x98    │  DMA_LEN     │ Transfer length in bytes                   │
-// │   0x9C    │  DMA_CTRL    │ [0]=start(W1P) [1]=busy(RO) [2]=done(W1C)  │
-// │   0xA0    │  ACT_SRC     │ Activation source address in DDR           │
-// │   0xA4    │  ACT_LEN     │ Activation transfer length                 │
-// │   0xA8    │  ACT_CTRL    │ [0]=start(W1P) [2]=done(W1C)               │
-// │   0xB8    │  BYTES_XFER  │ Bytes transferred (debug)                  │
-// └───────────┴──────────────┴────────────────────────────────────────────┘
-//
-// REGISTER TYPES
-// ==============
-// W1P (Write-1-Pulse):  Writing 1 generates a 1-cycle pulse, reads as 0
-// W1C (Write-1-Clear):  Writing 1 clears the bit, sticky until cleared
-// RO  (Read-Only):      Hardware sets, software can only read
-// RW  (Read-Write):     Normal read/write register
-//
-// MAGIC NUMBERS
-// =============
-// 0xDEAD_BEEF: Returned for invalid address reads (debug aid)
-// 0x3F80_0000: Float32 representation of 1.0 (default scale)
-// ADDR_W = 8:  256-byte address space (64 registers × 4 bytes)
-//
-// CLOCK GATING
-// ============
-// CSR accesses are infrequent. Clock gating saves power when idle.
-// Enabled when: csr_wen | csr_ren | core_done_tile_pulse
-//
-// =============================================================================
+// Software interface: Read/write configuration, status, performance counters
 `timescale 1ns/1ps
 `default_nettype none
 
@@ -133,9 +38,9 @@ module csr #(
   input  wire [31:0]       perf_total_cycles,
   input  wire [31:0]       perf_active_cycles,
   input  wire [31:0]       perf_idle_cycles,
-  input  wire [31:0]       perf_cache_hits,
-  input  wire [31:0]       perf_cache_misses,
-  input  wire [31:0]       perf_decode_count,
+  input  wire [31:0]       perf_dma_bytes,
+  input  wire [31:0]       perf_blocks_processed,
+  input  wire [31:0]       perf_stall_cycles,
   
   // Results
   input  wire [127:0]      result_data,
@@ -177,32 +82,16 @@ module csr #(
   output wire [31:0]       bsr_idx_addr
 );
 
-  // ========================================================================
-  // 1. Clock Gating Logic (Power Optimization)
-  // ========================================================================
-  // Engineer's Note:
-  // CSRs are accessed infrequently (only at start/end of jobs).
-  // Gating the clock here saves dynamic power in the flip-flops.
-  wire csr_clk_en, clk_gated;
-  assign csr_clk_en = csr_wen | csr_ren | core_done_tile_pulse;
-  
-  generate
-    if (ENABLE_CLOCK_GATING) begin : gen_clk_gate
-      // Simplified for simulation/synthesis compatibility
-      assign clk_gated = clk & csr_clk_en; 
-    end else begin : gen_no_gate
-      assign clk_gated = clk;
-    end
-  endgenerate
+  // Gate when not accessed
+  wire csr_clk_en = csr_wen | csr_ren | core_done_tile_pulse;
 
-  // ========================================================================
-  // 2. Address Map Definition
-  // ========================================================================
-  // Engineer's Note:
-  // This map MUST match the Python driver (csr_map.py).
-  // 0x00 - 0x3F: Control & Configuration
-  // 0x40 - 0x7F: Status & Performance
-  // 0x80 - 0xBF: DMA Configuration
+  // R5 fix: Latch-based ICG — latch enable on low clock phase to prevent glitches
+  reg en_latched;
+  always @(clk or csr_clk_en)
+    if (!clk) en_latched <= csr_clk_en;
+  wire clk_gated = ENABLE_CLOCK_GATING ? (clk & en_latched) : clk;
+
+  // Address Map
   localparam CTRL         = 8'h00; // [2]=irq_en (RW), [1]=abort (W1P), [0]=start (W1P)
   localparam DIMS_M       = 8'h04;
   localparam DIMS_N       = 8'h08;
@@ -222,9 +111,9 @@ module csr #(
   localparam PERF_TOTAL   = 8'h40; // Total cycles from start to done
   localparam PERF_ACTIVE  = 8'h44; // Cycles where busy was high  
   localparam PERF_IDLE    = 8'h48; // Cycles where busy was low
-  localparam PERF_CACHE_HITS   = 8'h4C; // Metadata cache hits
-  localparam PERF_CACHE_MISSES = 8'h50; // Metadata cache misses
-  localparam PERF_DECODE_COUNT = 8'h54; // Metadata decode operations
+  localparam PERF_DMA_BYTES    = 8'h4C; // Total DMA bytes transferred
+  localparam PERF_BLOCKS_DONE  = 8'h50; // Non-zero BSR blocks computed
+  localparam PERF_STALL_CYCLES = 8'h54; // Scheduler busy, PEs idle
   // Result registers (Read-Only, captured on done)
   localparam RESULT_0     = 8'h80; // c_out[0]
   localparam RESULT_1     = 8'h84; // c_out[1]
@@ -269,9 +158,6 @@ module csr #(
   // reg        st_err_crc; // Removed
   reg        st_err_illegal;
   
-  // Result capture registers
-  reg [31:0] r_result_0, r_result_1, r_result_2, r_result_3;
-  
   // DMA registers (BSR)
   reg [31:0] r_dma_src_addr;
   reg [31:0] r_dma_dst_addr;
@@ -285,7 +171,6 @@ module csr #(
   reg [31:0] r_bsr_block_cols;
   reg [31:0] r_bsr_ptr_addr;
   reg [31:0] r_bsr_idx_addr;
-  reg [15:0] r_bsr_blocks_processed;
   reg        st_bsr_done;
   reg        st_bsr_error;
   reg [3:0]  r_bsr_state;
@@ -317,10 +202,6 @@ module csr #(
       st_done_tile     <= 1'b0;
       // st_err_crc       <= 1'b0; // Removed
       st_err_illegal   <= 1'b0;
-      r_result_0       <= 32'd0;
-      r_result_1       <= 32'd0;
-      r_result_2       <= 32'd0;
-      r_result_3       <= 32'd0;
       r_dma_src_addr   <= 32'h0;
       r_dma_dst_addr   <= 32'h0;
       r_dma_xfer_len   <= 32'h0;
@@ -330,17 +211,16 @@ module csr #(
       r_act_dma_src_addr <= 32'h0;
       r_act_dma_len      <= 32'h0;
       st_act_dma_done    <= 1'b0;
-  // BSR defaults
-  r_bsr_config       <= 32'h00000100; // version v1.0 in upper half by convention
-  r_bsr_num_blocks   <= 32'h0;
-  r_bsr_block_rows   <= 32'h0;
-  r_bsr_block_cols   <= 32'h0;
-  r_bsr_ptr_addr     <= 32'h0;
-  r_bsr_idx_addr     <= 32'h0;
-  r_bsr_blocks_processed <= 16'h0;
-  st_bsr_done        <= 1'b0;
-  st_bsr_error       <= 1'b0;
-  r_bsr_state        <= 4'h0;
+      // R12 fix: BSR defaults (verified inside if (!rst_n) scope)
+      r_bsr_config       <= 32'h00000100;
+      r_bsr_num_blocks   <= 32'h0;
+      r_bsr_block_rows   <= 32'h0;
+      r_bsr_block_cols   <= 32'h0;
+      r_bsr_ptr_addr     <= 32'h0;
+      r_bsr_idx_addr     <= 32'h0;
+      st_bsr_done        <= 1'b0;
+      st_bsr_error       <= 1'b0;
+      r_bsr_state        <= 4'h0;
     end else begin
       // Sticky setters
       if (core_done_tile_pulse) st_done_tile <= 1'b1;
@@ -489,9 +369,9 @@ module csr #(
       PERF_TOTAL:   csr_rdata = perf_total_cycles;
       PERF_ACTIVE:  csr_rdata = perf_active_cycles;
       PERF_IDLE:    csr_rdata = perf_idle_cycles;
-      PERF_CACHE_HITS:   csr_rdata = perf_cache_hits;
-      PERF_CACHE_MISSES: csr_rdata = perf_cache_misses;
-      PERF_DECODE_COUNT: csr_rdata = perf_decode_count;
+      PERF_DMA_BYTES:    csr_rdata = perf_dma_bytes;
+      PERF_BLOCKS_DONE:  csr_rdata = perf_blocks_processed;
+      PERF_STALL_CYCLES: csr_rdata = perf_stall_cycles;
       // Result registers (Read-Only) - directly read from systolic output
       RESULT_0:     csr_rdata = result_data[31:0];
       RESULT_1:     csr_rdata = result_data[63:32];
@@ -508,15 +388,15 @@ module csr #(
       ACT_DMA_SRC_ADDR: csr_rdata = r_act_dma_src_addr;
       ACT_DMA_LEN:      csr_rdata = r_act_dma_len;
       ACT_DMA_CTRL:     csr_rdata = {29'b0, st_act_dma_done, 1'b0, 1'b0}; // Busy bit needs input
-  // BSR readback
-  BSR_CONFIG:      csr_rdata = r_bsr_config;
-  BSR_NUM_BLOCKS:  csr_rdata = r_bsr_num_blocks;
-  BSR_BLOCK_ROWS:  csr_rdata = r_bsr_block_rows;
-  BSR_BLOCK_COLS:  csr_rdata = r_bsr_block_cols;
-  BSR_STATUS:      csr_rdata = {16'd0, 4'd0, r_bsr_state, st_bsr_error, st_bsr_done, 1'b0, 1'b1};
-  BSR_ERROR_CODE:  csr_rdata = 32'd0; // No detailed error code implemented yet
-  BSR_PTR_ADDR:    csr_rdata = r_bsr_ptr_addr;
-  BSR_IDX_ADDR:    csr_rdata = r_bsr_idx_addr;
+      // BSR readback
+      BSR_CONFIG:      csr_rdata = r_bsr_config;
+      BSR_NUM_BLOCKS:  csr_rdata = r_bsr_num_blocks;
+      BSR_BLOCK_ROWS:  csr_rdata = r_bsr_block_rows;
+      BSR_BLOCK_COLS:  csr_rdata = r_bsr_block_cols;
+      BSR_STATUS:      csr_rdata = {16'd0, 4'd0, r_bsr_state, st_bsr_error, st_bsr_done, 1'b0, 1'b1};
+      BSR_ERROR_CODE:  csr_rdata = 32'd0;
+      BSR_PTR_ADDR:    csr_rdata = r_bsr_ptr_addr;
+      BSR_IDX_ADDR:    csr_rdata = r_bsr_idx_addr;
       
       default:      csr_rdata = 32'hDEAD_BEEF;
     endcase

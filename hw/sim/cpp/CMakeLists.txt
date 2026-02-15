@@ -1,7 +1,7 @@
 # ╔═══════════════════════════════════════════════════════════════════════════════╗
 # ║                              CMAKELISTS.TXT                                    ║
 # ╠═══════════════════════════════════════════════════════════════════════════════╣
-# ║  BUILD CONFIGURATION: ResNet-18 Sparse Accelerator C++ Code                   ║
+# ║  BUILD CONFIGURATION: MNIST Sparse Accelerator C++ Code                       ║
 # ╠═══════════════════════════════════════════════════════════════════════════════╣
 # ║                                                                                ║
 # ║  PURPOSE:                                                                      ║
@@ -24,7 +24,7 @@
 # ║    -DCMAKE_BUILD_TYPE=Debug    Debug symbols                                  ║
 # ║                                                                                ║
 # ║  TARGETS:                                                                      ║
-# ║    make resnet_accel      Main executable                                     ║
+# ║    make accel_sim          Main executable                                     ║
 # ║    make tests             All unit tests                                      ║
 # ║    make sim               Verilator simulation                                ║
 # ║    make bench             Run benchmarks                                      ║
@@ -33,9 +33,9 @@
 
 cmake_minimum_required(VERSION 3.16)
 
-project(ResNetAccel
+project(AccelSim
     VERSION 1.0.0
-    DESCRIPTION "ResNet-18 Sparse Neural Network Accelerator"
+    DESCRIPTION "MNIST Sparse Neural Network Accelerator"
     LANGUAGES CXX
 )
 
@@ -78,7 +78,6 @@ set(CORE_SOURCES
     ${SRC_DIR}/bsr_packer.cpp
     ${SRC_DIR}/golden_models.cpp
     ${SRC_DIR}/memory_manager.cpp
-    ${SRC_DIR}/resnet_inference.cpp
 )
 
 # Core library headers
@@ -89,7 +88,6 @@ set(CORE_HEADERS
     ${INCLUDE_DIR}/golden_models.hpp
     ${INCLUDE_DIR}/memory_manager.hpp
     ${INCLUDE_DIR}/performance_counters.hpp
-    ${INCLUDE_DIR}/resnet_inference.hpp
     ${INCLUDE_DIR}/test_utils.hpp
 )
 
@@ -97,30 +95,29 @@ set(CORE_HEADERS
 # Core Library
 # =============================================================================
 
-add_library(resnet_core STATIC ${CORE_SOURCES})
+add_library(accel_core STATIC ${CORE_SOURCES})
 
-target_include_directories(resnet_core PUBLIC
+target_include_directories(accel_core PUBLIC
     ${INCLUDE_DIR}
 )
 
-# TODO: Add compile definitions
-target_compile_definitions(resnet_core PRIVATE
-    BLOCK_SIZE=16
-    N_ROWS=16
-    N_COLS=16
+target_compile_definitions(accel_core PRIVATE
+    BLOCK_SIZE=14
+    N_ROWS=14
+    N_COLS=14
 )
 
 if(WITH_FPGA)
-    target_compile_definitions(resnet_core PRIVATE FPGA_MODE)
+    target_compile_definitions(accel_core PRIVATE FPGA_MODE)
 endif()
 
 # =============================================================================
 # Main Executable
 # =============================================================================
 
-add_executable(resnet_accel main.cpp)
+add_executable(accel_sim main.cpp)
 
-target_link_libraries(resnet_accel PRIVATE resnet_core)
+target_link_libraries(accel_sim PRIVATE accel_core)
 
 # =============================================================================
 # Unit Tests
@@ -143,7 +140,7 @@ if(BUILD_TESTS)
         get_filename_component(TEST_NAME ${TEST_SRC} NAME_WE)
         
         add_executable(${TEST_NAME} ${TEST_SRC})
-        target_link_libraries(${TEST_NAME} PRIVATE resnet_core)
+        target_link_libraries(${TEST_NAME} PRIVATE accel_core)
         
         add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
     endforeach()
@@ -207,14 +204,14 @@ endif()
 # Installation
 # =============================================================================
 
-install(TARGETS resnet_accel resnet_core
+install(TARGETS accel_sim accel_core
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
 )
 
 install(FILES ${CORE_HEADERS}
-    DESTINATION include/resnet_accel
+    DESTINATION include/accel
 )
 
 # =============================================================================
@@ -237,7 +234,7 @@ endif()
 
 message(STATUS "")
 message(STATUS "╔══════════════════════════════════════════════════════════════╗")
-message(STATUS "║              ResNet Accelerator Build Configuration          ║")
+message(STATUS "║              ACCEL-v1 Build Configuration                    ║")
 message(STATUS "╠══════════════════════════════════════════════════════════════╣")
 message(STATUS "║  Build Type:     ${CMAKE_BUILD_TYPE}")
 message(STATUS "║  C++ Compiler:   ${CMAKE_CXX_COMPILER}")

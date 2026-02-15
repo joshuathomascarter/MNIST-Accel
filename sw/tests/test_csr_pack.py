@@ -5,7 +5,7 @@ import sys
 import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from host_uart.csr_map import *
+from host_axi.csr_map import *
 
 
 def test_CTRL():
@@ -49,7 +49,7 @@ def test_STATUS():
 
 
 def test_Config_to_bytes_from_bytes():
-    from host_uart.csr_map import (
+    from host_axi.csr_map import (
         Config,
         DIMS_M,
         DIMS_N,

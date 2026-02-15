@@ -80,7 +80,7 @@ constexpr uint32_t DIMS_M       = 0x04;
 
 /// DIMS_N (0x08): Matrix N Dimension (output columns)
 /// Range: 1 to 65535
-/// For ResNet-18: Typically 1 (single output per sample)
+/// For MNIST FC layers: Typically 1 (single output per sample)
 constexpr uint32_t DIMS_N       = 0x08;
 
 /// DIMS_K (0x0C): Matrix K Dimension (inner/reduction dimension)

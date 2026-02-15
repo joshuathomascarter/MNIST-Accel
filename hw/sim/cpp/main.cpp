@@ -2,7 +2,7 @@
  * ╔═══════════════════════════════════════════════════════════════════════════╗
  * ║                             MAIN.CPP                                      ║
  * ╠═══════════════════════════════════════════════════════════════════════════╣
- * ║  CLI ENTRY POINT: ResNet-18 Sparse Accelerator Simulation                ║
+ * ║  CLI ENTRY POINT: MNIST Sparse Accelerator Simulation                    ║
  * ╠═══════════════════════════════════════════════════════════════════════════╣
  * ║                                                                           ║
  * ║  PURPOSE:                                                                 ║
@@ -16,11 +16,11 @@
  * ╠═══════════════════════════════════════════════════════════════════════════╣
  * ║  USAGE:                                                                   ║
  * ║                                                                           ║
- * ║  ./resnet_accel --help                                                   ║
- * ║  ./resnet_accel infer --image <path> --model <dir>                       ║
- * ║  ./resnet_accel test [--filter <name>]                                   ║
- * ║  ./resnet_accel bench [--iterations N]                                   ║
- * ║  ./resnet_accel sim --vcd <output.vcd>                                   ║
+ * ║  ./accel_sim --help                                                      ║
+ * ║  ./accel_sim infer --image <path> --model <dir>                           ║
+ * ║  ./accel_sim test [--filter <name>]                                       ║
+ * ║  ./accel_sim bench [--iterations N]                                       ║
+ * ║  ./accel_sim sim --vcd <output.vcd>                                       ║
  * ║                                                                           ║
  * ╠═══════════════════════════════════════════════════════════════════════════╣
  * ║  WHAT YOU NEED TO IMPLEMENT:                                              ║
@@ -48,7 +48,6 @@
 #include <cstring>
 #include <getopt.h>
 
-#include "include/resnet_inference.hpp"
 #include "include/accelerator_driver.hpp"
 #include "include/performance_counters.hpp"
 
@@ -57,7 +56,7 @@
 // =============================================================================
 
 static constexpr const char* VERSION = "1.0.0";
-static constexpr const char* PROJECT_NAME = "ResNet-18 Sparse Accelerator";
+static constexpr const char* PROJECT_NAME = "MNIST Sparse Accelerator";
 
 // =============================================================================
 // Command-Line Options
@@ -67,7 +66,6 @@ struct Options {
     std::string command;
     std::string image_path;
     std::string model_dir = "../../../data/int8/";
-    std::string labels_file = "../../../data/imagenet_labels.txt";
     std::string vcd_output = "sim.vcd";
     std::string test_filter;
     int iterations = 100;
@@ -81,7 +79,7 @@ struct Options {
 void print_usage(const char* prog_name) {
     std::cout << R"(
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║              RESNET-18 SPARSE ACCELERATOR - SIMULATION DRIVER                ║
+║              ACCEL-v1 SPARSE ACCELERATOR - SIMULATION DRIVER                    ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 USAGE:
@@ -303,7 +301,7 @@ int main(int argc, char** argv) {
     
     if (opts.verbose) {
         std::cout << PROJECT_NAME << " v" << VERSION << std::endl;
-        std::cout << "16x16 Systolic Array, INT8, BSR Sparse" << std::endl;
+        std::cout << "14x14 Systolic Array, INT8, BSR Sparse" << std::endl;
         std::cout << std::endl;
     }
     

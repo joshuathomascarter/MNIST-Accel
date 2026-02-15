@@ -21,7 +21,7 @@ import struct
 # Configuration
 # ----------------------------
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-SPARSE_MODEL_PATH = os.path.join(ROOT, "python", "training", "mnist_sparse_90pct.npz")
+SPARSE_MODEL_PATH = os.path.join(ROOT, "sw", "training", "mnist_sparse_90pct.npz")
 OUTPUT_DIR = os.path.join(ROOT, "data", "bsr_export")
 
 
@@ -46,12 +46,21 @@ class Net(nn.Module):
         return x
 
 
+# Hardware block size — must match the 14×14 systolic array on PYNQ-Z2
+HW_BLOCK = 14
+
+
 def layer_block_cfg(name, module):
-    """Return block size and minimum keep percentage for each layer"""
+    """Return block size and minimum keep percentage for each layer.
+
+    All layers use 14×14 blocks to match the hardware systolic array.
+    Conv weight matrices (reshaped to 2-D via im2col) are zero-padded
+    to multiples of 14 before BSR tiling.
+    """
     if isinstance(module, nn.Conv2d):
-        return (4, 4), 0.30  # 4x4 blocks
+        return (HW_BLOCK, HW_BLOCK), 0.30  # 14×14 blocks
     else:  # Linear
-        return (8, 8), 0.05  # 8x8 blocks
+        return (HW_BLOCK, HW_BLOCK), 0.05  # 14×14 blocks
 
 
 # ----------------------------
@@ -345,7 +354,7 @@ def export_model_bsr(model: nn.Module, output_dir: str, quantize: bool = False):
                 block_w=block_w,
                 output_dir=output_dir,
                 quantize=quantize,
-                scales=quantizer.scale_matrix if hasattr(quantizer, "scale_matrix") and quantize else None,  # Load from quantization if available
+                scales=None,  # INT8 quantization handled separately by quantize.py
             )
 
             # Update statistics

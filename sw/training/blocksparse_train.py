@@ -49,12 +49,21 @@ class Net(nn.Module):
         return x
 
 
+# Hardware block size — must match the 14×14 systolic array on PYNQ-Z2
+HW_BLOCK = 14
+
+
 def layer_block_cfg(name, module):
-    """Return block size and minimum keep percentage for each layer"""
+    """Return block size and minimum keep percentage for each layer.
+
+    All layers use 14×14 blocks to match the hardware systolic array.
+    Conv weight matrices (reshaped to 2-D via im2col) are zero-padded
+    to multiples of 14 before BSR tiling.
+    """
     if isinstance(module, nn.Conv2d):
-        return (4, 4), 0.30  # 4x4 blocks, keep >= 30%
+        return (HW_BLOCK, HW_BLOCK), 0.30  # 14×14 blocks, keep >= 30%
     else:  # Linear
-        return (8, 8), 0.05  # 8x8 blocks, keep >= 5%
+        return (HW_BLOCK, HW_BLOCK), 0.05  # 14×14 blocks, keep >= 5%
 
 
 def load_dense_model() -> Tuple[nn.Module, torch.device, float, Dict[str, torch.Tensor]]:

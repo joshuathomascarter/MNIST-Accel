@@ -78,7 +78,7 @@ These files are **fully implemented in headers** with no separate .cpp needed:
 5. **resnet_inference.cpp** (400+ lines) - ⚠️ Incomplete type warnings
    - **Issue**: Uses forward-declared `BSRMatrix*` which resolves to wrong namespace
    - Similar namespace scoping issue
-   - **Functions implemented**: Full ResNet-18 pipeline, layer configs, preprocessing
+   - **Functions implemented**: Full MNIST CNN pipeline, layer configs, preprocessing
 
 ## Compilation Results
 

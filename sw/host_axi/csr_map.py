@@ -29,9 +29,9 @@ SCALE_Sw = 0x30  #: Weight scale (float32)
 STATUS = 0x3C  #: Status register
 # DMA CSR registers (BSR DMA)
 DMA_LAYER = 0x50  #: DMA: layer selection (0-7)
-DMA_CTRL = 0x51  #: DMA: control (start/reset)
-DMA_COUNT = 0x52  #: DMA: blocks written
-DMA_STATUS = 0x53  #: DMA: status
+DMA_CTRL = 0x54  #: DMA: control (start/reset)
+DMA_COUNT = 0x58  #: DMA: blocks written
+DMA_STATUS = 0x5C  #: DMA: status
 
 # Performance monitor registers (Read-Only)
 PERF_TOTAL = 0x40  #: Total cycles from start to done

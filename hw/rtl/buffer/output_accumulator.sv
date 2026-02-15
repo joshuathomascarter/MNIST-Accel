@@ -345,34 +345,36 @@ module output_accumulator #(
      */
     reg signed [ACC_W-1:0] rd_acc_0, rd_acc_1, rd_acc_2, rd_acc_3;
     reg signed [ACC_W-1:0] rd_acc_4, rd_acc_5, rd_acc_6, rd_acc_7;
-    reg [ADDR_W-1:0] rd_addr_d1;
     reg rd_valid_d1;
+
+    // Proper-width index: 8 bits covers 0..195 (196 accumulators)
+    // WIDTHTRUNC fix: use proper bit slicing from 10-bit address (shift right by 3 for word index)
+    wire [7:0] rd_base_idx = dma_rd_addr[10:3];
     
     always @(posedge clk) begin
         rd_valid_d1 <= dma_rd_en;
-        rd_addr_d1 <= dma_rd_addr;
         
         if (dma_rd_en) begin
             // Read 8 consecutive accumulators for 64-bit output
             // Note: bank_sel=1 means we accumulate to bank1, read from bank0
             if (bank_sel == 1'b1) begin  // Read from bank 0
-                rd_acc_0 <= acc_bank0[{dma_rd_addr, 3'b000}];
-                rd_acc_1 <= acc_bank0[{dma_rd_addr, 3'b001}];
-                rd_acc_2 <= acc_bank0[{dma_rd_addr, 3'b010}];
-                rd_acc_3 <= acc_bank0[{dma_rd_addr, 3'b011}];
-                rd_acc_4 <= acc_bank0[{dma_rd_addr, 3'b100}];
-                rd_acc_5 <= acc_bank0[{dma_rd_addr, 3'b101}];
-                rd_acc_6 <= acc_bank0[{dma_rd_addr, 3'b110}];
-                rd_acc_7 <= acc_bank0[{dma_rd_addr, 3'b111}];
+                rd_acc_0 <= acc_bank0[rd_base_idx];
+                rd_acc_1 <= acc_bank0[rd_base_idx | 8'd1];
+                rd_acc_2 <= acc_bank0[rd_base_idx | 8'd2];
+                rd_acc_3 <= acc_bank0[rd_base_idx | 8'd3];
+                rd_acc_4 <= acc_bank0[rd_base_idx | 8'd4];
+                rd_acc_5 <= acc_bank0[rd_base_idx | 8'd5];
+                rd_acc_6 <= acc_bank0[rd_base_idx | 8'd6];
+                rd_acc_7 <= acc_bank0[rd_base_idx | 8'd7];
             end else begin               // Read from bank 1
-                rd_acc_0 <= acc_bank1[{dma_rd_addr, 3'b000}];
-                rd_acc_1 <= acc_bank1[{dma_rd_addr, 3'b001}];
-                rd_acc_2 <= acc_bank1[{dma_rd_addr, 3'b010}];
-                rd_acc_3 <= acc_bank1[{dma_rd_addr, 3'b011}];
-                rd_acc_4 <= acc_bank1[{dma_rd_addr, 3'b100}];
-                rd_acc_5 <= acc_bank1[{dma_rd_addr, 3'b101}];
-                rd_acc_6 <= acc_bank1[{dma_rd_addr, 3'b110}];
-                rd_acc_7 <= acc_bank1[{dma_rd_addr, 3'b111}];
+                rd_acc_0 <= acc_bank1[rd_base_idx];
+                rd_acc_1 <= acc_bank1[rd_base_idx | 8'd1];
+                rd_acc_2 <= acc_bank1[rd_base_idx | 8'd2];
+                rd_acc_3 <= acc_bank1[rd_base_idx | 8'd3];
+                rd_acc_4 <= acc_bank1[rd_base_idx | 8'd4];
+                rd_acc_5 <= acc_bank1[rd_base_idx | 8'd5];
+                rd_acc_6 <= acc_bank1[rd_base_idx | 8'd6];
+                rd_acc_7 <= acc_bank1[rd_base_idx | 8'd7];
             end
         end
     end
@@ -409,10 +411,10 @@ module output_accumulator #(
         else
             relu_val = acc_val;
         
-        // Step 2: Fixed-point scaling
+        // Step 2: Fixed-point scaling (R6 fix: use full 32-bit scale)
         // Q16.16 format: lower 16 bits are fraction
         // Result shifted right by 16 to extract integer part
-        scaled = (relu_val * $signed({1'b0, scale[15:0]})) >>> 16;
+        scaled = (relu_val * $signed({1'b0, scale})) >>> 16;
         
         // Step 3: Saturate to INT8 range
         // Prevents overflow when result exceeds INT8 capacity

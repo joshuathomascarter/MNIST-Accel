@@ -10,7 +10,7 @@
 2. [Weight-Stationary Dataflow](#weight-stationary-dataflow)
 3. [BSR Sparse Scheduling](#bsr-sparse-scheduling)
 4. [Timing Analysis](#timing-analysis)
-5. [ResNet-18 Layer Breakdown](#resnet-18-layer-breakdown)
+5. [MNIST CNN Layer Breakdown](#mnist-cnn-layer-breakdown)
 6. [Memory Bandwidth Analysis](#memory-bandwidth-analysis)
 7. [Power Estimation](#power-estimation)
 
@@ -241,29 +241,20 @@ Block 2:                [DMA]──[Load]──[Compute K cycles]──[Drain]
 
 ---
 
-## ResNet-18 Layer Breakdown
+## MNIST CNN Layer Breakdown
 
 ### Layer Dimensions
 
-| Layer | Type | Input Shape | Weight Shape | Output Shape | MACs |
-|-------|------|-------------|--------------|--------------|------|
-| conv1 | Conv 7×7, s2 | 3×224×224 | 64×3×7×7 | 64×112×112 | 118M |
-| pool | MaxPool 3×3, s2 | 64×112×112 | - | 64×56×56 | - |
-| layer1.0.conv1 | Conv 3×3 | 64×56×56 | 64×64×3×3 | 64×56×56 | 231M |
-| layer1.0.conv2 | Conv 3×3 | 64×56×56 | 64×64×3×3 | 64×56×56 | 231M |
-| layer1.1.conv1 | Conv 3×3 | 64×56×56 | 64×64×3×3 | 64×56×56 | 231M |
-| layer1.1.conv2 | Conv 3×3 | 64×56×56 | 64×64×3×3 | 64×56×56 | 231M |
-| layer2.0.conv1 | Conv 3×3, s2 | 64×56×56 | 128×64×3×3 | 128×28×28 | 116M |
-| layer2.0.conv2 | Conv 3×3 | 128×28×28 | 128×128×3×3 | 128×28×28 | 231M |
-| layer2.0.ds | Conv 1×1, s2 | 64×56×56 | 128×64×1×1 | 128×28×28 | 6.4M |
-| layer2.1.* | Conv 3×3 ×2 | 128×28×28 | 128×128×3×3 | 128×28×28 | 462M |
-| layer3.0.* | Conv 3×3 ×2, s2 | 128×28×28 | 256×...×3×3 | 256×14×14 | 231M |
-| layer3.1.* | Conv 3×3 ×2 | 256×14×14 | 256×256×3×3 | 256×14×14 | 231M |
-| layer4.0.* | Conv 3×3 ×2, s2 | 256×14×14 | 512×...×3×3 | 512×7×7 | 231M |
-| layer4.1.* | Conv 3×3 ×2 | 512×7×7 | 512×512×3×3 | 512×7×7 | 231M |
-| avgpool | Global | 512×7×7 | - | 512×1×1 | - |
-| fc | Linear | 512 | 1000×512 | 1000 | 0.5M |
-| **TOTAL** | | | | | **1.82B** |
+| Layer | Type | Input Shape | Weight Shape | Output Shape | Params | MACs |
+|-------|------|-------------|--------------|--------------|--------|------|
+| conv1 | Conv 3×3 | 1×28×28 | 32×1×3×3 | 32×26×26 | 288 | 195K |
+| conv2 | Conv 3×3 | 32×26×26 | 64×32×3×3 | 64×24×24 | 18,432 | 10.6M |
+| pool | MaxPool 2×2, s2 | 64×24×24 | - | 64×12×12 | - | - |
+| fc1 | Linear | 9216 | 128×9216 | 128 | 1,179,648 | 1.18M |
+| fc2 | Linear | 128 | 10×128 | 10 | 1,280 | 1.3K |
+| **TOTAL** | | | | | **1.2M** | **12.0M** |
+
+> **Note:** fc1 dominates (98.3% of parameters). Block sparsity pruning has the most impact on this layer.
 
 ### im2col Transformation for Conv
 
@@ -275,31 +266,29 @@ Conv2D: Input [C_in × H × W] * Kernel [C_out × C_in × kH × kW]
 GEMM:   A [H_out×W_out × C_in×kH×kW] × B [C_in×kH×kW × C_out]
       = C [H_out×W_out × C_out]
 
-Example: layer1.0.conv1
-  Input: 64×56×56, Kernel: 64×64×3×3
-  im2col A: [3136 × 576]  (3136 = 56×56, 576 = 64×3×3)
-  Weight B: [576 × 64]
-  Output C: [3136 × 64]
+Example: conv2
+  Input: 32×26×26, Kernel: 64×32×3×3
+  im2col A: [576 × 288]  (576 = 24×24, 288 = 32×3×3)
+  Weight B: [288 × 64]
+  Output C: [576 × 64]
   
-  Tiles: ceil(3136/16) × ceil(64/16) × ceil(576/16)
-       = 196 × 4 × 36 = 28,224 tile ops
+  Tiles: ceil(576/14) × ceil(64/14) × ceil(288/14)
+       = 42 × 5 × 21 = 4,410 tile ops
 ```
 
 ### Cycle Estimates per Layer
 
 Assuming 200 MHz, 70% block sparsity:
 
-| Layer | Tiles (Dense) | Tiles (Sparse) | Cycles | Time (ms) |
-|-------|---------------|----------------|--------|-----------|
-| conv1 | 784 × 4 × 10 = 31K | 9.4K | 160K | 0.80 |
-| layer1.* (4 conv) | 196 × 4 × 36 × 4 = 113K | 34K | 578K | 2.89 |
-| layer2.* (5 conv) | ~80K | 24K | 408K | 2.04 |
-| layer3.* (5 conv) | ~40K | 12K | 204K | 1.02 |
-| layer4.* (5 conv) | ~20K | 6K | 102K | 0.51 |
-| fc | 63 × 1 × 32 = 2K | 0.6K | 10K | 0.05 |
-| **TOTAL** | ~286K | ~86K | **1.46M** | **7.3 ms** |
+| Layer | GEMM Shape | Tile-ops (Dense) | Tile-ops (Sparse) | Cycles | Time (µs) |
+|-------|-----------|------------------|-------------------|--------|----------|
+| conv1 | [676×9] × [9×32] | 147 | 44 | 750 | 3.8 |
+| conv2 | [576×288] × [288×64] | 4,410 | 1,323 | 22.5K | 112 |
+| fc1 | [1×9216] × [9216×128] | 6,590 | 1,977 | 33.6K | 168 |
+| fc2 | [1×128] × [128×10] | 10 | 3 | 51 | 0.3 |
+| **TOTAL** | | **11,157** | **3,347** | **~57K** | **~284 µs** |
 
-**Throughput: ~137 images/second @ 70% sparsity**
+**Throughput: ~3,500 images/second @ 70% sparsity (200 MHz)**
 
 ---
 
@@ -308,17 +297,17 @@ Assuming 200 MHz, 70% block sparsity:
 ### DDR Requirements
 
 ```
-Per image:
-  Weights: 11.7 MB (FP32) → 2.9 MB (INT8) → ~0.9 MB (70% sparse BSR)
-  Activations: ~2 MB peak (largest feature map)
-  Outputs: ~0.5 MB (before pooling)
+Per image (MNIST CNN):
+  Weights: 4.8 MB (FP32) → 1.2 MB (INT8) → ~360 KB (70% sparse BSR)
+  Activations: ~37 KB peak (conv2 output: 64×24×24)
+  Outputs: 10 bytes (final logits)
   
-Bandwidth @ 137 img/s:
-  Weights: 0.9 MB × 137 = 123 MB/s (fits in cache after first image)
-  Activations: 2 MB × 137 = 274 MB/s
-  Outputs: 0.5 MB × 137 = 68 MB/s
+Bandwidth @ 3500 img/s:
+  Weights: 360 KB × 1 = 360 KB (fits in BRAM; loaded once)
+  Activations: 37 KB × 3500 = 130 MB/s
+  Outputs: negligible
   
-Total: ~465 MB/s << Z7020's 4.2 GB/s DDR bandwidth ✓
+Total: ~130 MB/s << Z7020's 4.2 GB/s DDR bandwidth ✓
 ```
 
 ### On-Chip Buffer Sizing
@@ -380,6 +369,6 @@ Comparison:
 | Clock | 200 MHz target | 5ns period |
 | Throughput | 39.2 GOPS (dense) | 196 MACs × 200 MHz |
 | Throughput | 131 GOPS (70% sparse) | 3.3× speedup |
-| Latency | ~9.5 ms/image | ResNet-18 @ 70% sparse |
+| Latency | ~0.28 ms/image | MNIST CNN @ 70% sparse |
 | Power | ~1.7 W | Z7020 @ 200 MHz |
 | Efficiency | 77 GOPS/W | At 70% sparsity |

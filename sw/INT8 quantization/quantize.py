@@ -17,10 +17,10 @@ from typing import Dict, Tuple, Optional
 # ----------------------------
 # Configuration
 # ----------------------------
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 CKPT_PATH = os.path.join(ROOT, "data", "checkpoints", "mnist_fp32.pt")
-SPARSE_CKPT_PATH = os.path.join(ROOT, "python", "training", "mnist_sparse_90pct.npz")
-GOLDEN_INPUTS_PATH = os.path.join(ROOT, "python", "golden", "mnist_inputs.npy")
+SPARSE_CKPT_PATH = os.path.join(ROOT, "data", "checkpoints", "mnist_sparse_90pct.npz")
+GOLDEN_INPUTS_PATH = os.path.join(ROOT, "sw", "golden", "mnist_inputs.npy")
 OUT_DIR = os.path.join(ROOT, "data", "int8")
 
 # Tiling parameters for hardware

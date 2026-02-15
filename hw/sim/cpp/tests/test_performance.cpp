@@ -48,7 +48,7 @@
  * ║     - Multiple sizes                                                     ║
  * ║                                                                           ║
  * ║  3. bench_full_inference_latency()                                        ║
- * ║     - Full ResNet-18 inference                                           ║
+ * ║     - Full MNIST CNN inference                                          ║
  * ║     - Target: <100ms                                                     ║
  * ║                                                                           ║
  * ║  4. bench_sparsity_speedup()                                              ║

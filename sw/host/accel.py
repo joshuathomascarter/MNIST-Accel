@@ -398,6 +398,115 @@ class AccelDriver:
         else:
             bsr_config &= ~CSRMap.SCHED_MODE_DENSE  # Clear bit 0
         self._csr_write(CSRMap.BSR_CONFIG, bsr_config)
+
+    # =========================================================================
+    # Sparsity-aware scheduler selection
+    # =========================================================================
+
+    # --- Tuneable thresholds (edit these after profiling on real hardware) ---
+    SPARSITY_THRESHOLD = 50.0   # Block-sparsity % above which BSR wins
+    MIN_BLOCKS_FOR_BSR = 4      # Minimum total blocks for BSR to be worthwhile
+
+    @staticmethod
+    def should_use_sparse(weight_2d: np.ndarray,
+                          block_size: int = 14,
+                          sparsity_threshold: float = None,
+                          min_blocks: int = None) -> Tuple[bool, float]:
+        """
+        Decide whether a layer should run through the BSR (sparse) scheduler
+        or the dense GEMM scheduler on the 14×14 systolic array.
+
+        Decision criteria
+        -----------------
+        1. **Matrix too small** — if the weight matrix tiles into fewer than
+           ``MIN_BLOCKS_FOR_BSR`` total blocks, the fixed overhead of loading
+           BSR metadata (row_ptr, col_idx) dominates.  → use dense.
+        2. **Sparsity below threshold** — each BSR block incurs per-block
+           bookkeeping (~15 extra cycles for metadata fetch + indexing).
+           Below ~50 % block-sparsity the savings from skipping zero blocks
+           are smaller than that overhead.  → use dense.
+        3. Otherwise → use BSR sparse.
+
+        The 50 % default is conservative; on real hardware you can profile and
+        lower it (40 % is common on larger systolic arrays).
+
+        Parameters
+        ----------
+        weight_2d : np.ndarray
+            2-D weight matrix (already reshaped from Conv4D if needed).
+        block_size : int
+            Hardware block dimension (default 14).
+        sparsity_threshold : float, optional
+            Override ``SPARSITY_THRESHOLD`` for this call.
+        min_blocks : int, optional
+            Override ``MIN_BLOCKS_FOR_BSR`` for this call.
+
+        Returns
+        -------
+        use_sparse : bool
+            True  → select BSR scheduler (``set_scheduler_mode(use_dense=False)``)
+            False → select dense scheduler (``set_scheduler_mode(use_dense=True)``)
+        block_sparsity : float
+            Measured block-sparsity percentage (0–100).
+        """
+        if sparsity_threshold is None:
+            sparsity_threshold = AccelDriver.SPARSITY_THRESHOLD
+        if min_blocks is None:
+            min_blocks = AccelDriver.MIN_BLOCKS_FOR_BSR
+
+        rows, cols = weight_2d.shape
+        block_rows = -(-rows // block_size)   # ceil division
+        block_cols = -(-cols // block_size)
+        total_blocks = block_rows * block_cols
+
+        # --- Criterion 1: matrix too small ---
+        if total_blocks < min_blocks:
+            return False, 0.0
+
+        # --- Count zero blocks ---
+        zero_blocks = 0
+        for br in range(block_rows):
+            for bc in range(block_cols):
+                r0 = br * block_size
+                c0 = bc * block_size
+                block = weight_2d[r0:min(r0 + block_size, rows),
+                                  c0:min(c0 + block_size, cols)]
+                if np.all(block == 0):
+                    zero_blocks += 1
+
+        block_sparsity = 100.0 * zero_blocks / total_blocks
+
+        # --- Criterion 2: sparsity too low ---
+        if block_sparsity < sparsity_threshold:
+            return False, block_sparsity
+
+        return True, block_sparsity
+
+    def auto_select_scheduler(self, weight_2d: np.ndarray,
+                              layer_name: str = "") -> bool:
+        """
+        Convenience wrapper: measure block-sparsity of *weight_2d*, pick the
+        best scheduler, program the CSR, and return the choice.
+
+        Parameters
+        ----------
+        weight_2d : np.ndarray
+            2-D weight matrix for this layer.
+        layer_name : str
+            Optional label for logging.
+
+        Returns
+        -------
+        use_sparse : bool
+            True if BSR scheduler was selected.
+        """
+        use_sparse, sparsity = self.should_use_sparse(weight_2d, self.BLOCK_SIZE)
+        self.set_scheduler_mode(use_dense=not use_sparse)
+
+        mode_str = "BSR-sparse" if use_sparse else "Dense-GEMM"
+        tag = f" [{layer_name}]" if layer_name else ""
+        print(f"Scheduler{tag}: {mode_str}  (block-sparsity {sparsity:.1f}%)")
+        return use_sparse
     
     # =========================================================================
     # Private methods
@@ -480,7 +589,7 @@ if __name__ == "__main__":
     num_blocks = 2
     row_ptr = np.array([0, 2], dtype=np.int32)  # Row 0 has 2 blocks
     col_idx = np.array([0, 1], dtype=np.int16)  # Columns 0 and 1
-    weights = np.random.randint(-128, 127, (num_blocks, 16, 16), dtype=np.int8)
+    weights = np.random.randint(-128, 127, (num_blocks, 14, 14), dtype=np.int8)
     
     bytes_loaded = accel.load_sparse_weights(row_ptr, col_idx, weights)
     print(f"Loaded {bytes_loaded} bytes of sparse weights")

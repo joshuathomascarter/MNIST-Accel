@@ -204,43 +204,7 @@ constexpr double calculate_inference_time_ms(double clock_mhz, uint64_t total_op
 }
 
 // =============================================================================
-// ResNet-18 Operation Counts
-// =============================================================================
-
-namespace resnet18 {
-
-/// Approximate total MACs for ResNet-18 inference (single image)
-constexpr uint64_t TOTAL_MACS = 1800000000ULL;  // ~1.8 billion MACs
-
-/// Total operations (MAC = 1 multiply + 1 add)
-constexpr uint64_t TOTAL_OPS = TOTAL_MACS * 2;  // ~3.6 billion ops
-
-/// Calculate ResNet-18 inference time in milliseconds
-constexpr double inference_time_ms(double clock_mhz, double utilization = 0.80) {
-    double peak_gops = calculate_peak_gops(clock_mhz);
-    double effective_gops = peak_gops * utilization;
-    return static_cast<double>(TOTAL_OPS) / (effective_gops * 1e6);
-}
-
-/// Calculate frames per second for ResNet-18
-constexpr double inference_fps(double clock_mhz, double utilization = 0.80) {
-    return 1000.0 / inference_time_ms(clock_mhz, utilization);
-}
-
-/// Layer-by-layer breakdown (approximate)
-namespace layers {
-    constexpr uint64_t CONV1_MACS   = 118013952ULL;   // 7×7 conv, 64 filters
-    constexpr uint64_t LAYER1_MACS  = 231211008ULL;   // 2× BasicBlock
-    constexpr uint64_t LAYER2_MACS  = 462422016ULL;   // 2× BasicBlock
-    constexpr uint64_t LAYER3_MACS  = 462422016ULL;   // 2× BasicBlock
-    constexpr uint64_t LAYER4_MACS  = 462422016ULL;   // 2× BasicBlock
-    constexpr uint64_t FC_MACS      = 512000ULL;      // 512 → 1000 FC
-}
-
-}  // namespace resnet18
-
-// =============================================================================
-// MNIST CNN Operation Counts (for testing)
+// MNIST CNN Operation Counts
 // =============================================================================
 
 namespace mnist_cnn {
@@ -294,32 +258,27 @@ inline void print_platform_table() {
     printf("╚═══════════════════════════════════════════════════════════════════════════════╝\n");
 }
 
-inline void print_resnet18_estimates() {
+inline void print_mnist_estimates() {
     printf("\n");
     printf("╔═══════════════════════════════════════════════════════════════════════════════╗\n");
-    printf("║                    RESNET-18 INFERENCE ESTIMATES                              ║\n");
+    printf("║                    MNIST CNN INFERENCE ESTIMATES                              ║\n");
     printf("║                    (Assuming 80%% utilization)                                 ║\n");
     printf("╠═══════════════════════════════════════════════════════════════════════════════╣\n");
-    printf("║ Total Operations: %llu (~3.6 billion)                           ║\n", 
-           (unsigned long long)resnet18::TOTAL_OPS);
-    printf("╠───────────────────────────┬────────────┬──────────┬────────────────────────────╣\n");
-    printf("║ Platform                  │ Time       │ FPS      │ Real-time?                 ║\n");
-    printf("╠───────────────────────────┼────────────┼──────────┼────────────────────────────╣\n");
+    printf("║ Total Operations: %llu                                              ║\n", 
+           (unsigned long long)mnist_cnn::TOTAL_OPS);
+    printf("╠───────────────────────────┬────────────┬──────────────────────────────────────╣\n");
+    printf("║ Platform                  │ Time       │ Notes                                ║\n");
+    printf("╠───────────────────────────┼────────────┼──────────────────────────────────────╣\n");
     
     auto print_row = [](const PlatformConfig& p) {
-        double time_ms = resnet18::inference_time_ms(p.clock_mhz, 0.80);
-        double fps = resnet18::inference_fps(p.clock_mhz, 0.80);
-        const char* status = fps >= 30 ? "✅ Real-time (30+ FPS)" : 
-                            (fps >= 10 ? "⚡ Interactive" : "📊 Batch");
-        printf("║ %-25s │ %6.1f ms  │ %5.1f    │ %-26s ║\n",
-               p.name, time_ms, fps, status);
+        double time_ms = mnist_cnn::inference_time_ms(p.clock_mhz, 0.80);
+        printf("║ %-25s │ %6.3f ms  │ @ %.0f MHz                            ║\n",
+               p.name, time_ms, p.clock_mhz);
     };
     
     print_row(platform::PYNQ_Z2_CONSERVATIVE);
     print_row(platform::PYNQ_Z2_OPTIMIZED);
     print_row(platform::ZCU104);
-    print_row(platform::ZCU102);
-    print_row(platform::ALVEO_U50);
     
     printf("╚═══════════════════════════════════════════════════════════════════════════════╝\n");
 }

@@ -70,7 +70,7 @@ A complete **sparse neural network accelerator** built from scratch, targeting t
 - **Zynq Host Driver** — Direct hardware control via `/dev/mem`
 - **DMA Memory Manager** — Physically contiguous buffer allocation
 - **BSR Packer** — High-performance sparse format conversion
-- **ResNet-18 Inference** — Full model execution on FPGA
+- **MNIST Inference** — Full CNN execution on FPGA
 
 ## Architecture Overview
 
@@ -129,7 +129,7 @@ A complete **sparse neural network accelerator** built from scratch, targeting t
 | **Data Type** | INT8 | 4x memory reduction, 0.2% accuracy loss |
 | **Array Size** | 14x14 PEs | Fits Z7020's 220 DSPs (196 DSPs = 89%) |
 | **Block Size** | 14x14 | Matches systolic array tiling, sparse-friendly |
-| **Dataflow** | Row-Stationary | Minimizes weight reloads, maximizes reuse |
+| **Dataflow** | Weight-Stationary | Minimizes weight reloads, maximizes reuse |
 | **Clock Gating** | BUFGCE primitives | 810 mW savings (40.5% power reduction) |
 | **Sparse Format** | BSR | Hardware-friendly, sequential memory access |
 
@@ -158,14 +158,11 @@ ACCEL-v1/                            # 20,675 total lines of code
 │       ├── act_buffer.sv            # 1 KB activation buffer
 │       └── wgt_buffer.sv            # 1 KB weight buffer
 │
-├── accel/python/                    # 3,200 lines Python
+├── accel/python/                    # Python tooling
 │   ├── training/                    # INT8 training pipeline
-│   │   └── mnist_cnn_int8.py        # 98.7% accuracy
-│   ├── exporters/                   # BSR + INT8 exporters
+│   │   └── train_mnist.py           # 98.7% accuracy MNIST CNN
 │   ├── golden/                      # Bit-exact reference
-│   └── tests/                       # 26 tests (100% passing)
-│       ├── test_axi_dma.py          # DMA verification
-│       └── test_stress.py           # 100 random matrices
+│   └── tests/                       # Unit tests
 │
 ├── docs/                            # 8,500 lines documentation
 │   ├── architecture/                # Design specs
@@ -347,7 +344,7 @@ wire [7:0] saturated = (scaled > 127) ? 8'd127 :
 | Document | Description |
 |----------|-------------|
 | **[hw/README.md](hw/README.md)** | **Hardware architecture, diagrams, Zynq deployment guide** |
-| **[docs/DEEP_DIVE.md](docs/DEEP_DIVE.md)** | **Performance analysis, ResNet-18 breakdown, timing** |
+| **[docs/DEEP_DIVE.md](docs/DEEP_DIVE.md)** | **Performance analysis, MNIST breakdown, timing** |
 | [Architecture Overview](docs/architecture/ARCHITECTURE.md) | System design, dataflow, memory hierarchy |
 | [BSR Format Spec](docs/architecture/SPARSITY_FORMAT.md) | Sparse format details, hardware FSM |
 | [Power Optimization](docs/guides/POWER_OPTIMIZATION_ADVANCED.md) | 5-phase optimization (2.0W -> 840mW) |

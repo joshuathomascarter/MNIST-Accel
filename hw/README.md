@@ -418,18 +418,16 @@ make SIM=verilator
 
 ## 📊 Performance Estimates
 
-### ResNet-18 Inference
+### MNIST CNN Inference
 
-| Layer | M | N | K | Blocks (Dense) | Blocks (70% Sparse) | Cycles |
-|-------|---|---|---|----------------|---------------------|--------|
-| conv1 | 64 | 3136 | 147 | 11,200 | 3,360 | 35K |
-| layer1.0.conv1 | 64 | 3136 | 576 | 86,400 | 25,920 | 270K |
-| layer2.0.conv1 | 128 | 784 | 576 | 43,200 | 12,960 | 135K |
-| layer3.0.conv1 | 256 | 196 | 1152 | 21,600 | 6,480 | 67K |
-| layer4.0.conv1 | 512 | 49 | 2304 | 10,800 | 3,240 | 34K |
-| fc | 1000 | 1 | 512 | 2,000 | 600 | 6K |
+| Layer | M | N | K | Tile-ops (Dense) | Tile-ops (70% Sparse) | Cycles |
+|-------|---|---|---|------------------|----------------------|--------|
+| conv1 | 676 | 32 | 9 | 147 | 44 | 750 |
+| conv2 | 576 | 64 | 288 | 4,410 | 1,323 | 22.5K |
+| fc1 | 1 | 128 | 9216 | 6,590 | 1,977 | 33.6K |
+| fc2 | 1 | 10 | 128 | 10 | 3 | 51 |
 
-**Total: ~2.1M cycles @ 200 MHz = 10.5 ms/image (70% sparse)**
+**Total: ~57K cycles @ 200 MHz = ~0.28 ms/image (70% sparse)**
 
 ---
 
