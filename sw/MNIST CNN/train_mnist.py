@@ -34,8 +34,8 @@ class Net(nn.Module):
         super(Net, self).__init__()
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
         self.conv2 = nn.Conv2d(32, 64, 3, 1)
-        self.fc1 = nn.Linear(64 * 12 * 12, 128)  # after pooling, output is 64x12x12
-        self.fc2 = nn.Linear(128, 10)
+        self.fc1 = nn.Linear(64 * 12 * 12, 140)  # after pooling, output is 64x12x12
+        self.fc2 = nn.Linear(140, 10)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -155,7 +155,7 @@ torch.save(
         },
         "best_acc": best_acc,
     },
-    "data/checkpoints/mnist_fp32.pt",
+    "../../data/checkpoints/mnist_fp32.pt",
 )
 
 # Golden outputs for HW tests

@@ -1,11 +1,7 @@
 <testsuites name="results">
   <testsuite name="all" package="all">
-    <property name="random_seed" value="1771196854" />
-    <testcase name="test_identity_14x14" classname="test_accel_top" file="/Users/joshcarter/ResNet-Accel-2/hw/sim/cocotb/test_accel_top.py" lineno="290" time="0.020246028900146484" sim_time_ns="1920.0" ratio_time="94833.41199745637">
-      <failure error_type="AssertionError" error_msg="DDR mismatch at [0]: got 0, expected 1" />
-    </testcase>
-    <testcase name="test_sparse_28x28" classname="test_accel_top" file="/Users/joshcarter/ResNet-Accel-2/hw/sim/cocotb/test_accel_top.py" lineno="390" time="0.019612789154052734" sim_time_ns="2240.0" ratio_time="114211.19058617587">
-      <failure error_type="AssertionError" error_msg="Mismatch at [0]: got 0, expected 42" />
-    </testcase>
+    <property name="random_seed" value="1771214325" />
+    <testcase name="test_identity_14x14" classname="test_accel_top" file="/Users/joshcarter/ResNet-Accel-2/hw/sim/cocotb/test_accel_top.py" lineno="290" time="0.06006979942321777" sim_time_ns="2550.0" ratio_time="42450.616191243535" />
+    <testcase name="test_sparse_28x28" classname="test_accel_top" file="/Users/joshcarter/ResNet-Accel-2/hw/sim/cocotb/test_accel_top.py" lineno="396" time="0.07049083709716797" sim_time_ns="3660.0" ratio_time="51921.64188595008" />
   </testsuite>
 </testsuites>

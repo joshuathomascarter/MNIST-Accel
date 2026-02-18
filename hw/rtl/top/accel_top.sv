@@ -505,14 +505,14 @@ module accel_top #(
     wire [63:0]             wgt_wdata;          // 8 INT8 weights
 
     // -------------------------------------------------------------------------
-    // Metadata BRAM Read Interface (Scheduler → BRAMs direct, no cache)
+    // Direct BRAM Read Wires (Scheduler → BRAMs, no meta decoder)
     // -------------------------------------------------------------------------
-    // Scheduler drives meta_raddr/meta_ren, BRAMs respond 1 cycle later.
-    // Address 0..127 → row_ptr_bram, 128+ → col_idx_bram (offset by 128).
-    wire [31:0]             sched_meta_addr;    // Metadata address from scheduler
-    wire                    sched_meta_ren;     // Read-enable from scheduler
-    reg                     meta_rvalid_r;      // 1-cycle delayed valid
-    wire [31:0]             meta_rdata_r;       // Muxed BRAM read data
+    // Scheduler has separate combinational read ports for row_ptr and col_idx.
+    // Address set by scheduler (registered) → BRAM reads combinationally.
+    wire [BRAM_ADDR_W-1:0]  sched_row_ptr_addr;  // row_ptr read address
+    wire [31:0]             sched_row_ptr_data;  // row_ptr read data (combinational)
+    wire [BRAM_ADDR_W-1:0]  sched_col_idx_addr;  // col_idx read address
+    wire [15:0]             sched_col_idx_data;  // col_idx read data (combinational)
 
     // -------------------------------------------------------------------------
     // Scheduler Interface (BSR-only)
@@ -542,7 +542,6 @@ module accel_top #(
     wire [AXI_ADDR_W-1:0]   act_rd_addr;        // Activation buffer read address
     wire                    _unused_wgt_rd_en;  // Weight read-enable (unused in BSR)
     wire                    _unused_accum_en;   // Accumulate enable (unused in BSR)
-    wire                    _unused_meta_ready; // BRAM always ready, never checked
 
     // -------------------------------------------------------------------------
     // Activation Buffer Read Interface
@@ -637,8 +636,8 @@ module accel_top #(
     //   CSR space only uses [CSR_ADDR_W-1:0] = 8 bits.
     // cfg_bsr_config: only bit [1] (relu_en) is used; bits [31:2] and [0]
     //   are reserved for future features.
-    // sched_meta_addr / wgt_rd_addr / act_rd_addr: scheduler outputs 32-bit
-    //   addresses but BRAMs only use [BRAM_ADDR_W-1:0] = 10 bits.
+    // wgt_rd_addr / act_rd_addr: scheduler outputs 32-bit addresses but
+    //   BRAMs only use [BRAM_ADDR_W-1:0] = 10 bits.
     // cfg_bsr_block_cols[31:12]: scheduler KT uses only 12 bits (max 4096
     //   tile columns); upper CSR bits are for software readback only.
     wire _unused_addr_bits = &{1'b0,
@@ -646,7 +645,6 @@ module accel_top #(
         s_axi_araddr[AXI_ADDR_W-1:CSR_ADDR_W],
         cfg_bsr_config[31:2], cfg_bsr_config[0],
         cfg_bsr_block_cols[31:12],
-        sched_meta_addr[31:BRAM_ADDR_W],
         wgt_rd_addr[AXI_ADDR_W-1:BRAM_ADDR_W],
         act_rd_addr[AXI_ADDR_W-1:BRAM_ADDR_W]
     };
@@ -1062,7 +1060,6 @@ module accel_top #(
     // row_ptr[i] = index of first non-zero block in row i
     // row_ptr[num_rows] = total number of non-zero blocks
     reg [31:0] row_ptr_bram [0:(1<<BRAM_ADDR_W)-1];
-    reg [31:0] row_ptr_rdata_r;
 
     always @(posedge clk) begin
         if (row_ptr_we) begin
@@ -1071,9 +1068,11 @@ module accel_top #(
             $display("[BRAM] row_ptr[%0d] = %0d  @ %0t", row_ptr_waddr, row_ptr_wdata, $time);
             // synthesis translate_on
         end
-        // Read port: address directly from scheduler
-        row_ptr_rdata_r <= row_ptr_bram[sched_meta_addr[BRAM_ADDR_W-1:0]];
     end
+
+    // Combinational read — scheduler sets registered address, BRAM responds
+    // same cycle. Infers distributed RAM on FPGA (LUT-RAM, 4KB fits easily).
+    assign sched_row_ptr_data = row_ptr_bram[sched_row_ptr_addr];
 
     // -------------------------------------------------------------------------
     // 6b. Column Index BRAM (16-bit entries)
@@ -1081,17 +1080,14 @@ module accel_top #(
     // col_idx[j] = column block index for j-th non-zero block
     // Used by scheduler to compute activation address offset
     reg [15:0] col_idx_bram [0:(1<<BRAM_ADDR_W)-1];
-    reg [15:0] col_idx_rdata_r;
-
-    // Col_idx is at offset COL_IDX_BASE(256) in scheduler address space
-    wire [BRAM_ADDR_W-1:0] col_idx_rd_addr = sched_meta_addr[BRAM_ADDR_W-1:0] - 256;
 
     always @(posedge clk) begin
         if (col_idx_we)
             col_idx_bram[col_idx_waddr] <= col_idx_wdata;
-        // Read port: address directly from scheduler
-        col_idx_rdata_r <= col_idx_bram[col_idx_rd_addr];
     end
+
+    // Combinational read — same as row_ptr.
+    assign sched_col_idx_data = col_idx_bram[sched_col_idx_addr];
 
     // -------------------------------------------------------------------------
     // 6c. Weight Block BRAM (112-bit entries, with DMA packer)
@@ -1118,35 +1114,56 @@ module accel_top #(
         .buf_wdata  (wgt_pack_wdata)
     );
 
-    reg [N_COLS*DATA_W-1:0] wgt_block_bram [0:(1<<BRAM_ADDR_W)-1];
-    reg [N_COLS*DATA_W-1:0] wgt_block_rdata_r;
-
-    always @(posedge clk) begin
-        if (wgt_pack_we)
-            wgt_block_bram[wgt_pack_waddr] <= wgt_pack_wdata;
-        wgt_block_rdata_r <= wgt_block_bram[wgt_rd_addr[BRAM_ADDR_W-1:0]];
-    end
-
     // -------------------------------------------------------------------------
-    // 7. Direct BRAM Read Logic (No Cache — scheduler reads BRAMs directly)
+    // 6d. Weight Double-Buffer (Ping-Pong Banks via wgt_buffer.sv)
     // -------------------------------------------------------------------------
-    // Mux between row_ptr and col_idx based on address bit 8 (COL_IDX_BASE=256).
-    // Address 0..255:  row_ptr_bram
-    // Address 256+:    col_idx_bram
-    // 1-cycle registered read latency — meta_rvalid_r asserts one cycle after meta_ren.
-    reg meta_is_col_idx_r;
+    // Although weights load once per layer, double-buffering allows:
+    // - Prefetching next layer's weights during current layer compute
+    // - Consistent architecture with act_buffer
+    // - Future support for layer pipelining
+    
+    // Edge detector: create single-cycle pulse from sched_done rising edge
+    // (Defined here as it's needed by both wgt_buffer and act_buffer)
+    reg sched_done_d1;
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            meta_rvalid_r     <= 1'b0;
-            meta_is_col_idx_r <= 1'b0;
-        end else begin
-            meta_rvalid_r     <= sched_meta_ren;
-            meta_is_col_idx_r <= sched_meta_addr[8];  // bit 8 = COL_IDX_BASE(256)
-        end
+        if (!rst_n) sched_done_d1 <= 1'b0;
+        else        sched_done_d1 <= sched_done;
+    end
+    wire sched_done_pulse = sched_done & ~sched_done_d1;
+    
+    // Weight bank selection (same toggle as activation for simplicity)
+    reg wgt_bank_sel;
+    
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            wgt_bank_sel <= 1'b0;
+        else if (sched_done_pulse)
+            wgt_bank_sel <= ~wgt_bank_sel;
     end
 
-    assign meta_rdata_r = meta_is_col_idx_r ? {16'b0, col_idx_rdata_r}
-                                            : row_ptr_rdata_r;
+    wire [N_COLS*DATA_W-1:0] wgt_block_rdata_r;  // Output from wgt_buffer
+    
+    wgt_buffer #(
+        .TN         (N_COLS),       // 14 columns
+        .ADDR_WIDTH (BRAM_ADDR_W)   // 10 bits = 1024 depth
+    ) u_wgt_buffer (
+        .clk         (clk),
+        .rst_n       (rst_n),
+        
+        // DMA Write Port (writes to background bank)
+        .we          (wgt_pack_we),
+        .waddr       (wgt_pack_waddr),
+        .wdata       (wgt_pack_wdata),
+        .bank_sel_wr (~wgt_bank_sel),  // DMA writes to the "background" bank
+        
+        // Systolic Array Read Port (reads from active bank)
+        .rd_en       (1'b1),           // Always enabled when computing
+        .k_idx       (wgt_rd_addr[BRAM_ADDR_W-1:0]),
+        .bank_sel_rd (wgt_bank_sel),   // Compute reads from the "active" bank
+        .b_vec       (wgt_block_rdata_r)
+    );
+
+    // (Section 7 removed — meta decoder replaced by direct BRAM wires above)
 
     // -------------------------------------------------------------------------
     // 8. BSR Scheduler (Traverses Sparse Blocks — sole scheduler)
@@ -1167,10 +1184,11 @@ module accel_top #(
     //
     // BLOCK_SIZE must match systolic array dimensions (N_ROWS = N_COLS = 14).
     bsr_scheduler #(
-        .M_W        (10),           // Tile row index width (up to 1023 rows)
-        .K_W        (12),           // Tile K index width (up to 4095 cols)
-        .ADDR_W     (AXI_ADDR_W),   // Address width for buffer access
-        .BLOCK_SIZE (N_ROWS)        // Block size = systolic array dimension
+        .M_W         (10),           // Tile row index width (up to 1023 rows)
+        .K_W         (12),           // Tile K index width (up to 4095 cols)
+        .ADDR_W      (AXI_ADDR_W),   // Address width for buffer access
+        .BRAM_ADDR_W (BRAM_ADDR_W),  // BRAM address width
+        .BLOCK_SIZE  (N_ROWS)        // Block size = systolic array dimension
     ) u_bsr_scheduler (
         .clk            (clk),
         .rst_n          (rst_n),
@@ -1182,13 +1200,11 @@ module accel_top #(
         // Configuration
         .MT             (sched_MT),
         .KT             (sched_KT),
-        // Metadata Interface (direct BRAM, no cache)
-        .meta_raddr     (sched_meta_addr),
-        .meta_ren       (sched_meta_ren),
-        .meta_req_ready (1'b1),           // BRAM always ready (no cache stall)
-        .meta_rdata     (meta_rdata_r),
-        .meta_rvalid    (meta_rvalid_r),
-        .meta_ready     (_unused_meta_ready),
+        // Direct BRAM reads (no meta decoder)
+        .row_ptr_rd_addr (sched_row_ptr_addr),
+        .row_ptr_rd_data (sched_row_ptr_data),
+        .col_idx_rd_addr (sched_col_idx_addr),
+        .col_idx_rd_data (sched_col_idx_data),
         // Buffer Interfaces
         .wgt_rd_en      (_unused_wgt_rd_en),
         .wgt_addr       (wgt_rd_addr),
@@ -1205,12 +1221,30 @@ module accel_top #(
     // All systolic control signals come directly from u_bsr_scheduler above.
 
     // -------------------------------------------------------------------------
-    // 9. Activation Buffer (DMA Packer + 112-bit BRAM)
+    // 9. Activation Buffer (Double-Buffered via act_buffer.sv)
     // -------------------------------------------------------------------------
-    // DMA writes 64-bit beats → dma_pack_112 packs to 112-bit → act_bram stores.
-    // Scheduler reads 112-bit rows (14 × INT8) for systolic array input.
-    //
-    // Capacity: 1024 × 112 bits = 14 KB
+    // PING-PONG DOUBLE BUFFERING:
+    // - DMA writes to "background" bank while compute reads "active" bank
+    // - Banks swap when scheduler completes a tile (sched_done_pulse)
+    // - Eliminates stalls: DMA and compute overlap 100%
+    
+    // Bank selection register (0 = compute reads Bank0, 1 = compute reads Bank1)
+    reg act_bank_sel;
+
+    // Flip the bank when compute finishes (swap active/background)
+    // (sched_done_pulse is defined in Section 6d above)
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            act_bank_sel <= 1'b0;
+        else if (sched_done_pulse)
+            act_bank_sel <= ~act_bank_sel;
+    end
+
+    // -------------------------------------------------------------------------
+    // 9a. Activation DMA Packer (64-bit AXI → 112-bit BRAM width)
+    // -------------------------------------------------------------------------
+    // Packs two 64-bit DMA beats into one 112-bit (14 × INT8) BRAM write.
+    // Address auto-increments after each packed write.
     wire                          act_pack_we;
     wire [BRAM_ADDR_W-1:0]        act_pack_waddr;
     wire [N_ROWS*DATA_W-1:0]      act_pack_wdata;  // 112 bits
@@ -1228,17 +1262,28 @@ module accel_top #(
         .buf_wdata  (act_pack_wdata)
     );
 
-    reg [N_ROWS*DATA_W-1:0] act_buffer_ram [0:(1<<BRAM_ADDR_W)-1];
-    reg [N_ROWS*DATA_W-1:0] act_rd_data_r;
-
-    always @(posedge clk) begin
-        if (act_pack_we)
-            act_buffer_ram[act_pack_waddr] <= act_pack_wdata;
-        if (act_rd_en)
-            act_rd_data_r <= act_buffer_ram[act_rd_addr[BRAM_ADDR_W-1:0]];
-    end
-
-    assign act_rd_data = act_rd_data_r;
+    // -------------------------------------------------------------------------
+    // 9b. Activation Double-Buffer Memory (Ping-Pong Banks)
+    // -------------------------------------------------------------------------
+    act_buffer #(
+        .TM         (N_ROWS),       // 14 rows
+        .ADDR_WIDTH (BRAM_ADDR_W)   // 10 bits = 1024 depth
+    ) u_act_buffer (
+        .clk         (clk),
+        .rst_n       (rst_n),
+        
+        // DMA Write Port (writes to background bank)
+        .we          (act_pack_we),
+        .waddr       (act_pack_waddr),
+        .wdata       (act_pack_wdata),
+        .bank_sel_wr (~act_bank_sel),  // DMA writes to the "background" bank
+        
+        // Systolic Array Read Port (reads from active bank)
+        .rd_en       (act_rd_en),
+        .k_idx       (act_rd_addr[BRAM_ADDR_W-1:0]),
+        .bank_sel_rd (act_bank_sel),   // Compute reads from the "active" bank
+        .a_vec       (act_rd_data)
+    );
 
     // -------------------------------------------------------------------------
     // 10. Weight Read Path (Block data from wgt_block_bram)
@@ -1423,7 +1468,7 @@ module accel_top #(
         .pe_en_signal           (pe_en),        // PE active (for stall detection)
         .sched_busy_signal      (sched_busy),   // Scheduler busy (for stall detection)
         .dma_beat_valid         (m_axi_rvalid & m_axi_rready), // AXI beat accepted
-        .block_done_pulse       (sched_done),   // Block completion (TODO: per-block pulse)
+        .block_done_pulse       (load_weight),   // Block completion (TODO: per-block pulse)
         // Outputs (to CSR)
         .total_cycles_count     (perf_total_cycles),
         .active_cycles_count    (perf_active_cycles),
@@ -1433,6 +1478,7 @@ module accel_top #(
         .stall_cycles_count     (perf_stall_cycles),
         .measurement_done       (_unused_perf_done)
     );
+
 
 endmodule
 

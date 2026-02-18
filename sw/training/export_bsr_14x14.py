@@ -66,8 +66,8 @@ class MNISTNet(nn.Module):
         super().__init__()
         self.conv1 = nn.Conv2d(1, 32, 3, 1)     # (1, 28, 28) → (32, 26, 26)
         self.conv2 = nn.Conv2d(32, 64, 3, 1)    # (32, 26, 26) → (64, 24, 24)
-        self.fc1 = nn.Linear(64 * 12 * 12, 128) # After 2x2 pool: (64, 12, 12) → 128
-        self.fc2 = nn.Linear(128, 10)           # 128 → 10 classes
+        self.fc1 = nn.Linear(64 * 12 * 12, 140) # After 2x2 pool: (64, 12, 12) → 140
+        self.fc2 = nn.Linear(140, 10)           # 140 → 10 classes
 
     def forward(self, x):
         x = torch.relu(self.conv1(x))

@@ -100,7 +100,7 @@ module perf #(
 
                     // Stall detection: scheduler is busy but PEs are idle
                     // This indicates metadata fetch latency or BRAM read stalls
-                    if (sched_busy_signal && !pe_en_signal)
+                    if (sched_busy_signal && !pe_en_signal && !dma_beat_valid)
                         run_stalls <= run_stalls + 1;
 
                     if (done_pulse)
