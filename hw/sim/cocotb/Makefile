@@ -17,6 +17,8 @@ VERILOG_SOURCES = \
     $(PWD)/../../rtl/dma/out_dma.sv \
     $(PWD)/../../rtl/dma/dma_pack_112.sv \
     $(PWD)/../../rtl/buffer/output_accumulator.sv \
+    $(PWD)/../../rtl/buffer/act_buffer.sv \
+    $(PWD)/../../rtl/buffer/wgt_buffer.sv \
     $(PWD)/../../rtl/systolic/pe.sv \
     $(PWD)/../../rtl/systolic/systolic_array.sv \
     $(PWD)/../../rtl/systolic/systolic_array_sparse.sv \

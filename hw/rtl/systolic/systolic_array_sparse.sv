@@ -1,6 +1,10 @@
 // systolic_array_sparse.sv — Sparse-aware weight-stationary 14×14 INT8 systolic array
 // Skips zero BSR blocks via block_valid gating. 196 DSPs on Zynq-7020.
 // Row-by-row weight loading (14 cycles), all columns latch simultaneously per row.
+//
+// TRIANGULAR SKEW: Row r gets its activation delayed by r cycles, creating a
+// diagonal wavefront. This spreads timing fanout across cycles.
+// Stream 14+13 = 27 cycles: 14 feed + 13 drain for pipeline.
 
 `default_nettype none
 
@@ -13,19 +17,18 @@ module systolic_array_sparse #(
     input  wire                     clk,
     input  wire                     rst_n,
     // Sparse control from scheduler
-    input  wire                     block_valid,    // 0 = zero block, skip compute
+    input  wire                     block_valid,    // MAC enable (1 = compute)
     input  wire                     load_weight,    // Assert 14 cycles to load weights
     input  wire                     clr,            // Sync clear all PE accumulators
     // Data
-    input  wire [N_ROWS*DATA_W-1:0] a_in_flat,     // 14 × INT8 activations
-    input  wire [N_COLS*DATA_W-1:0] b_in_flat,     // 14 × INT8 weights
+    input  wire [N_ROWS*DATA_W-1:0] a_in_flat,     // 14 × INT8 activations (one per row)
+    input  wire [N_COLS*DATA_W-1:0] b_in_flat,     // 14 × INT8 weights (one per column)
     output wire [N_ROWS*N_COLS*ACC_W-1:0] c_out_flat // 196 × INT32 accumulators
 );
 
-  // ---------- 1. Input Unpacking + Triangular Activation Skew ----------
-  wire signed [DATA_W-1:0] a_in_raw [0:N_ROWS-1];  // Raw from flat bus
-  wire signed [DATA_W-1:0] a_in     [0:N_ROWS-1];  // Skewed to PE grid
-  wire signed [DATA_W-1:0] b_in     [0:N_COLS-1];
+  // ---------- 1. Input Unpacking ----------
+  wire signed [DATA_W-1:0] a_in_raw [0:N_ROWS-1];
+  wire signed [DATA_W-1:0] b_in [0:N_COLS-1];
 
   genvar i;
   generate
@@ -33,27 +36,37 @@ module systolic_array_sparse #(
       assign a_in_raw[i] = a_in_flat[i*DATA_W +: DATA_W];
     for (i = 0; i < N_COLS; i = i + 1)
       assign b_in[i] = b_in_flat[i*DATA_W +: DATA_W];
+  endgenerate
 
-    // Triangular skew: row i gets i delay stages (gated by block_valid)
-    // Row 0: straight through. Row 13: 13-deep shift register.
-    // Compensates for the 1-cycle PE pipeline delay per column.
-    for (i = 0; i < N_ROWS; i = i + 1)
-      if (i == 0) begin : SKEW_ROW0
-        assign a_in[i] = a_in_raw[i];
-      end else begin : SKEW_ROW
-        reg signed [DATA_W-1:0] delay_regs [0:i-1];
-        integer k;
-        always @(posedge clk or negedge rst_n) begin
+  // ---------- 2. Triangular Skew Registers ----------
+  // Row r gets r cycles of delay. Row 0 = direct, Row 13 = 13 cycle delay.
+  // This creates a diagonal wavefront for better timing.
+  wire signed [DATA_W-1:0] a_in [0:N_ROWS-1];
+
+  generate
+    for (i = 0; i < N_ROWS; i = i + 1) begin : SKEW
+      if (i == 0) begin : NO_DELAY
+        // Row 0: no delay
+        assign a_in[0] = a_in_raw[0];
+      end else begin : DELAY
+        // Row i: i cycles of delay via shift register
+        reg signed [DATA_W-1:0] skew_sr [0:i-1];
+        integer j;
+
+        always_ff @(posedge clk or negedge rst_n) begin
           if (!rst_n) begin
-            for (k = 0; k < i; k = k + 1) delay_regs[k] <= {DATA_W{1'b0}};
-          end else if (block_valid) begin
-            delay_regs[0] <= a_in_raw[i];
-            for (k = 1; k < i; k = k + 1)
-              delay_regs[k] <= delay_regs[k-1];
+            for (j = 0; j < i; j = j + 1)
+              skew_sr[j] <= 0;
+          end else begin
+            skew_sr[0] <= a_in_raw[i];
+            for (j = 1; j < i; j = j + 1)
+              skew_sr[j] <= skew_sr[j-1];
           end
         end
-        assign a_in[i] = delay_regs[i-1];
+
+        assign a_in[i] = skew_sr[i-1];
       end
+    end
   endgenerate
 
   // ---------- 2. Row-by-Row Weight Loading ----------

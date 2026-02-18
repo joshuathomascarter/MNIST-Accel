@@ -73,7 +73,7 @@ module act_buffer #(
             else $error("act_buffer: bank_sel_rd=%b invalid (must be 0 or 1)", bank_sel_rd);
     end
 
-    // Write
+    // Write (uses gated clock - only toggles when we=1)
     always @(posedge buf_gated_clk) begin
         if (we) begin
             if (bank_sel_wr == 1'b0)
@@ -83,23 +83,19 @@ module act_buffer #(
         end
     end
 
-    // Read (1-cycle latency)
-    reg [TM*8-1:0] read_data;
-    
-    always @(posedge buf_gated_clk) begin
-        if (rd_en) begin
-            if (bank_sel_rd == 1'b0)
-                read_data <= mem0[k_idx];
-            else
-                read_data <= mem1[k_idx];
-        end
-    end
-
-    always @(posedge buf_gated_clk or negedge rst_n) begin
+    // Read (uses MAIN clock - must output zeros when rd_en=0 for proper drain)
+    // Clock gating would prevent the zero-output from happening
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
-            a_vec <= {TM*8{1'b0}};  // Zero on reset
-        else
-            a_vec <= read_data;
+            a_vec <= {TM*8{1'b0}};
+        else if (rd_en) begin
+            if (bank_sel_rd == 1'b0)
+                a_vec <= mem0[k_idx];
+            else
+                a_vec <= mem1[k_idx];
+        end else begin
+            a_vec <= {TM*8{1'b0}};  // Zero output during drain cycles
+        end
     end
 
 endmodule

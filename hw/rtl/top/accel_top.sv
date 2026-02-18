@@ -1150,11 +1150,12 @@ module accel_top #(
         .clk         (clk),
         .rst_n       (rst_n),
         
-        // DMA Write Port (writes to background bank)
+        // DMA Write Port (writes to SAME bank as compute for now)
+        // TODO: Proper double-buffering requires bank flip after DMA, not after compute
         .we          (wgt_pack_we),
         .waddr       (wgt_pack_waddr),
         .wdata       (wgt_pack_wdata),
-        .bank_sel_wr (~wgt_bank_sel),  // DMA writes to the "background" bank
+        .bank_sel_wr (wgt_bank_sel),  // Same bank as compute reads
         
         // Systolic Array Read Port (reads from active bank)
         .rd_en       (1'b1),           // Always enabled when computing
@@ -1272,11 +1273,12 @@ module accel_top #(
         .clk         (clk),
         .rst_n       (rst_n),
         
-        // DMA Write Port (writes to background bank)
+        // DMA Write Port (writes to SAME bank as compute for now)
+        // TODO: Proper double-buffering requires bank flip after DMA, not after compute
         .we          (act_pack_we),
         .waddr       (act_pack_waddr),
         .wdata       (act_pack_wdata),
-        .bank_sel_wr (~act_bank_sel),  // DMA writes to the "background" bank
+        .bank_sel_wr (act_bank_sel),  // Same bank as compute reads
         
         // Systolic Array Read Port (reads from active bank)
         .rd_en       (act_rd_en),

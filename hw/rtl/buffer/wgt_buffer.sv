@@ -83,24 +83,16 @@ module wgt_buffer #(
         end
     end
 
-    // Read (1-cycle latency)
-    reg [TN*8-1:0] read_data;
-    
-    always @(posedge buf_gated_clk) begin
-        if (rd_en) begin
-            if (bank_sel_rd == 1'b0)
-                read_data <= mem0[k_idx];
-            else
-                read_data <= mem1[k_idx];
-        end
-    end
-
-    // Output register
+    // Read (1-cycle latency: address registered -> data out)
     always @(posedge buf_gated_clk or negedge rst_n) begin
         if (!rst_n)
             b_vec <= {TN*8{1'b0}};
-        else
-            b_vec <= read_data;
+        else if (rd_en) begin
+            if (bank_sel_rd == 1'b0)
+                b_vec <= mem0[k_idx];
+            else
+                b_vec <= mem1[k_idx];
+        end
     end
 
 endmodule

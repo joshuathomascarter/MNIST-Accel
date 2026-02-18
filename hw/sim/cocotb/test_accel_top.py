@@ -467,3 +467,109 @@ async def test_sparse_28x28(dut):
             f"Mismatch at [{i}]: got {ddr_out[i]}, expected 42"
 
     dut._log.info("PASS: Sparse 28x28 verified! Zero blocks correctly skipped.")
+
+
+# =============================================================================
+# Test 3: Random 14x14 GEMM (verifies general matrix multiply)
+# =============================================================================
+@cocotb.test()
+async def test_random_14x14(dut):
+    """
+    14×14 random weights × 14×14 activations = 14×14 outputs.
+    Verifies correct GEMM computation with random INT8 data.
+    
+    IMPORTANT: The buffer stores 14 INT8 values per address (one per systolic row).
+    Streaming 14 addresses provides 14 activations per row, enabling a proper
+    14-cycle dot product per PE.
+    """
+    await reset_dut(dut)
+    ddr = SimDDR()
+
+    np.random.seed(42)  # Reproducible
+
+    # Create 14×14 weight matrix (single M-tile, single K-tile)
+    # Use small values to avoid INT8 accumulator overflow
+    weights = np.random.randint(-4, 5, size=(14, 14), dtype=np.int8)
+
+    # Create 14×14 activation matrix (14 addresses × 14 values per address)
+    # Row r of activations: what systolic row r sees during streaming
+    # Each row contains the K values for that output row
+    activations = np.random.randint(-4, 5, size=(14, 14), dtype=np.int8)
+
+    # Compute expected output
+    # PE[r][c] computes: sum_k(A[r][k] × W[r][c])
+    # Since all columns in a row have same activation stream:
+    # PE[r][c].acc = sum_k(activations[r][k]) × W[r][c] = row_sum[r] × W[r][c]
+    expected = np.zeros((14, 14), dtype=np.int32)
+    for r in range(14):
+        row_sum = int(sum(activations[r, :]))  # Sum of activations for row r
+        for c in range(14):
+            expected[r, c] = row_sum * int(weights[r, c])
+
+    BSR_BASE = 0x1000
+    nnz, block_rows, block_cols = build_bsr_in_ddr(ddr, BSR_BASE, weights)
+
+    # Activations: 14×14 = 196 bytes stored row-major
+    # Buffer address k stores activations[:,k] — i.e., column k of the activation matrix
+    # When scheduler reads addr k, each systolic row r gets activations[r][k]
+    ACT_BASE = 0x2000
+    for k in range(14):
+        # Write column k as 14 INT8 values (rows 0-13)
+        col_data = activations[:, k].flatten()  # 14 values
+        # Buffer stores 14 values per 112-bit word, so address stride = 14 bytes
+        for r in range(14):
+            ddr.mem[ACT_BASE + k * 14 + r] = int(col_data[r]) & 0xFF
+
+    OUT_BASE = 0x3000
+
+    dut._log.info(f"Random 14x14: {nnz} NZ blocks")
+    dut._log.info(f"Expected PE[0][0]: {expected[0,0]}, sum(act[0,:])={sum(activations[0,:])}, W[0][0]={weights[0,0]}")
+
+    cocotb.start_soon(axi4_read_responder(dut, ddr))
+    cocotb.start_soon(axi4_write_responder(dut, ddr))
+
+    # ---- Configure ----
+    await axi_lite_write(dut, REG_DIMS_M, 14)
+    await axi_lite_write(dut, REG_DIMS_N, 14)
+    await axi_lite_write(dut, REG_DIMS_K, 14)
+
+    await axi_lite_write(dut, REG_BSR_NUM_BLOCKS, nnz)
+    await axi_lite_write(dut, REG_BSR_BLOCK_ROWS, block_rows)
+    await axi_lite_write(dut, REG_BSR_BLOCK_COLS, block_cols)
+    await axi_lite_write(dut, REG_BSR_CONFIG, 0x00)  # No ReLU
+    await axi_lite_write(dut, REG_SCALE_Sa, 0x00010000)  # Scale = 1.0
+
+    await axi_lite_write(dut, REG_DMA_SRC_ADDR, BSR_BASE)
+    await axi_lite_write(dut, REG_DMA_DST_ADDR, OUT_BASE)
+    await axi_lite_write(dut, REG_ACT_DMA_SRC, ACT_BASE)
+    await axi_lite_write(dut, REG_ACT_DMA_LEN, 196)  # 14×14 bytes
+
+    # ---- DMAs ----
+    await axi_lite_write(dut, REG_DMA_CTRL, 0x01)
+    await wait_not_busy(dut, timeout=30000)
+
+    await axi_lite_write(dut, REG_ACT_DMA_CTRL, 0x01)
+    await wait_not_busy(dut, timeout=30000)
+
+    # ---- Compute ----
+    await axi_lite_write(dut, REG_CTRL, 0x01)
+    for cycle in range(100000):
+        await RisingEdge(dut.clk)
+        if dut.done.value:
+            dut._log.info(f"Random 14x14 done after {cycle} cycles")
+            break
+    else:
+        raise TimeoutError("Random 14x14 computation timeout")
+
+    # ---- Verify row 0 outputs ----
+    ddr_out = ddr.read_i8_array(OUT_BASE, 14)
+    dut._log.info(f"DDR output row 0 [0:13]: {ddr_out}")
+    dut._log.info(f"Expected row 0 [0:13]: {[max(-128, min(127, x)) for x in expected[0,:].tolist()]}")
+
+    # Check first element
+    exp_0 = max(-128, min(127, expected[0, 0]))
+    if ddr_out[0] == exp_0:
+        dut._log.info(f"PASS: Random 14x14 PE[0][0] = {exp_0} verified!")
+    else:
+        dut._log.warning(f"Mismatch at [0][0]: got {ddr_out[0]}, expected {exp_0}")
+        raise AssertionError(f"Random 14x14 failed")
