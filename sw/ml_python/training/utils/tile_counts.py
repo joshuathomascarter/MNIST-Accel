@@ -6,7 +6,7 @@ Usage:
     MT, NT, KT = compute_tile_counts(M, N, K, Tm, Tn, Tk)
 
 Standalone CLI:
-    python python\utils\tile_counts.py --M 7 --N 11 --K 22 --Tm 4 --Tn 4 --Tk 8
+    python python/utils/tile_counts.py --M 7 --N 11 --K 22 --Tm 4 --Tn 4 --Tk 8
 """
 
 from __future__ import annotations
