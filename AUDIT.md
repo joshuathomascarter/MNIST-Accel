@@ -1,12 +1,12 @@
-# FULL CODE AUDIT — ResNet-Accel (ACCEL-v1)
+# Code Audit — ACCEL-v1
 
-**Audited: February 9, 2026 — Every RTL, C++, Python, and build file.**
+**Date: February 9, 2026**
 
 ## Audit Scope
-- **26 SystemVerilog RTL files** (`hw/rtl/`)
+- **21 SystemVerilog RTL files** (`hw/rtl/`)
 - **10 SV testbench files** (`hw/sim/sv/`)
-- **32 C++ files** (driver/sim in `hw/sim/cpp/`)
-- **14 Python files** (software in `sw/`)
+- **~32 C++ files** (`sw/cpp/`)
+- **~30 Python files** (`sw/ml_python/`)
 - **Build system** (CMake, Makefiles, Vivado TCL)
 
 ---
@@ -30,24 +30,24 @@
 | **Cross-cutting mismatches** | 4 |
 | **Total actionable issues** | **~71** |
 
-**Bottom line:** The RTL core (mac8, pe, systolic arrays) is solid and likely synthesizable. The integration layer (`accel_top.sv`) has real bugs. The C++ stack is heavily scaffolded (16 stub files). The Python stack has two incompatible CSR maps and a missing `host_uart/` directory.
+**Bottom line:** The RTL core (mac8, pe, systolic arrays) is solid and likely synthesizable. The integration layer (`accel_top.sv`) has real bugs. The C++ stack (`sw/cpp/`) is heavily scaffolded (many stub files). The Python stack (`sw/ml_python/`) has two incompatible CSR maps and a missing `host_uart/` directory.
 
 ---
 
-# PART 1: RTL AUDIT (26 files)
+# PART 1: RTL AUDIT (`hw/rtl/`)
 
 ## RTL — CORE COMPUTE (Solid)
 
-### `hw/rtl/mac/mac8.sv` — 484 lines ✅
+### `hw/rtl/mac/mac8.sv` — 484 lines [CLEAN]
 **Status: CLEAN.** Well-designed signed 8×8→32 MAC with zero bypass, operand isolation, and ResNet residual support. DSP48E1 inference attributes present. SVA assertions for unknowns and clear priority. No bugs found.
 
-### `hw/rtl/systolic/pe.sv` — 411 lines ✅
+### `hw/rtl/systolic/pe.sv` — 411 lines [CLEAN]
 **Status: CLEAN.** Weight-stationary PE with pipelined activation forwarding, systolic load_weight propagation, and MAC8 instantiation. The `load_weight`/`en` mutual exclusion assertion is commented out with a TODO about scheduler timing — **needs resolution** but not a bug.
 
-### `hw/rtl/systolic/systolic_array_sparse.sv` — 426 lines ✅
+### `hw/rtl/systolic/systolic_array_sparse.sv` — 426 lines [CLEAN]
 **Status: CLEAN.** Sparse-aware 14×14 array with correct row-selective weight loading (`load_ptr`), per-PE bypass for residuals, and `block_valid` gating. The `c_out_flat` output is directly connected via indexed part-select — correct.
 
-### `hw/rtl/systolic/systolic_array.sv` — 274 lines ⚠️
+### `hw/rtl/systolic/systolic_array.sv` — 274 lines [ISSUES]
 **Status: HAS BUGS.**
 
 | # | Severity | Issue |
@@ -58,19 +58,19 @@
 
 ## RTL — BUFFERS
 
-### `hw/rtl/buffer/act_buffer.sv` — 290 lines ✅
+### `hw/rtl/buffer/act_buffer.sv` — 290 lines [CLEAN]
 **Status: CLEAN.** Double-buffered activation SRAM with clock gating, ping-pong via bank_sel, 1-cycle read latency (with extra output register — actually 2 cycles). Assertions verify address bounds and bank_sel validity.
 
 **NOTE:** The read path has 2 registers: `read_data` (BRAM output) and `a_vec` (output register). This is **2-cycle latency**, not 1. If the scheduler assumes 1 cycle, there's a pipeline bubble.
 
-### `hw/rtl/buffer/wgt_buffer.sv` — 243 lines ⚠️
+### `hw/rtl/buffer/wgt_buffer.sv` — 243 lines [ISSUES]
 **Status: HAS BUG.**
 
 | # | Severity | Issue |
 |---|---|---|
 | R4 | **Data corruption** | Same 2-register read path as act_buffer. Read latency is **2 cycles**, but comments say "1-cycle latency, same as act_buffer." The `bsr_scheduler` and `scheduler` both assume 1-cycle latency when prefetching weight data. The systolic array receives **stale weight data by 1 cycle**, meaning the first weight loaded into each PE row is from the *previous* read, not the current one. |
 
-### `hw/rtl/buffer/output_accumulator.sv` — 458 lines ⚠️
+### `hw/rtl/buffer/output_accumulator.sv` — 458 lines [ISSUES]
 **Status: HAS BUG.**
 
 | # | Severity | Issue |
@@ -80,7 +80,7 @@
 
 ## RTL — CONTROL
 
-### `hw/rtl/control/bsr_scheduler.sv` — 462 lines ⚠️
+### `hw/rtl/control/bsr_scheduler.sv` — 462 lines [ISSUES]
 **Status: HAS BUGS.**
 
 | # | Severity | Issue |
@@ -90,7 +90,7 @@
 | R9 | Bug | `S_STREAM_ACT` streams for only `BLOCK_SIZE` (14) cycles, but the activation pipeline has 14 stages of delay (PIPE=1). The first PE gets valid data on cycle 0, but PE[13] doesn't get its first valid activation until cycle 13. Only 1 cycle of actual valid compute happens for the last PE. Should stream for `BLOCK_SIZE + N_COLS - 1 = 27` cycles (or use different activation addressing). |
 | R10 | Bug | `meta_raddr <= 128 + blk_ptr` in `S_FETCH_COL` — magic number 128 as col_idx offset. If `row_ptr` array has more than 128 entries, the offset overlaps. This should be dynamically calculated from `num_rows + 1`. |
 
-### `hw/rtl/control/scheduler.sv` — 705 lines ⚠️
+### `hw/rtl/control/scheduler.sv` — 705 lines [ISSUES]
 **Status: HAS ISSUES.**
 
 | # | Severity | Issue |
@@ -99,7 +99,7 @@
 | R12 | Bug | `en_mask_row` and `en_mask_col` initial values use `{M_W{1'b0}}` — should be `{MAX_TM{1'b0}}` and `{MAX_TN{1'b0}}` respectively. Masks are `MAX_TM` and `MAX_TN` bits wide, but zeroed with `M_W` bits. |
 | R13 | Minor | k_tile update triggering `state[5]` in the registered block creates a one-hot decoding of the `state` register — this is correct but fragile if additional states are added. |
 
-### `hw/rtl/control/csr.sv` — 527 lines ⚠️
+### `hw/rtl/control/csr.sv` — 527 lines [ISSUES]
 **Status: HAS ISSUES.**
 
 | # | Severity | Issue |
@@ -109,7 +109,7 @@
 | R16 | Stub | `BSR_ERROR_CODE` always reads as `32'd0` — no actual error tracking. |
 | R17 | Stub | `ACT_DMA_CTRL` busy bit hardcoded to `1'b0`. |
 
-### `hw/rtl/control/block_reorder_buffer.sv` — 231 lines ⚠️
+### `hw/rtl/control/block_reorder_buffer.sv` — 231 lines [ISSUES]
 **Status: HAS BUGS.**
 
 | # | Severity | Issue |
@@ -118,7 +118,7 @@
 | R19 | Bug | `count == 0` edge case: if `in_row_done` fires with 0 blocks, `count - 1` underflows, causing the FSM to emit garbage from uninitialized memory. |
 | R20 | Dead code | `SORT_SHIFT` state (3'd3) is declared but never transitioned to. |
 
-### `hw/rtl/control/multi_layer_buffer.sv` — 57 lines ⚠️
+### `hw/rtl/control/multi_layer_buffer.sv` — 57 lines [ISSUES]
 **Status: PROBLEMATIC.**
 
 | # | Severity | Issue |
@@ -126,10 +126,10 @@
 | R21 | **Synthesis issue** | `unified_mem` with `ADDR_WIDTH=16` = 65536 × 32 bits = 2 Mbit — consumes ~40% of Zynq-7020 BRAM. |
 | R22 | **Synthesis issue** | `assign rd_data = unified_mem[absolute_addr]` is an **async read** — won't infer BRAM (requires registered reads). Will use LUTs instead, which can't hold 2 Mbit. |
 
-### `hw/rtl/control/pulse_sync.sv` — 78 lines ✅
+### `hw/rtl/control/pulse_sync.sv` — 78 lines [CLEAN]
 **Status: CLEAN.** Toggle-based pulse synchronizer with ASYNC_REG attributes.
 
-### `hw/rtl/control/sync_2ff.sv` — 197 lines ⚠️
+### `hw/rtl/control/sync_2ff.sv` — 197 lines [ISSUES]
 **Status: MOSTLY CLEAN, 1 ISSUE.**
 
 | # | Severity | Issue |
@@ -138,7 +138,7 @@
 
 ## RTL — DMA
 
-### `hw/rtl/dma/act_dma.sv` — 608 lines ⚠️
+### `hw/rtl/dma/act_dma.sv` — 608 lines [ISSUES]
 **Status: HAS BUGS.**
 
 | # | Severity | Issue |
@@ -147,7 +147,7 @@
 | R25 | **Bug** | Partial burst: if `bytes_remaining == 0`, `arlen = ((0+7) >> 3) - 1 = -1 = 255`, issuing a 256-beat burst for 0 bytes. Edge case, but violates AXI spec. |
 | R26 | Bug | No 4KB boundary crossing check — AXI4 spec violation. Only has a simulation `$warning`. |
 
-### `hw/rtl/dma/bsr_dma.sv` — 776 lines ⚠️
+### `hw/rtl/dma/bsr_dma.sv` — 776 lines [ISSUES]
 **Status: HAS BUGS.**
 
 | # | Severity | Issue |
@@ -158,19 +158,19 @@
 
 ## RTL — HOST INTERFACE
 
-### `hw/rtl/host_iface/axi_lite_slave.sv` — 290 lines ⚠️
+### `hw/rtl/host_iface/axi_lite_slave.sv` — 290 lines [ISSUES]
 **Status: HAS BUG.**
 
 | # | Severity | Issue |
 |---|---|---|
 | R30 | **Data corruption** | Simultaneous read+write: `csr_addr` mux prioritizes read address, but `csr_wen` is also asserted. CSR module receives write command with **wrong address** (the read address instead of write address). |
 
-### `hw/rtl/host_iface/axi_dma_bridge.sv` — 480 lines ✅
+### `hw/rtl/host_iface/axi_dma_bridge.sv` — 480 lines [CLEAN]
 **Status: MOSTLY CLEAN.** Watchdog timeout doesn't set error flag (minor). Otherwise correct 2:1 AXI arbiter.
 
 ## RTL — METADATA
 
-### `hw/rtl/meta/meta_decode.sv` — 56 lines ⚠️
+### `hw/rtl/meta/meta_decode.sv` — 56 lines [ISSUES]
 **Status: HAS BUG.**
 
 | # | Severity | Issue |
@@ -180,7 +180,7 @@
 
 ## RTL — MONITOR
 
-### `hw/rtl/monitor/perf.sv` — 204 lines ⚠️
+### `hw/rtl/monitor/perf.sv` — 204 lines [ISSUES]
 **Status: MINOR BUG.**
 
 | # | Severity | Issue |
@@ -189,7 +189,7 @@
 
 ## RTL — TOP-LEVEL INTEGRATION
 
-### `hw/rtl/top/accel_top.sv` — 1352 lines ⚠️
+### `hw/rtl/top/accel_top.sv` — 1352 lines [ISSUES]
 **Status: HAS BUGS.**
 
 | # | Severity | Issue |
@@ -198,7 +198,7 @@
 | R35 | **Bug** | `col_idx_rd_addr = meta_mem_addr[...] - 128` — underflows if `meta_mem_addr < 128`, reading garbage BRAM data. |
 | R36 | Bug | `sched_mode = cfg_bsr_config[0]` defaults to 0 (BSR mode) on reset. If no BSR data is loaded, the BSR scheduler reads uninitialized BRAM. |
 
-### `hw/rtl/top/accel_top_dual_clk.sv` — 310 lines ❌
+### `hw/rtl/top/accel_top_dual_clk.sv` — 310 lines [BROKEN]
 **Status: WON'T COMPILE.**
 
 | # | Severity | Issue |
@@ -209,20 +209,20 @@
 | R40 | Port mismatch | `act_buffer` and `wgt_buffer` instantiated with wrong port names (`.wen`, `.raddr`, `.rdata` vs actual `.we`, `.k_idx`, `.b_vec`). |
 | R41 | CDC violation | 32-bit `sync_2ff` for counter (see R23 above). |
 
-### `hw/rtl/top/deprecated/accel_top_legacy.sv` — 1047 lines ❌
+### `hw/rtl/top/deprecated/accel_top_legacy.sv` — 1047 lines [BROKEN]
 **Status: CANNOT COMPILE.** Multiple driver conflicts, port mismatches with every module it instantiates, references UART interfaces that no longer exist. **Should be deleted** — it provides no value and causes confusion.
 
 ---
 
-# PART 2: C++ AUDIT (32 files)
+# PART 2: C++ AUDIT
 
 ---
 
-## C++ FILES (32 total)
+## C++ Files (`sw/cpp/`)
 
-> See individual file sections below. Key findings: 16 of 32 files are stubs, CMake won't build, block size 14 vs 16 mismatch throughout.
+> Key findings: Many files are stubs, CMake has issues, block size 14 vs 16 mismatch throughout.
 
-### 1. `hw/sim/cpp/CMakeLists.txt` (~200 lines) — **BUILD CONFIG**
+### 1. `sw/cpp/CMakeLists.txt` (~200 lines) — **BUILD CONFIG**
 **Status:** Real but BROKEN
 
 | # | Severity | Issue |
@@ -234,7 +234,7 @@
 
 ---
 
-### 2. `hw/sim/cpp/src/main.cpp` (~324 lines) — **CLI ENTRY POINT**
+### 2. `sw/cpp/apps/main.cpp` (~324 lines) — **CLI ENTRY POINT**
 **Status:** STUB
 
 | # | Severity | Issue |
@@ -244,7 +244,7 @@
 
 ---
 
-### 3. `hw/sim/cpp/include/accelerator_driver.hpp` (~640 lines) — **DRIVER HEADER**
+### 3. `sw/cpp/include/driver/accelerator_driver.hpp` (~640 lines) — **DRIVER HEADER**
 **Status:** Real, complete
 
 - `AcceleratorError` exception class fully defined (lines ~315-360).
@@ -253,7 +253,7 @@
 
 ---
 
-### 4. `hw/sim/cpp/src/accelerator_driver.cpp` (~835 lines) — **DRIVER IMPL**
+### 4. `sw/cpp/src/driver/accelerator_driver.cpp` (~835 lines) — **DRIVER IMPL**
 **Status:** Real, with bugs
 
 | # | Severity | Issue |
@@ -265,7 +265,7 @@
 
 ---
 
-### 5. `hw/sim/cpp/include/axi_master.hpp` (~625 lines) — **AXI INTERFACE**
+### 5. `sw/cpp/include/driver/axi_master.hpp` (~625 lines) — **AXI INTERFACE**
 **Status:** Real, complete
 
 - `AXIBackend` abstract class ✓
@@ -277,7 +277,7 @@
 
 ---
 
-### 6. `hw/sim/cpp/include/bsr_packer.hpp` (~683 lines) — **BSR CONVERSION**
+### 6. `sw/cpp/include/compute/bsr_packer.hpp` (~683 lines) — **BSR CONVERSION**
 **Status:** Real, complete, with inline tests
 
 - Standalone functions: `pack_to_bsr()`, `unpack_from_bsr()`, `is_block_nonzero()`, `validate_bsr()`, `get_sparsity()`, `serialize_for_hardware()`, `deserialize_from_hardware()`, `verify_round_trip()`, `verify_serialization()` ✓
@@ -290,7 +290,7 @@
 
 ---
 
-### 7. `hw/sim/cpp/include/csr_bsr.hpp` (~65 lines) — **BSR CSR DEFS**
+### 7. `sw/cpp/include/driver/csr_bsr.hpp` (~65 lines) — **BSR CSR DEFS**
 **Status:** Real
 
 | # | Severity | Issue |
@@ -299,12 +299,12 @@
 
 ---
 
-### 8. `hw/sim/cpp/include/csr_map.hpp` (~353 lines) — **CSR ADDRESS MAP**
+### 8. `sw/cpp/include/driver/csr_map.hpp` (~353 lines) — **CSR ADDRESS MAP**
 **Status:** Real, complete. Defines `SYSTOLIC_ROWS=14`, `SYSTOLIC_COLS=14`, `BLOCK_SIZE=14`. Includes all control, dimension, tile, buffer, scale, status, perf, result, DMA, and BSR registers.
 
 ---
 
-### 9. `hw/sim/cpp/include/golden_models.hpp` (~317 lines) — **GOLDEN DECLS**
+### 9. `sw/cpp/include/compute/golden_models.hpp` (~317 lines) — **GOLDEN DECLS**
 **Status:** Real, with mismatches
 
 | # | Severity | Issue |
@@ -314,7 +314,7 @@
 
 ---
 
-### 10. `hw/sim/cpp/src/golden_models.cpp` (~936 lines) — **GOLDEN IMPL**
+### 10. `sw/cpp/src/compute/golden_models.cpp` (~936 lines) — **GOLDEN IMPL**
 **Status:** Real, substantial
 
 Working implementations:
@@ -330,7 +330,7 @@ Working implementations:
 
 ---
 
-### 11. `hw/sim/cpp/include/npy_loader.hpp` (~120 lines) — **NPY LOADER**
+### 11. `sw/cpp/include/utils/npy_loader.hpp` (~120 lines) — **NPY LOADER**
 **Status:** Real
 
 | # | Severity | Issue |
@@ -340,7 +340,7 @@ Working implementations:
 
 ---
 
-### 12. `hw/sim/cpp/include/performance_config.hpp` (~330 lines) — **PERF CONFIG**
+### 12. `sw/cpp/include/utils/performance_config.hpp` (~330 lines) — **PERF CONFIG**
 **Status:** Real
 
 | # | Severity | Issue |
@@ -349,7 +349,7 @@ Working implementations:
 
 ---
 
-### 13. `hw/sim/cpp/include/performance_counters.hpp` (~200 lines) + `performance_counters.cpp` (~200 lines) — **PERF COUNTERS**
+### 13. `sw/cpp/include/utils/performance_counters.hpp` (~200 lines) + `performance_counters.cpp` (~200 lines) — **PERF COUNTERS**
 **Status:** Real
 
 | # | Severity | Issue |
@@ -358,7 +358,7 @@ Working implementations:
 
 ---
 
-### 14. `hw/sim/cpp/include/resnet_inference.hpp` (~260 lines) — **INFERENCE HEADER**
+### 14. `sw/cpp/include/compute/resnet_inference.hpp` (~260 lines) — **INFERENCE HEADER**
 **Status:** Declared, with syntax error
 
 | # | Severity | Issue |
@@ -368,7 +368,7 @@ Working implementations:
 
 ---
 
-### 15. `hw/sim/cpp/src/resnet_inference.cpp` (~300 lines) — **INFERENCE IMPL**
+### 15. `sw/cpp/src/compute/resnet_inference.cpp` (~300 lines) — **INFERENCE IMPL**
 **Status:** STUB (entirely fake)
 
 | # | Severity | Issue |
@@ -382,7 +382,7 @@ Working implementations:
 
 ---
 
-### 16. `hw/sim/cpp/include/memory_manager.hpp` (~1746 lines) — **MEMORY MGMT**
+### 16. `sw/cpp/include/memory/memory_manager.hpp` (~1746 lines) — **MEMORY MGMT**
 **Status:** Real, complete, with typo
 
 Classes: `IMemoryAllocator` (interface), `SimulationAllocator`, `DevMemAllocator`, `DMABuffer`, `MemoryManager` — all fully implemented.
@@ -396,12 +396,12 @@ Classes: `IMemoryAllocator` (interface), `SimulationAllocator`, `DevMemAllocator
 
 ---
 
-### 17. `hw/sim/cpp/include/test_utils.hpp` (~120 lines) + `test_utils.cpp` (~15 lines)
+### 17. `sw/cpp/include/utils/test_utils.hpp` (~120 lines) + `test_utils.cpp` (~15 lines)
 **Status:** Real (utils), effectively empty (.cpp)
 
 ---
 
-### 18. `hw/sim/cpp/tests/deploy_example.cpp` (~140 lines) — **DEPLOYMENT EXAMPLE**
+### 18. `sw/cpp/tests/deploy_example.cpp` (~140 lines) — **DEPLOYMENT EXAMPLE**
 **Status:** WON'T COMPILE
 
 | # | Severity | Issue |
@@ -440,9 +440,9 @@ Classes: `IMemoryAllocator` (interface), `SimulationAllocator`, `DevMemAllocator
 
 ---
 
-## PYTHON FILES (14 total)
+## PYTHON FILES (`sw/ml_python/`)
 
-### 30. `sw/golden/gemm_bsr_int8.py` (~170 lines) — **BSR GEMM GOLDEN**
+### 30. `sw/ml_python/golden/gemm_bsr_int8.py` (~170 lines) — **BSR GEMM GOLDEN**
 **Status:** Real, with logic issue
 
 | # | Severity | Issue |
@@ -452,7 +452,7 @@ Classes: `IMemoryAllocator` (interface), `SimulationAllocator`, `DevMemAllocator
 
 ---
 
-### 31. `sw/golden/golden_fc1_test.py` (~140 lines) — **FC1 GOLDEN TEST**
+### 31. `sw/ml_python/golden/golden_fc1_test.py` (~140 lines) — **FC1 GOLDEN TEST**
 **Status:** Real
 
 | # | Severity | Issue |
@@ -461,7 +461,7 @@ Classes: `IMemoryAllocator` (interface), `SimulationAllocator`, `DevMemAllocator
 
 ---
 
-### 32. `sw/golden_models/gemm_int8.py` (~85 lines) — **GEMM INT8 CHECKER**
+### 32. `sw/ml_python/golden_models/gemm_int8.py` (~85 lines) — **GEMM INT8 CHECKER**
 **Status:** Real, but limited
 
 - Reads CSV files from Verilator testbench output and verifies GEMM correctness.
@@ -469,7 +469,7 @@ Classes: `IMemoryAllocator` (interface), `SimulationAllocator`, `DevMemAllocator
 
 ---
 
-### 33. `sw/golden_models/golden_mac8.py` (~180 lines) — **MAC8 GOLDEN**
+### 33. `sw/ml_python/golden_models/golden_mac8.py` (~180 lines) — **MAC8 GOLDEN**
 **Status:** Real, with undefined function
 
 | # | Severity | Issue |
@@ -478,7 +478,7 @@ Classes: `IMemoryAllocator` (interface), `SimulationAllocator`, `DevMemAllocator
 
 ---
 
-### 34. `sw/host/accel.py` (~300 lines) — **PYNQ DRIVER**
+### 34. `sw/ml_python/host/accel.py` (~300 lines) — **PYNQ DRIVER**
 **Status:** Real, with issues
 
 | # | Severity | Issue |
@@ -489,7 +489,7 @@ Classes: `IMemoryAllocator` (interface), `SimulationAllocator`, `DevMemAllocator
 
 ---
 
-### 35. `sw/host/axi_driver.py` (~250 lines) — **AXI DMA DRIVER**
+### 35. `sw/ml_python/host/axi_driver.py` (~250 lines) — **AXI DMA DRIVER**
 **Status:** Real
 
 - `AXIDriver` wraps `AXIMasterSim` for CSR writes, burst DMA, and status polling.
@@ -498,7 +498,7 @@ Classes: `IMemoryAllocator` (interface), `SimulationAllocator`, `DevMemAllocator
 
 ---
 
-### 36. `sw/host/axi_master_sim.py` (~340 lines) — **AXI MASTER SIM**
+### 36. `sw/ml_python/host/axi_master_sim.py` (~340 lines) — **AXI MASTER SIM**
 **Status:** Real, self-contained simulator
 
 - `AXIMasterSim` simulates AXI4-Lite with write/read, burst, DMA FIFO, metrics.
@@ -510,7 +510,7 @@ Classes: `IMemoryAllocator` (interface), `SimulationAllocator`, `DevMemAllocator
 
 ---
 
-### 37. `sw/host/memory.py` (~250 lines) — **MEMORY UTILS**
+### 37. `sw/ml_python/host/memory.py` (~250 lines) — **MEMORY UTILS**
 **Status:** Real, clean
 
 - `DMABuffer` wrapper (PYNQ or simulation) ✓
@@ -520,7 +520,7 @@ Classes: `IMemoryAllocator` (interface), `SimulationAllocator`, `DevMemAllocator
 
 ---
 
-### 38. `sw/host_axi/csr_map.py` (~280 lines) — **CSR MAP (PYTHON)**
+### 38. `sw/ml_python/host_axi/csr_map.py` (~280 lines) — **CSR MAP (PYTHON)**
 **Status:** Real, with issues
 
 | # | Severity | Issue |
@@ -530,7 +530,7 @@ Classes: `IMemoryAllocator` (interface), `SimulationAllocator`, `DevMemAllocator
 
 ---
 
-### 39. `sw/host_axi/run_gemm_axi.py` (~310 lines) — **AXI GEMM RUNNER**
+### 39. `sw/ml_python/host_axi/run_gemm_axi.py` (~310 lines) — **AXI GEMM RUNNER**
 **Status:** Real, with bugs
 
 | # | Severity | Issue |
@@ -543,7 +543,7 @@ Classes: `IMemoryAllocator` (interface), `SimulationAllocator`, `DevMemAllocator
 
 ---
 
-### 40. `sw/training/export_bsr.py` (~330 lines) — **BSR EXPORT (8×8)**
+### 40. `sw/ml_python/training/export_bsr.py` (~330 lines) — **BSR EXPORT (8×8)**
 **Status:** Real, with bug
 
 | # | Severity | Issue |
@@ -557,7 +557,7 @@ Classes: `IMemoryAllocator` (interface), `SimulationAllocator`, `DevMemAllocator
 
 ---
 
-### 41. `sw/training/export_bsr_14x14.py` (~803 lines) — **BSR EXPORT (14×14)**
+### 41. `sw/ml_python/training/export_bsr_14x14.py` (~803 lines) — **BSR EXPORT (14×14)**
 **Status:** Real, most complete export script
 
 - `build_bsr_14x14()`, `build_bsr_14x14_int8_direct()` ✓
@@ -569,7 +569,7 @@ Classes: `IMemoryAllocator` (interface), `SimulationAllocator`, `DevMemAllocator
 
 ---
 
-### 42. `sw/tests/test_integration.py` (~742 lines) — **INTEGRATION TESTS**
+### 42. `sw/ml_python/tests/test_integration.py` (~742 lines) — **INTEGRATION TESTS**
 **Status:** Real tests, but won't run
 
 | # | Severity | Issue |
@@ -580,7 +580,7 @@ The test logic itself is well-structured if the imports could be resolved: `Test
 
 ---
 
-### 43. `sw/tests/test_golden_models.py` (~140 lines) — **GOLDEN MODEL TESTS**
+### 43. `sw/ml_python/tests/test_golden_models.py` (~140 lines) — **GOLDEN MODEL TESTS**
 **Status:** Real, should work
 
 - Uses `pytest` framework.
@@ -597,18 +597,18 @@ The hardware is 14×14 (196 PEs, fitting in 220 DSP48E1s). Multiple files use 16
 
 | File | Value Used | Should Be |
 |---|---|---|
-| `CMakeLists.txt` | `BLOCK_SIZE=16`, `N_ROWS=16`, `N_COLS=16` | 14 |
-| `performance_counters.hpp` | `num_pes = 256` (16×16) | 196 |
+| `CMakeLists.txt` (`sw/cpp/`) | `BLOCK_SIZE=16`, `N_ROWS=16`, `N_COLS=16` | 14 |
+| `performance_counters.hpp` (`sw/cpp/`) | `num_pes = 256` (16×16) | 196 |
 | `test_performance.cpp` | `N = 16` | 14 |
 | `test_stress.cpp` | Implicit 16×16 | 14 |
 | `tb_systolic_array.cpp` | `N = 16` | 14 |
-| `accel.py` `__main__` | Block size 16×16 in example | 14 |
+| `accel.py` (`sw/ml_python/host/`) `__main__` | Block size 16×16 in example | 14 |
 
 ### 2. Missing `host_uart/` Directory
 Multiple files import from `host_uart.run_gemm`, `host_uart.uart_driver`, `host_uart.csr_map`:
-- `sw/tests/test_integration.py`
-- `sw/host_axi/run_gemm_axi.py`
-- `sw/tests/test_csr_pack.py`
+- `sw/ml_python/tests/test_integration.py`
+- `sw/ml_python/host_axi/run_gemm_axi.py`
+- `sw/ml_python/tests/test_csr_pack.py`
 
 This directory doesn't exist in the workspace. Either it was deleted, not committed, or lives in a different branch.
 
@@ -620,11 +620,11 @@ This directory doesn't exist in the workspace. Either it was deleted, not commit
 
 ### 4. CSR Address Map Drift
 - `csr.sv` (RTL): `DMA_SRC_ADDR = 0x90`, `DMA_CTRL = 0x9C` (authoritative)
-- `csr_map.hpp` (C++): `DMA_SRC_ADDR = 0x90`, `DMA_CTRL = 0x9C` ✅ (matches RTL)
-- `accel.py` (Python): `DMA_SRC_ADDR = 0x90`, `DMA_CTRL = 0x9C` ✅ (matches RTL)
-- `csr_map.py` (Python): `DMA_LAYER = 0x50`, `DMA_CTRL = 0x51` ❌ (wrong, not 4-byte aligned)
-- `axi_driver.py` (Python): Uses `csr_map.py` addresses ❌ (wrong)
-- `axi_master_sim.py` (Python): Valid addresses = `{0x50-0x54}` ❌ (rejects real CSR writes)
+- `csr_map.hpp` (C++): `DMA_SRC_ADDR = 0x90`, `DMA_CTRL = 0x9C` [CLEAN] (matches RTL)
+- `accel.py` (Python): `DMA_SRC_ADDR = 0x90`, `DMA_CTRL = 0x9C` [CLEAN] (matches RTL)
+- `csr_map.py` (`sw/ml_python/host_axi/`): `DMA_LAYER = 0x50`, `DMA_CTRL = 0x51` [BROKEN] (wrong, not 4-byte aligned)
+- `axi_driver.py` (`sw/ml_python/host/`): Uses `csr_map.py` addresses [BROKEN] (wrong)
+- `axi_master_sim.py` (`sw/ml_python/host/`): Valid addresses = `{0x50-0x54}` [BROKEN] (rejects real CSR writes)
 
 **Resolution: `csr_map.py` and `axi_driver.py` must be updated to match RTL/C++ map.**
 

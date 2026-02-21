@@ -166,7 +166,7 @@ async def axi_lite_read(dut, addr):
         if dut.s_axi_arready.value and dut.s_axi_arvalid.value:
             dut.s_axi_arvalid.value = 0
         if dut.s_axi_rvalid.value:
-            val = dut.s_axi_rdata.value.integer
+            val = dut.s_axi_rdata.value.to_unsigned()
             dut.s_axi_rready.value = 0
             return val
     raise TimeoutError(f"AXI-Lite read timeout at 0x{addr:02X}")
@@ -180,15 +180,15 @@ async def axi4_read_responder(dut, ddr):
     while True:
         await RisingEdge(dut.clk)
         if dut.m_axi_arvalid.value and dut.m_axi_arready.value:
-            addr = dut.m_axi_araddr.value.integer
-            burst_len = dut.m_axi_arlen.value.integer + 1
+            addr = dut.m_axi_araddr.value.to_unsigned()
+            burst_len = dut.m_axi_arlen.value.to_unsigned() + 1
 
             for beat in range(burst_len):
                 dut.m_axi_rvalid.value = 1
                 dut.m_axi_rdata.value = ddr.read_u64(addr + beat * 8)
                 dut.m_axi_rresp.value = 0
                 dut.m_axi_rlast.value = 1 if beat == burst_len - 1 else 0
-                dut.m_axi_rid.value = dut.m_axi_arid.value.integer
+                dut.m_axi_rid.value = dut.m_axi_arid.value.to_unsigned()
 
                 while True:
                     await RisingEdge(dut.clk)
@@ -209,15 +209,15 @@ async def axi4_write_responder(dut, ddr):
 
         # Wait for write address handshake
         if dut.m_axi_awvalid.value and dut.m_axi_awready.value:
-            wr_addr = dut.m_axi_awaddr.value.integer
-            wr_len = dut.m_axi_awlen.value.integer + 1
+            wr_addr = dut.m_axi_awaddr.value.to_unsigned()
+            wr_len = dut.m_axi_awlen.value.to_unsigned() + 1
 
             # Receive all write data beats
             beat = 0
             while beat < wr_len:
                 await RisingEdge(dut.clk)
                 if dut.m_axi_wvalid.value and dut.m_axi_wready.value:
-                    data = dut.m_axi_wdata.value.integer
+                    data = dut.m_axi_wdata.value.to_unsigned()
                     ddr.write_u64(wr_addr + beat * 8, data)
                     beat += 1
 
@@ -239,7 +239,7 @@ async def axi4_write_responder(dut, ddr):
 # =============================================================================
 async def reset_dut(dut):
     """Apply reset and initialize all AXI signals."""
-    clock = Clock(dut.clk, 10, units="ns")  # 100 MHz
+    clock = Clock(dut.clk, 10, unit="ns")  # 100 MHz
     cocotb.start_soon(clock.start())
 
     dut.rst_n.value = 0

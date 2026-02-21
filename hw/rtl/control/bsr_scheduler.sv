@@ -242,7 +242,9 @@ module bsr_scheduler #(
         S_LOAD_WGT: begin
           wgt_rd_en <= 1;
           if (load_cnt <= LOAD_CNT_MAX)
-            wgt_addr <= (blk_ptr * BLOCK_SIZE) + {{(32-$clog2(2*BLOCK_SIZE)-1){1'b0}}, load_cnt};
+            // (* use_dsp = "no" *) — address calc, force to LUT fabric
+            // blk_ptr * 14 = (blk_ptr << 3) + (blk_ptr << 2) + (blk_ptr << 1)
+            wgt_addr <= (blk_ptr <<< 3) + (blk_ptr <<< 2) + (blk_ptr <<< 1) + {{(32-$clog2(2*BLOCK_SIZE)-1){1'b0}}, load_cnt};
 
           // Fix: Start load_weight at T0 so Data0 (arriving T1) latches into Row 0
           load_weight_r <= (load_cnt < BLOCK_SIZE);
@@ -275,7 +277,9 @@ module bsr_scheduler #(
           if (stream_cnt < BLOCK_SIZE) begin
             act_rd_en <= 1;
             // Use col_idx_reg (K-column) for activation address, not k_idx (M-row)
-            act_addr  <= ({{16{1'b0}}, col_idx_reg} * BLOCK_SIZE) + {{(32-$clog2(2*BLOCK_SIZE)-1){1'b0}}, stream_cnt};
+            // (* use_dsp = "no" *) — address calc, force to LUT fabric
+            // col_idx * 14 = (col_idx << 3) + (col_idx << 2) + (col_idx << 1)
+            act_addr  <= ({16'd0, col_idx_reg} <<< 3) + ({16'd0, col_idx_reg} <<< 2) + ({16'd0, col_idx_reg} <<< 1) + {{(32-$clog2(2*BLOCK_SIZE)-1){1'b0}}, stream_cnt};
           end
 
           if (stream_cnt == STREAM_CNT_MAX)

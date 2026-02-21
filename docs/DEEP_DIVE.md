@@ -101,10 +101,10 @@ PE[0,0]:│ w₀ │ a₀ │ a₁ │ a₂ │ a₃ │ a₄ │ a₅ │ a₆ 
 PE[0,1]:│ w₁ │    │ a₀ │ a₁ │ a₂ │ a₃ │ a₄ │ a₅ │...│aₖ₋₂│aₖ₋₁│
 PE[0,2]:│ w₂ │    │    │ a₀ │ a₁ │ a₂ │ a₃ │ a₄ │...│aₖ₋₃│aₖ₋₂│
    :    │    │    │    │    │    │    │    │    │   │     │
-PE[0,15]:│w₁₅│    │    │    │    │    │    │    │...│aₖ₋₁₆│aₖ₋₁₅│
+PE[0,13]:│w₁₅│    │    │    │    │    │    │    │...│aₖ₋₁₆│aₖ₋₁₅│
         │    │    │    │    │    │    │    │    │   │     │
         │◄──load──►│◄──────── K cycles compute ─────────►│◄drain►│
-        │  (16 cyc) │                                    │(16 cyc)│
+        │  (14 cyc) │                                    │(14 cyc)│
 ```
 
 ### PE State Machine
@@ -206,7 +206,7 @@ Weight BRAM → PE weight reg → Multiplier → Adder → Accumulator reg
   1.2ns        0.3ns          2.5ns       1.5ns       0.5ns = 6.0ns total
 
 Target: 200 MHz (5ns period)
-Slack: -1.0ns ❌
+Slack: -1.0ns 
 
 Solution: Pipeline the multiplier
   BRAM → reg → MUL stage 1 → MUL stage 2 → ADD → ACC

@@ -1,434 +1,314 @@
-# ACCEL-v1: Sparse CNN Accelerator for FPGA
+# ACCEL-v1: Sparse INT8 CNN Accelerator
 
 <div align="center">
 
-**14×14 Weight-Stationary Systolic Array with BSR Sparse Acceleration (PYNQ-Z2)**
+**14×14 Weight-Stationary Systolic Array · BSR Sparse Acceleration · Zynq-7020 FPGA**
 
-[![GitHub stars](https://img.shields.io/github/stars/joshuathomascarter/ResNet-Accel?style=social)](https://github.com/joshuathomascarter/ResNet-Accel)
 ![RTL](https://img.shields.io/badge/RTL-SystemVerilog-blue)
 ![Target](https://img.shields.io/badge/Target-Zynq%20Z7020-green)
 ![Status](https://img.shields.io/badge/Status-Simulation%20Verified-yellow)
+![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
 </div>
 
 ---
 
-## 🎯 What is This?
+## Overview
 
-A complete **sparse neural network accelerator** built from scratch, targeting the Xilinx Zynq-7020 FPGA (PYNQ-Z2). Implements:
+ACCEL-v1 is a sparse neural network inference accelerator targeting the Xilinx Zynq-7020 (PYNQ-Z2). The design centers on a 14×14 weight-stationary systolic array with hardware-level Block Sparse Row (BSR) scheduling, INT8 quantization, and AXI4 DMA integration.
 
-- **14×14 systolic array** with weight-stationary dataflow (196 DSPs, fits Z7020)
-- **BSR (Block Sparse Row) format** that skips zero weight blocks entirely
-- **INT8 quantization** pipeline with per-channel scaling
-- **Full software stack**: Python training/export + C++ host driver
+**Key capabilities:**
+- 14×14 systolic array — 196 INT8 MACs per cycle, weight-stationary dataflow
+- BSR sparse format — hardware scheduler skips zero-weight blocks entirely
+- INT8 quantization — per-channel scaling, 0.2% accuracy loss on MNIST (98.7%)
+- AXI4 DMA + AXI4-Lite CSR control interface
+- Dual-clock architecture — 50 MHz control / 200 MHz datapath
+- Full software stack — Python training/export, C++ host driver framework
 
-```
-                    Activations (INT8)
-                    ↓   ↓   ↓   ↓
-              ┌───────────────────────┐
-  Weights ───▶│   14×14 Systolic      │───▶ Outputs (INT32)
-  (BSR INT8)  │   Array (196 MACs)    │     
-              │   @ 200 MHz           │     Throughput: 39 GOPS (dense)
-              └───────────────────────┘                 131 GOPS (70% sparse)
-```
-
-> **Status**: RTL complete, simulation verified, Python tooling functional.  
-> **Next**: FPGA deployment on PYNQ-Z2 (Christmas 2025)
+**Status:** RTL simulation-verified (Verilator + cocotb). FPGA deployment pending.
 
 ---
 
-## 📊 Performance Targets
+## Performance Targets
 
-| Metric | Target | Notes |
-|--------|--------|-------|
-| **Peak Throughput** | 39.2 GOPS | 14×14 array @ 200 MHz (196 MACs/cycle) |
-| **Sparse Speedup** | 6–9× | vs dense baseline at 70–90% sparsity |
-| **Memory Reduction** | 9.7× | BSR format (118 KB vs 1.15 MB for MNIST FC1) |
-| **INT8 Accuracy** | 98.7% | MNIST CNN, 0.2% degradation from FP32 |
-| **Power Target** | 840 mW | Dual-clock + clock gating (vs 2.0 W baseline) |
+| Metric | Value | Notes |
+|--------|-------|-------|
+| Peak Throughput | 39.2 GOPS | 196 MACs/cycle × 200 MHz |
+| Sparse Speedup | 6–9× | vs. dense baseline at 70–90% block sparsity |
+| Memory Reduction | 9.7× | BSR format (118 KB vs. 1.15 MB, MNIST FC1) |
+| INT8 Accuracy | 98.7% | MNIST CNN, –0.2% from FP32 baseline |
+| Power Target | 840 mW | Dual-clock + clock gating (vs. 2.0 W baseline) |
 
-*Hardware validation pending synthesis and FPGA deployment.*
+*Pending hardware validation after synthesis and FPGA deployment.*
 
 ---
 
-## Key Features
-
-### Hardware (RTL)
-- **14×14 Weight-Stationary Systolic Array** — INT8×INT8→INT32 accumulation (fits Z7020 DSPs)
-- **BSR Sparse Format** — Block Sparse Row with hardware scheduler, skips zero blocks
-- **Dual-Clock Architecture** — 50 MHz control / 200 MHz datapath
-- **AXI4 Interface** — DMA for weights/activations, AXI-Lite for CSR control
-- **Power Optimization** — Clock gating, zero-bypass MACs, multi-voltage support
-
-### Software (Python — Current)
-- **INT8 Quantization** — Per-channel quantization with calibration
-- **BSR Export** — Convert dense weights to hardware-ready sparse format
-- **Golden Models** — Bit-exact reference for verification
-- **CocoTB Testbenches** — AXI protocol verification
-
-### Software (C++ — Planned)
-- **Zynq Host Driver** — Direct hardware control via `/dev/mem`
-- **DMA Memory Manager** — Physically contiguous buffer allocation
-- **BSR Packer** — High-performance sparse format conversion
-- **MNIST Inference** — Full CNN execution on FPGA
-
-## Architecture Overview
+## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                         ACCEL-v1 Architecture                        │
-│                                                                      │
-│  ┌────────────────┐                    ┌──────────────────────┐      │
-│  │   Host (CPU)   │ <──AXI4-Lite CSR──>│   Control Logic      │      │
-│  │                │                    │  • Scheduler (50MHz) │      │
-│  │  • Configure   │                    │  • BSR Scheduler     │      │
-│  │  • Start/Stop  │                    │  • DMA Controller    │      │
-│  │  • Read Status │                    │  • Clock Gating      │      │
-│  └────────┬───────┘                    └──────────┬───────────┘      │
-│           │                                       │                  │
-│           │ AXI4 Burst DMA (400 MB/s)             │ Control          │
-│           ▼                                       ▼                  │
-│  ┌────────────────────────────────────────────────────────┐          │
-│  │              Memory Subsystem                          │          │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │          │
-│  │  │ Act Buffer  │  │ Wgt Buffer  │  │ BSR Metadata│     │          │
-│  │  │   (1 KB)    │  │   (1 KB)    │  │   Cache     │     │          │
-│  │  └─────┬───────┘  └─────┬───────┘  └─────┬───────┘     │          │
-│  └────────┼──────────────────┼────────────────┼───────────┘          │
-│           │                  │                │                      │
-│           └──────────┬───────┴────────────────┘                      │
-│                      ▼                                               │
-│  ┌────────────────────────────────────────────────────────┐          │
-│  │         Systolic Array (14x14 PEs @ 200 MHz)           │          │
-│  │  ┌───────┐  ┌───────┐     INT8 x INT8 -> INT32         │          │
-│  │  │ PE    │──│ PE    │     Weight-Stationary Dataflow   │          │
-│  │  │ MACx1 │  │ MACx1 │     Zero-Value Bypass            │          │
-│  │  └───┬───┘  └───┬───┘                                  │          │
-│  │      │          │                                      │          │
-│  │  ┌───▼───┐  ┌───▼───┐                                  │          │
-│  │  │ PE    │──│ PE    │     196 MACs/cycle @ 200 MHz     │          │
-│  │  │ MACx1 │  │ MACx1 │     = 39.2 billion ops/s         │          │
-│  │  └───────┘  └───────┘                                  │          │
-│  └────────────────────────────────────────────────────────┘          │
-│                      │                                               │
-│                      ▼                                               │
-│  ┌─────────────────────────────────────────────────────────┐         │
-│  │              Result Accumulation                        │         │
-│  │  • INT32 accumulators (overflow detection)              │         │
-│  │  • Optional saturation                                  │         │
-│  │  • AXI write-back to host memory                        │         │
-│  └─────────────────────────────────────────────────────────┘         │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                     Zynq-7020 (PL)                          │
+│                                                             │
+│  Host (PS)                    Control                       │
+│  ┌──────────┐  AXI4-Lite   ┌──────────────┐                │
+│  │ ARM CPU  │◄────────────►│ CSR Block    │                │
+│  │ / PYNQ   │              │ BSR Sched.   │                │
+│  └────┬─────┘              │ Clock Gate   │                │
+│       │                    └──────┬───────┘                │
+│       │ AXI4 DMA                  │                         │
+│       ▼                          ▼                         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────────────────┐  │
+│  │ Act DMA  │  │ BSR DMA  │  │ 14×14 Systolic Array     │  │
+│  │          │  │          │  │ (196 PEs, INT8×INT8→INT32)│  │
+│  └────┬─────┘  └────┬─────┘  │ Weight-Stationary        │  │
+│       ▼              ▼        │ Zero-Value Bypass        │  │
+│  ┌──────────┐  ┌──────────┐  └────────────┬─────────────┘  │
+│  │Act Buffer│  │Wgt Buffer│               │                │
+│  │ (BRAM)   │  │ (BRAM)   │               ▼                │
+│  └──────────┘  └──────────┘  ┌──────────────────────────┐  │
+│                              │ Output Accumulator       │  │
+│                              │ Requantize (INT32→INT8)  │  │
+│                              │ ReLU + Saturation        │  │
+│                              └──────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Key Design Decisions
+### Design Decisions
 
-| Feature | Choice | Rationale |
-|---------|--------|-----------|
-| **Data Type** | INT8 | 4x memory reduction, 0.2% accuracy loss |
-| **Array Size** | 14x14 PEs | Fits Z7020's 220 DSPs (196 DSPs = 89%) |
-| **Block Size** | 14x14 | Matches systolic array tiling, sparse-friendly |
-| **Dataflow** | Weight-Stationary | Minimizes weight reloads, maximizes reuse |
-| **Clock Gating** | BUFGCE primitives | 810 mW savings (40.5% power reduction) |
-| **Sparse Format** | BSR | Hardware-friendly, sequential memory access |
+| Parameter | Choice | Rationale |
+|-----------|--------|-----------|
+| Data type | INT8 | 4× memory reduction, minimal accuracy loss |
+| Array size | 14×14 | Fits Z7020 DSP budget (196 of 220 DSP48E1s) |
+| Block size | 14×14 | Matches array dimensions for BSR tiling |
+| Dataflow | Weight-stationary | Minimizes weight reloads, maximizes data reuse |
+| Sparse format | BSR | Sequential memory access, hardware-friendly metadata |
+| Clock gating | BUFGCE | 810 mW estimated savings (40.5% reduction) |
 
-## Project Structure
+### Resource Estimates (Zynq XC7Z020)
+
+| Resource | Estimated | Available | Utilization |
+|----------|-----------|-----------|-------------|
+| LUTs | ~18,000 | 53,200 | 34% |
+| FFs | ~12,000 | 106,400 | 11% |
+| BRAM (36 Kb) | 64 | 140 | 46% |
+| DSP48E1 | 196 | 220 | 89% |
+
+---
+
+## Repository Structure
 
 ```
-ACCEL-v1/                            # 20,675 total lines of code
-├── rtl/                             # 6,875 lines of production RTL
-│   ├── top/                         # Top-level modules
-│   │   ├── accel_top.sv             # Main accelerator (100 MHz)
-│   │   ├── accel_top_dual_clk.sv    # Dual-clock wrapper (Phase 5)
-│   │   └── accel_top.upf            # Multi-voltage UPF
-│   ├── systolic/                    # Compute core
-│   │   ├── systolic_array_sparse.sv # Sparse 2x2 array
-│   │   ├── pe.sv                    # Processing Element
-│   │   └── mac8.sv                  # INT8 MAC w/ zero-bypass
-│   ├── control/                     # Control logic
-│   │   ├── scheduler.sv             # Tile scheduler (gated)
-│   │   ├── bsr_scheduler.sv         # Sparse BSR FSM
-│   │   ├── csr.sv                   # CSR registers (gated)
-│   │   └── pulse_sync.sv            # CDC synchronizers
-│   ├── dma/                         # DMA engines
-│   │   ├── axi_dma_master.sv        # 400 MB/s burst DMA
-│   │   └── bsr_dma.sv               # BSR metadata loader
-│   └── buffer/                      # Memory subsystem
-│       ├── act_buffer.sv            # 1 KB activation buffer
-│       └── wgt_buffer.sv            # 1 KB weight buffer
+├── hw/                              # Hardware design
+│   ├── rtl/                         # Production RTL (21 modules, ~6,500 lines)
+│   │   ├── top/                     #   Top-level: accel_top.sv, dual-clock wrapper
+│   │   ├── systolic/                #   PE array: pe.sv, systolic_array_sparse.sv
+│   │   ├── mac/                     #   Compute: mac8.sv (INT8 MAC, zero-bypass)
+│   │   ├── control/                 #   FSMs: bsr_scheduler.sv, csr.sv, CDC
+│   │   ├── dma/                     #   DMA engines: act_dma.sv, bsr_dma.sv
+│   │   ├── buffer/                  #   BRAM buffers: act, weight, output accum.
+│   │   ├── host_iface/              #   AXI4-Lite slave, AXI DMA bridge
+│   │   └── monitor/                 #   Performance counters
+│   └── sim/                         # Simulation & verification
+│       ├── sv/                      #   SystemVerilog testbenches (~4,200 lines)
+│       └── cocotb/                  #   Python-based AXI protocol tests
 │
-├── accel/python/                    # Python tooling
-│   ├── training/                    # INT8 training pipeline
-│   │   └── train_mnist.py           # 98.7% accuracy MNIST CNN
-│   ├── golden/                      # Bit-exact reference
-│   └── tests/                       # Unit tests
+├── sw/                              # Software stack
+│   ├── cpp/                         # C++ host driver framework (~6,000 lines)
+│   │   ├── include/                 #   Headers: BSR encoder, DMA, buffer mgmt
+│   │   ├── src/                     #   Implementation: golden models, tiling
+│   │   ├── apps/                    #   MNIST inference, benchmarking
+│   │   └── tests/                   #   Unit tests
+│   └── ml_python/                   # Python ML tooling (~9,000 lines)
+│       ├── training/                #   MNIST CNN training, BSR export (14×14)
+│       ├── exporters/               #   PyTorch → INT8 weight conversion
+│       ├── golden/                  #   Bit-exact reference models
+│       ├── host/                    #   PYNQ driver, AXI simulation
+│       ├── demo/                    #   MNIST digit classification demo
+│       └── tests/                   #   Quantization & integration tests
 │
-├── docs/                            # 8,500 lines documentation
-│   ├── architecture/                # Design specs
-│   │   └── SPARSITY_FORMAT.md       # BSR format
-│   ├── guides/                      # Implementation guides
-│   │   ├── POWER_OPTIMIZATION_ADVANCED.md
-│   │   └── QUANTIZATION_PRACTICAL.md
-│   └── project/                     # Development logs
+├── data/                            # Model weights & test data
+│   ├── bsr_export_14x14/           #   14×14 BSR weights (production format)
+│   ├── int8/                        #   Per-channel INT8 quantized weights
+│   ├── checkpoints/                 #   FP32 training checkpoint
+│   └── MNIST/                       #   Raw MNIST dataset
 │
-└── testbench/                       # 2,100 lines testbenches
-    ├── cocotb/                      # Python co-simulation
-    ├── verilator/                   # C++ testbenches
-    └── unit/                        # Per-module tests
+├── docs/                            # Documentation
+│   ├── architecture/                #   Architecture specs, dataflow, BSR format
+│   ├── guides/                      #   Simulation, FPGA deployment, quantization
+│   └── verification/                #   Test results, verification checklist
+│
+└── tools/                           # Build & CI scripts
+    ├── build.sh                     #   Verilator build
+    ├── test.sh                      #   Test runner
+    └── synthesize_vivado.tcl        #   Vivado synthesis flow
 ```
 
-**Code Statistics**: 6,875 RTL lines | 26/26 tests passing | 0 lint errors
+---
 
-## Quick Start
+## Getting Started
+
+### Quick Start — MNIST Digit Classifier Demo
+
+The fastest way to see ACCEL-v1 in action. This runs the INT8-quantized CNN model
+that maps onto the 14×14 systolic array, using PyTorch on CPU to simulate what the
+FPGA accelerator computes.
+
+```bash
+# 1. Clone and enter the project
+git clone https://github.com/joshuathomascarter/ResNet-Accel-2.git
+cd ResNet-Accel-2
+
+# 2. Create a virtual environment (recommended)
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 3. Install Python dependencies
+pip install -r requirements.txt
+
+# 4. Run the interactive digit classifier
+python3 sw/ml_python/demo/classify_digit.py
+```
+
+This opens a drawing canvas. Draw any digit (0–9), click **Classify**, and the model
+returns a prediction with confidence. The pre-trained checkpoint
+(`data/checkpoints/mnist_fp32.pt`) is included in the repository.
+
+**Three usage modes:**
+
+| Mode | Command | Description |
+|------|---------|-------------|
+| Interactive | `python3 sw/ml_python/demo/classify_digit.py` | Draw digits on a canvas, click Classify |
+| Image file | `python3 sw/ml_python/demo/classify_digit.py digit.png` | Classify a digit from an image file |
+| MNIST test | `python3 sw/ml_python/demo/classify_digit.py --test 50` | Run on N random MNIST test samples |
+
+> **Note:** The interactive drawing mode requires `tkinter`, which is included with
+> most Python installations. On macOS it ships with the Homebrew/system Python.
+> On Ubuntu: `sudo apt install python3-tk`.
 
 ### Prerequisites
 
+| Tool | Version | Purpose |
+|------|---------|---------|
+| Python | 3.8+ | ML tooling, demo, cocotb tests |
+| PyTorch | 1.9+ | Model inference & training |
+| Verilator | 5.x+ | RTL simulation (optional) |
+| CMake | 3.16+ | C++ build system (optional) |
+| Vivado | 2021.1+ | FPGA synthesis (optional) |
+
 ```bash
 # macOS
-brew install verilator python numpy
+brew install python cmake verilator
 
 # Ubuntu
-sudo apt install verilator python3-numpy
+sudo apt install python3 python3-pip python3-tk cmake verilator
+
+# Python packages (all platforms)
+pip install -r requirements.txt
 ```
 
-### Build & Test
+### Build C++ Host Driver
 
 ```bash
-# Run all tests (34 tests)
-./scripts/test.sh
+cd sw/cpp
+mkdir -p build && cd build
+cmake ..
+make -j$(nproc)
+```
 
-# Build specific testbench
-cd testbench && make accel_top_tb
+### Run RTL Simulation
 
-# Run with waveform
-./build/accel_top_tb && gtkwave build/waveforms/accel_top_tb.vcd
+```bash
+# SystemVerilog testbenches via Verilator
+cd hw/sim
+make
+
+# Cocotb AXI protocol tests
+cd hw/sim/cocotb
+make
+```
+
+### Export Quantized Weights
+
+```bash
+# Export INT8 BSR weights (14×14 block format)
+cd sw/ml_python/training
+python3 export_bsr_14x14.py --from-int8
 ```
 
 ### FPGA Deployment (Zynq-7020)
 
 ```bash
-# 1. Synthesize in Vivado
-vivado -mode batch -source scripts/synthesize_vivado.tcl
+# 1. Synthesize
+vivado -mode batch -source tools/synthesize_vivado.tcl
 
-# 2. Copy to PYNQ board
-scp bitstream.bit xilinx@pynq:/home/xilinx/
+# 2. Deploy to PYNQ-Z2
+scp build/accel_top.bit xilinx@pynq:/home/xilinx/
 
-# 3. Run Python driver
-python3 accel/python/host/accel.py
+# 3. Run inference
+python3 sw/ml_python/host/accel.py
 ```
 
-## Engineering Journey: Struggles & Solutions
-
-Building a sparse accelerator from scratch revealed several non-obvious challenges. This section documents the real engineering problems encountered and how they were solved.
-
-### 1. BSR DMA Multi-Block Transfer Bug
-
-**Problem**: Single-block transfers worked perfectly, but multi-block BSR matrices caused data corruption. The DMA would fetch Block 0 correctly, then garbage for subsequent blocks.
-
-**Root Cause**: The `bsr_dma.sv` module incremented `blk_ptr` on every clock cycle during `STREAM` state, not just when `tready` was asserted. With backpressure from the systolic array, the pointer would advance 3-4 positions while data was stalled.
-
-**Fix**:
-```systemverilog
-// BEFORE (buggy)
-STREAM: begin
-    blk_ptr <= blk_ptr + 1;  // Always increments!
-    ...
-end
-
-// AFTER (correct)
-STREAM: begin
-    if (axis_tready) begin   // Only on handshake
-        blk_ptr <= blk_ptr + 1;
-    end
-    ...
-end
-```
-
-**Lesson**: AXI-Stream backpressure handling must be rigorous. Always gate state transitions on handshake signals.
-
-### 2. 8x8 to 14x14 Systolic Scaling
-
-**Problem**: Scaling the systolic array from 8x8 (64 PEs) to 14x14 (196 PEs) required updating the BSR scheduler. Tests showed correct first-row computation, then all zeros.
-
-**Root Cause**: The scheduler had hardcoded `3'd7` for the 8-cycle weight load count:
-```systemverilog
-if (load_cnt == 3'd7) begin  // Hardcoded for 8x8!
-    state <= COMPUTE;
-end
-```
-With 14x14 blocks, we needed 14 cycles, but `load_cnt` was only 3 bits wide.
-
-**Fix**: Parameterized the scheduler with `BLOCK_SIZE`:
-```systemverilog
-parameter BLOCK_SIZE = 14;
-localparam LOAD_CNT_MAX = BLOCK_SIZE - 1;
-logic [4:0] load_cnt;  // 5 bits for 14
-
-if (load_cnt == LOAD_CNT_MAX[4:0]) begin
-    state <= COMPUTE;
-end
-```
-
-**Lesson**: Never hardcode array dimensions. Use parameters consistently from top to bottom of the hierarchy.
-
-### 3. Verilator Timing Simulation Mode
-
-**Problem**: Pure SystemVerilog testbenches (no C++ harness) failed with "No C++ main()" error. Wanted self-contained `.sv` testbenches for simplicity.
-
-**Root Cause**: Verilator 5.x changed the default behavior. Self-contained testbenches need explicit flags.
-
-**Fix**: Add `--timing --main` flags:
-```bash
-verilator --sv --cc --exe --build --trace --timing --main \
-    -Wall -Wno-fatal \
-    -I rtl/... \
-    testbench/sv/accel_top_tb_full.sv
-```
-
-**Lesson**: Track tool version changes. Verilator 5.x has breaking changes from 4.x.
-
-### 4. CSR Register Edge Cases
-
-**Problem**: 61% coverage seemed acceptable, but uncovered paths included critical error handling: writes to read-only registers, out-of-range addresses, malformed transactions.
-
-**Root Cause**: Happy-path testing is easy. Error-path testing requires deliberate fault injection.
-
-**Fix**: Added 12 targeted edge-case tests:
-- Write to read-only STATUS register (should ignore)
-- Read from undefined address 0x9999 (should return 0)
-- Burst writes across register boundary
-- Simultaneous read/write to same address
-
-Coverage improved from 61% -> 71%.
-
-**Lesson**: Coverage gaps often indicate missing error handling. Each uncovered line is a potential bug in production.
-
-### 5. Output Accumulator Bank Swap Race
-
-**Problem**: Double-buffered accumulator occasionally produced corrupted outputs when compute and DMA operated simultaneously.
-
-**Root Cause**: Bank swap occurred mid-DMA-read. The read address was valid for Bank 0, but the swap switched to Bank 1 data.
-
-**Fix**: Added `dma_busy` signal and gated swaps:
-```systemverilog
-wire can_swap = swap_request && !dma_busy && accumulation_done;
-
-always_ff @(posedge clk) begin
-    if (can_swap) begin
-        active_bank <= ~active_bank;
-    end
-end
-```
-
-**Lesson**: Double-buffering requires careful handshaking. Both producer and consumer must agree on swap timing.
-
-### 6. INT8 Quantization Overflow
-
-**Problem**: Large activations caused overflow after ReLU, wrapping 130 -> -126 (signed INT8).
-
-**Root Cause**: Accumulator was 32-bit signed, but quantization divided by scale then truncated to 8 bits without saturation.
-
-**Fix**: Explicit saturation logic:
-```systemverilog
-wire signed [31:0] scaled = accumulator >>> scale_shift;
-wire [7:0] saturated = (scaled > 127) ? 8'd127 :
-                       (scaled < -128) ? 8'd128 :
-                       scaled[7:0];
-```
-
-**Lesson**: Quantization is not just division. Saturation, rounding, and clipping are equally important.
+---
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
-| **[hw/README.md](hw/README.md)** | **Hardware architecture, diagrams, Zynq deployment guide** |
-| **[docs/DEEP_DIVE.md](docs/DEEP_DIVE.md)** | **Performance analysis, MNIST breakdown, timing** |
-| [Architecture Overview](docs/architecture/ARCHITECTURE.md) | System design, dataflow, memory hierarchy |
-| [BSR Format Spec](docs/architecture/SPARSITY_FORMAT.md) | Sparse format details, hardware FSM |
-| [Power Optimization](docs/guides/POWER_OPTIMIZATION_ADVANCED.md) | 5-phase optimization (2.0W -> 840mW) |
-| [Quantization Guide](docs/guides/QUANTIZATION_PRACTICAL.md) | INT8 training, per-channel quantization |
-| [Simulation Guide](docs/guides/SIMULATION_GUIDE.md) | Verilator setup, testbench usage |
-| [FPGA Deployment](docs/guides/FPGA_DEPLOYMENT.md) | Vivado synthesis, bitstream generation |
+| [hw/README.md](hw/README.md) | Hardware architecture, PE diagrams, dataflow timing |
+| [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) | System-level design specification |
+| [docs/architecture/SPARSITY_FORMAT.md](docs/architecture/SPARSITY_FORMAT.md) | BSR sparse format and hardware FSM |
+| [docs/DEEP_DIVE.md](docs/DEEP_DIVE.md) | Performance analysis, MNIST layer breakdown |
+| [docs/guides/SIMULATION_GUIDE.md](docs/guides/SIMULATION_GUIDE.md) | Verilator and cocotb test setup |
+| [docs/guides/QUANTIZATION_PRACTICAL.md](docs/guides/QUANTIZATION_PRACTICAL.md) | INT8 quantization methodology |
+| [docs/guides/POWER_ANALYSIS.md](docs/guides/POWER_ANALYSIS.md) | Clock gating and power optimization |
+| [AUDIT.md](AUDIT.md) | Internal code audit with known issues |
 
 ---
 
-## 🎄 Zynq Z2 Deployment (December 2025)
+## Design Notes
 
-**Target Board**: PYNQ-Z2 (Xilinx XC7Z020-1CLG400C)
+### BSR Sparse Dataflow
 
-### Resource Estimates
+The accelerator uses Block Sparse Row format to skip zero-weight blocks at the hardware level. The BSR scheduler FSM reads row pointers and column indices from on-chip BRAM, loads only non-zero 14×14 weight blocks into the systolic array, and streams corresponding activation tiles. At 70% block sparsity, this yields ~3× effective throughput improvement; at 90% sparsity, ~9× improvement.
 
-| Resource | Used | Available | Utilization |
-|----------|------|-----------|-------------|
-| LUTs | ~18K | 53,200 | 34% |
-| FFs | ~12K | 106,400 | 11% |
-| BRAM | 64 | 140 | 46% |
-| DSP48 | 196* | 220 | 89% |
+### Weight-Stationary Systolic Array
 
-*Using 14×14 array to fit DSP constraints
+Weights are loaded once per tile and held fixed in each PE while activations stream through. This minimizes weight memory bandwidth (single load per K-dimension block) at the cost of activation broadcast. For CNN inference where weight reuse is high, this dataflow is well-matched.
 
-### Quick Deploy
+### INT8 Quantization Pipeline
 
-```bash
-# 1. Synthesize
-cd hw && vivado -mode batch -source scripts/build.tcl
-
-# 2. Copy to board
-scp build/accel_top.bit xilinx@pynq:/home/xilinx/
-
-# 3. Run inference
-python3 -c "
-from pynq import Overlay
-ol = Overlay('accel_top.bit')
-print('Accelerator loaded!')
-"
-```
-
-See **[hw/README.md](hw/README.md)** for full deployment guide.
+Per-channel symmetric quantization preserves accuracy:
+1. **Training** — Standard FP32 MNIST CNN (98.9% accuracy)
+2. **Calibration** — Per-channel scale factors computed from weight distributions
+3. **Quantization** — FP32 → INT8 with per-channel scales stored alongside weights
+4. **Hardware** — INT8×INT8→INT32 MAC accumulation, requantize with saturation on output
 
 ---
 
-## License
+## Known Limitations
 
-MIT License - See [LICENSE](LICENSE) for details.
+- FPGA synthesis and on-board validation not yet completed
+- C++ host driver is a framework with partial stub implementations
+- Dual-clock wrapper (`accel_top_dual_clk.sv`) has known compilation issues
+- DMA data width (64-bit) requires multi-beat transfers for 14-wide activation vectors
+- See [AUDIT.md](AUDIT.md) for a detailed internal code audit
 
 ---
-
-<div align="center">
-
-**Built with ❤️ in Montreal**
-
-*A learning project that became something real*
-
-</div>
-| [Project Timeline](docs/project/EXECUTION_SUMMARY.md) | 7-month development log |
-
-## License
-
-MIT License - See [LICENSE](LICENSE) for details.
-
-## Contact
-
-**Author**: Joshua Carter
-**Email**: joshtcarter0710@gmail.com
-**GitHub**: [@joshuathomascarter](https://github.com/joshuathomascarter)
-**Repository**: [ACCEL-v1](https://github.com/joshuathomascarter/ACCEL-v1)
-
-**Josh Carter**
-MS Computer Engineering Candidate
-December 2025
 
 ## References
 
-### Academic Papers
-- Y. Chen et al., "Eyeriss: A Spatial Architecture for Energy-Efficient Dataflow for CNNs" (ISCA 2016)
-- S. Han et al., "EIE: Efficient Inference Engine on Compressed Deep Neural Networks" (ISCA 2016)
-- N. P. Jouppi et al., "In-Datacenter Performance Analysis of a Tensor Processing Unit" (ISCA 2017)
+- Y. Chen et al., "Eyeriss: A Spatial Architecture for Energy-Efficient Dataflow for CNNs," ISCA 2016
+- S. Han et al., "EIE: Efficient Inference Engine on Compressed Deep Neural Networks," ISCA 2016
+- N. P. Jouppi et al., "In-Datacenter Performance Analysis of a Tensor Processing Unit," ISCA 2017
+- Xilinx, "7 Series DSP48E1 Slice User Guide" (UG479)
+- ARM, "AMBA AXI and ACE Protocol Specification" (IHI 0022E)
 
-### Technical Resources
-- Xilinx UltraScale Architecture Clock Resources (UG472)
-- AMBA AXI4 Specification (ARM IHI 0022E)
-- Verilator User Guide (Version 5.0)
-# ACCEL-v1: Sparse CNN Accelerator for FPGA
+---
+
+## Author
+
+**Josh Carter** — [GitHub](https://github.com/joshuathomascarter) · joshtcarter0710@gmail.com
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details.

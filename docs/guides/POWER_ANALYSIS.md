@@ -21,7 +21,7 @@ Based on Artix-7 XC7A100T-1 @ 100 MHz:
 | Systolic Array (20 DSPs) | ~0.6W | ~0.05W | 0.65W |
 | BRAM (40×36Kb) | ~0.4W | ~0.03W | 0.43W |
 | Logic (15K LUTs) | ~0.5W | ~0.02W | 0.52W |
-| I/O (UART, AXI) | ~0.3W | ~0.01W | 0.31W |
+| I/O (AXI) | ~0.3W | ~0.01W | 0.31W |
 | Clock Network | ~0.1W | — | 0.1W |
 | **TOTAL** | **~1.9W** | **~0.11W** | **~2.01W** |
 
@@ -126,7 +126,7 @@ act_buffer u_act_buf (
 | Wgt Buffer (idle 70% time) | 0.20 | 0.06 | **70%** |
 | **Total Dynamic** | 1.9W | **1.1W** | **42%** |
 
-**New Total: ~1.2W** (within 1.5W target ✅)
+**New Total: ~1.2W** (within 1.5W target )
 
 ---
 
@@ -207,7 +207,7 @@ accel_top                     | 1.12        | 0.11       | 1.23
   wgt_buffer                  | 0.08        | 0.02       | 0.10
   bsr_scheduler               | 0.15        | 0.01       | 0.16
   bsr_dma                     | 0.25        | 0.01       | 0.26
-  uart_tx                     | 0.02        | 0.00       | 0.02
+  axi_lite                     | 0.02        | 0.00       | 0.02
 ```
 
 ---

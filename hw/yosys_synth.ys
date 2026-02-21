@@ -1,0 +1,47 @@
+# =============================================================================
+# yosys_synth.ys — Yosys synthesis script for ACCEL-v1 targeting Xilinx 7-series
+# =============================================================================
+# Produces LUT/FF/BRAM/DSP resource estimates comparable to Vivado.
+# Uses preprocessed files from rtl_synth/ (assertions stripped).
+# =============================================================================
+
+# ── Read all preprocessed SystemVerilog sources ────────────────────────────
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/mac/mac8.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/systolic/pe.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/systolic/systolic_array.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/systolic/systolic_array_sparse.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/buffer/act_buffer.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/buffer/wgt_buffer.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/buffer/output_accumulator.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/control/bsr_scheduler.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/control/csr.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/control/pulse_sync.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/control/sync_2ff.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/dma/act_dma.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/dma/bsr_dma.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/dma/dma_pack_112.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/dma/out_dma.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/host_iface/axi_dma_bridge.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/host_iface/axi_lite_slave.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/monitor/perf.sv
+read_verilog -sv -DSYNTHESIS rtl_synth/rtl/top/accel_top.sv
+
+# ── Set top module ─────────────────────────────────────────────────────────
+hierarchy -top accel_top
+
+# ── Generic synthesis passes ───────────────────────────────────────────────
+proc
+flatten
+opt -full
+
+# ── Map to Xilinx 7-series (synth_xilinx targets xc7) ─────────────────────
+# This maps logic to LUT4/LUT6, FDRE/FDCE FFs, DSP48E1, RAMB36E1, etc.
+synth_xilinx -top accel_top -family xc7 -noiopad -noclkbuf
+
+# ── Print detailed statistics ──────────────────────────────────────────────
+stat -tech xilinx
+
+# ── Write mapped netlist (optional, for inspection) ────────────────────────
+write_json reports/yosys_netlist.json
+
+# Done

@@ -10,7 +10,7 @@ This document summarizes the modifications made to support 14×14 block tiles ma
 
 ### Files Modified/Created
 
-#### 1. `sw/training/export_bsr_14x14.py` (NEW)
+#### 1. `sw/ml_python/training/export_bsr_14x14.py` (NEW)
 
 **Purpose**: Export model weights in 14×14 BSR format for hardware.
 
@@ -53,7 +53,7 @@ fc1/
 | Bytes/block | 64 (8×8) or 256 (16×16) | 196 |
 | FC1 blocks | 1576 (16×16) or 18432 (8×8) | 6590 |
 | Density | 8.6% (16×16) | 100% (dense model) |
-| Hardware match | ❌ Misaligned | ✅ Perfect match |
+| Hardware match | FAIL: Misaligned | PASS: Perfect match |
 
 ### Memory Alignment Impact
 
@@ -122,7 +122,7 @@ Matches:         4 (100.0%)   ← Expected when RTL works
 Mismatches:      0
 
 ======================================================================
-║                            ✅ PASS                            ║
+║                            PASS: PASS                            ║
 ======================================================================
 ```
 
@@ -132,19 +132,19 @@ Mismatches:      0
 
 ### What Works
 
-1. ✅ **14×14 BSR Export**: All layers exported with correct block size
-2. ✅ **Golden Model**: C++ and Python golden models produce consistent results
-3. ✅ **Verification Pipeline**: Full PASS/FAIL reporting with tolerance support
-4. ✅ **Performance Counters**: RTL counters show realistic values
+1. PASS: **14×14 BSR Export**: All layers exported with correct block size
+2. PASS: **Golden Model**: C++ and Python golden models produce consistent results
+3. PASS: **Verification Pipeline**: Full PASS/FAIL reporting with tolerance support
+4. PASS: **Performance Counters**: RTL counters show realistic values
 
 ### What Needs Work
 
-1. ⚠️ **RTL Compute Path**: Systolic array outputs are 0 in current simulation
+1. NOTE: **RTL Compute Path**: Systolic array outputs are 0 in current simulation
    - Memory model works (DMA reads are correct)
    - Compute datapath needs scheduler/PE integration
    - Result registers don't update without active computation
 
-2. ⚠️ **Limited Output Access**: Only 4 results readable via CSR
+2. NOTE: **Limited Output Access**: Only 4 results readable via CSR
    - Full verification needs RTL modification or VCD parsing
    - Could add DMA write path for output readback
 
@@ -154,7 +154,7 @@ Mismatches:      0
 
 | File | Status | Purpose |
 |------|--------|---------|
-| `sw/training/export_bsr_14x14.py` | NEW | 14×14 BSR export |
+| `sw/ml_python/training/export_bsr_14x14.py` | NEW | 14×14 BSR export |
 | `hw/sim/test_mnist_bsr.cpp` | MODIFIED | Verilator test with output extraction |
 | `hw/sim/verify_rtl.py` | NEW | Python verification script |
 | `data/bsr_export_14x14/` | NEW | Exported 14×14 BSR data |

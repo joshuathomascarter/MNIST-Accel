@@ -1,465 +1,95 @@
-# 🧪 TEST RESULTS - ACCEL-v1 Verification Status
+# Test Results
 
-**Date:** December 4, 2025  
-**Status:** ✅ **ALL TESTS PASSING - Ready for Synthesis**  
-**Coverage:** 71% line coverage | 34/34 tests passing
+## Test Inventory
 
----
+### SystemVerilog Testbenches (`hw/sim/sv/`)
 
-## 📊 SUMMARY
+| Testbench | DUT | Description |
+|-----------|-----|-------------|
+| `pe_tb.sv` | `pe.sv` | PE weight loading, MAC accumulation, bypass |
+| `systolic_tb.sv` | `systolic_array_sparse.sv` | 14x14 array weight load, activation streaming, output collection |
+| `bsr_dma_tb.sv` | `bsr_dma.sv` | BSR metadata + weight DMA transfers |
+| `meta_decode_tb.sv` | `meta_decode.sv` | BSR metadata BRAM read sequencing |
+| `output_accumulator_tb.sv` | `output_accumulator.sv` | INT32 accumulation, requantization, DMA readout |
+| `perf_tb.sv` | `perf.sv` | Performance counter increment, latch, clear |
+| `tb_axi_lite_slave_enhanced.sv` | `axi_lite_slave.sv` | AXI4-Lite protocol, simultaneous R/W |
+| `accel_top_tb.sv` | `accel_top.sv` | Basic top-level CSR + DMA integration |
+| `accel_top_tb_full.sv` | `accel_top.sv` | Full inference flow: load weights, stream activations, read output |
+| `integration_tb.sv` | `accel_top.sv` | Multi-layer sequential inference |
 
-| Category | Tests | Passed | Failed | Coverage |
-|----------|-------|--------|--------|----------|
-| **Unit Tests (PE, MAC, CSR)** | 12 | 12 | 0 | 100% |
-| **Integration (DMA, Scheduler)** | 8 | 8 | 0 | 87.6% |
-| **Top-level (full datapath)** | 7 | 7 | 0 | 71.1% |
-| **Edge Cases (error handling)** | 7 | 7 | 0 | New paths |
-| **TOTAL** | **34** | **34** | **0** | **71%** |
+### Cocotb Tests (`hw/sim/cocotb/`)
 
----
+| Test File | Description |
+|-----------|-------------|
+| `test_accel_top.py` | Python-driven top-level integration tests |
+| `cocotb_axi_master_test.py` | AXI master protocol verification |
 
-## 🔧 Recent Fixes & Their Tests
+### C++ Tests (`sw/cpp/tests/`)
 
-### 1. BSR DMA Multi-Block Transfer (Fixed Dec 3, 2025)
+| Test File | Status | Description |
+|-----------|--------|-------------|
+| `test_bsr_encoder.cpp` | Implemented | BSR pack/unpack round-trip |
+| `test_buffer_manager.cpp` | Implemented | Memory allocation, DMA buffer management |
+| `test_dma.cpp` | Implemented | DMA transfer simulation |
+| `test_tiling.cpp` | Implemented | Tile dimension calculation |
+| `test_end_to_end.cpp` | Stub | End-to-end inference (not yet implemented) |
 
-**Problem**: Multi-block BSR matrices caused data corruption  
-**Root Cause**: Pointer incremented without AXI-Stream handshake  
-**Test Coverage**: `bsr_dma_tb.sv` → 92.9% coverage
+### Python Tests (`sw/ml_python/tests/`)
 
-```
-✓ test_single_block_transfer    - PASS
-✓ test_multi_block_transfer     - PASS (was FAILING)
-✓ test_backpressure_handling    - PASS (new)
-✓ test_sparse_row_skip          - PASS
-```
+| Test File | Status | Description |
+|-----------|--------|-------------|
+| `test_golden_models.py` | Implemented | BSR INT8 GEMM correctness (pytest) |
+| `test_exporters.py` | Implemented | BSR export format verification |
+| `test_mac.py` | Implemented | MAC8 golden model vs RTL comparison |
+| `test_edges.py` | Implemented | Edge case testing (zeros, saturation) |
+| `test_csr_pack.py` | Partial | CSR pack/unpack (imports missing `host_uart`) |
+| `test_integration.py` | Broken | Imports from nonexistent `host_uart/` directory |
+| `post_training_quant_tests.py` | Implemented | Post-training quantization accuracy |
 
-### 2. 16×16 Systolic Array Scaling (Dec 3, 2025)
+## Running Tests
 
-**Change**: Scaled from 8×8 (64 PEs) to 16×16 (256 PEs)  
-**Fix Required**: Parameterized scheduler with BLOCK_SIZE  
-**All Previous Tests**: Still passing with 16×16
+### SystemVerilog (Verilator)
 
-```
-✓ 27/27 accel_top_tb_full tests - PASS
-✓ 9/9 systolic_tb tests         - PASS
-✓ 7/7 output_accumulator tests  - PASS
-```
-
-### 3. CSR Edge Cases (Dec 2, 2025)
-
-**Added**: 12 new edge-case tests for error handling  
-**Coverage Improvement**: 61% → 71%
-
-```
-✓ test_write_readonly_register  - PASS (ignored as expected)
-✓ test_read_undefined_address   - PASS (returns 0)
-✓ test_burst_across_boundary    - PASS
-✓ test_simultaneous_rw          - PASS
+```bash
+cd hw/sim
+make          # Runs all SV testbenches via Verilator
 ```
 
----
+Or individual testbenches:
 
-## ✅ DETAILED TEST RESULTS
-
-### Verilator SystemVerilog Testbenches
-
-| Testbench | Tests | Status | Notes |
-|-----------|-------|--------|-------|
-| `pe_tb.sv` | 6 | ✅ PASS | MAC, weight load, forwarding |
-| `systolic_tb.sv` | 9 | ✅ PASS | 16×16 array, dataflow |
-| `bsr_dma_tb.sv` | 5 | ✅ PASS | Multi-block, backpressure |
-| `meta_decode_tb.sv` | 4 | ✅ PASS | BSR metadata parsing |
-| `perf_tb.sv` | 3 | ✅ PASS | Cycle counters |
-| `output_accumulator_tb.sv` | 7 | ✅ PASS | Double-buffer, ReLU |
-| `accel_top_tb_full.sv` | 27 | ✅ PASS | Full datapath |
-
-### CocoTB Python Tests
-
-| Test | Status | Notes |
-|------|--------|-------|
-| `test_accel_top.py` | ✅ PASS | AXI-Lite CSR access |
-| `cocotb_axi_master_test.py` | ✅ PASS | DMA protocol |
-
----
-
-## 📈 COVERAGE BREAKDOWN
-
-```
-Module                          | Lines | Hit | Coverage
---------------------------------|-------|-----|----------
-rtl/mac/mac8.sv                 |    23 |  23 |   100.0%
-rtl/systolic/pe.sv              |    45 |  45 |   100.0%
-rtl/dma/bsr_dma.sv              |    98 |  91 |    92.9%
-rtl/control/bsr_scheduler.sv    |   145 | 127 |    87.6%
-rtl/meta/meta_decode.sv         |    67 |  58 |    86.6%
-rtl/control/csr.sv              |   142 | 101 |    71.1%
-rtl/host_iface/axi_lite_slave.sv|   112 |  78 |    69.6%
-rtl/dma/act_dma.sv              |    89 |  61 |    68.5%
---------------------------------|-------|-----|----------
-TOTAL (estimated)               |  ~750 | 535 |    71.3%
+```bash
+cd hw/sim
+make pe_tb
+make systolic_tb
+make accel_top_tb
 ```
 
-### Uncovered Areas (Targets for 90%)
+### Cocotb
 
-1. **csr.sv** (71%): Error paths for invalid burst types
-2. **axi_lite_slave.sv** (70%): Write strobe edge cases  
-3. **act_dma.sv** (68%): DMA timeout and error recovery
-
----
-
-## 🎯 REMAINING COVERAGE GOALS
-
-To reach 90% coverage:
-
-| Module | Current | Target | Tests Needed |
-|--------|---------|--------|--------------|
-| `csr.sv` | 71% | 90% | Burst write errors |
-| `axi_lite_slave.sv` | 70% | 90% | WSTRB patterns |
-| `act_dma.sv` | 68% | 90% | Timeout, underflow |
-| `axi_dma_bridge.sv` | 65% | 90% | Error recovery |
-
-Estimated effort: ~8 additional tests
-  - Status: ✓ PASS
+```bash
+cd hw/sim/cocotb
+make -f Makefile.accel_top
 ```
 
-### Key Features Verified
-- ✅ Single AXI write transactions working correctly
-- ✅ Single AXI read transactions with data validation
-- ✅ Burst operations across multiple beats
-- ✅ DMA FIFO queue management
-- ✅ Performance metrics collection
-- ✅ Error handling and response codes
+### C++
 
-### Conclusion
-**✅ Python Layer: FULLY FUNCTIONAL**
-
----
-
-## 🟨 TEST 2: VERILOG ENHANCED TESTBENCH (82% PASSING - 14/17)
-
-### Results Summary
-```
-╔════════════════════════════════════════╗
-║   TEST SUMMARY                         ║
-║   Total Tests:      17                 ║
-║   Passed:           14                 ║
-║   Failed:            3                 ║
-║   Success Rate:     82%                ║
-╚════════════════════════════════════════╝
+```bash
+cd sw/cpp/build
+cmake ..
+make
+ctest --output-on-failure
 ```
 
-### Test Suite Breakdown
+### Python
 
-#### Suite 1: Valid Writes (4/4 PASSED ✅)
-```
-✓ Write ADDR_DMA_LAYER  (0x50) = 0x00000001
-✓ Write ADDR_DMA_CTRL   (0x51) = 0x00000001
-✓ Write ADDR_DMA_COUNT  (0x52) = 0xDEADBEEF
-✓ Write ADDR_DMA_STATUS (0x53) = 0x00000042
-```
-**All writes to valid CSR addresses successful. Latency: ~1 cycle**
-
-#### Suite 2: Read Back Verification (4/4 executed, 1/4 PASSED ⚠️)
-```
-✓ Read  ADDR_DMA_LAYER  (0x50): Expected 0x00000001 ✓ DATA MATCH
-✗ Read  ADDR_DMA_CTRL   (0x51): Expected 0x00000001 ✗ Got 0x00000001 (timing)
-✗ Read  ADDR_DMA_COUNT  (0x52): Expected 0xDEADBEEF ✗ Got previous data
-✗ Read  ADDR_DMA_STATUS (0x53): Expected 0x00000042 ✗ Got previous data
-```
-**Issue: Read data is one cycle delayed (off-by-one timing). Data is correct but read one cycle late.**
-
-#### Suite 3: Invalid Address Error Handling (3/3 PASSED ✅)
-```
-✓ Write to ADDR_INVALID (0xFF): Received SLVERR ✓
-✓ Read  from ADDR_INVALID (0xFF): Received SLVERR ✓
-✓ Write to ADDR_OUT_OF_RANGE (0xA0): Received SLVERR ✓
-```
-**Error handling working correctly. SLVERR responses properly generated.**
-
-#### Suite 4: Edge Cases (3/3 PASSED ✅)
-```
-✓ Write 0x00000000 to 0x50
-✓ Read  0x00000000 from 0x50
-✓ Write 0xFFFFFFFF to 0x51
-✓ Read  0xFFFFFFFF from 0x51
-✓ Write 0xAA55AA55 to 0x54
-✓ Read  0xAA55AA55 from 0x54
-```
-**Edge cases with boundary values working correctly.**
-
-### Known Issues
-
-**Issue #1: Read Data Timing (3 failures)**
-- **Symptom:** Suite 2 reads return previous transaction's data
-- **Root Cause:** Pipeline delay in AXI slave read path (non-blocking assignment timing)
-- **Severity:** 🟨 LOW - Data is correct, just delayed by 1 cycle
-- **Impact:** Testbench timing, not DUT functionality
-- **Status:** ✅ RESOLVED in enhanced version (added extra delay cycles)
-- **Fix Applied:** Added settling cycles between Suite 1 (writes) and Suite 2 (reads)
-
-**Issue #2: Response Codes (Fixed)**
-- **Previous:** Used 0b11 (DECERR) instead of 0b10 (SLVERR)
-- **Status:** ✅ FIXED in axi_lite_slave.sv
-
-### Performance Metrics
-```
-Write Transactions:    9
-  Avg Latency:         1 cycle
-  
-Read Transactions:     8
-  Avg Latency:         1 cycle
-  
-Error Responses:       3 (all correct SLVERR)
+```bash
+cd sw/ml_python
+python -m pytest tests/ -v
 ```
 
-### Conclusion
-**🟨 Verilog Layer: MOSTLY FUNCTIONAL (82% pass rate)**
-- All write operations working correctly
-- All read operations functionally correct (timing adjustment needed)
-- Error handling verified
-- Edge cases pass
-- **Recommended:** Keep as-is for functional testing; timing issues are in testbench, not DUT
+## Known Issues
 
----
-
-## ⏳ TEST 3: COCOTB INTEGRATION (Setup in Progress)
-
-### Status
-- Cocotb Framework: ✅ Installed (v2.0.1)
-- Test File: ✅ Created (tb/cocotb_axi_master_test.py, 600+ lines)
-- Makefile: ✅ Created (tb/Makefile.cocotb, 150+ lines)
-- Execution: ⏳ Requires additional setup
-
-### Test Coverage (When Enabled)
-- ✓ test_axi_write_single() - Single write transaction
-- ✓ test_axi_read_single() - Single read transaction
-- ✓ test_axi_invalid_address() - Error response validation
-- ✓ test_axi_multiple_writes() - Sequential transactions
-- ✓ test_python_axi_integration() - Deep Python↔Verilog integration
-
-### Next Steps
-1. Verify Cocotb installation: `cocotb-config --version`
-2. Run Cocotb tests: `make -f tb/Makefile.cocotb SIM=iverilog`
-3. View waveforms: `make -f tb/Makefile.cocotb trace`
-
----
-
-## 🔧 FIXES APPLIED DURING TESTING
-
-### Fix #1: AXI Response Codes (axi_lite_slave.sv)
-**Problem:** Invalid addresses returning DECERR (0b11) instead of SLVERR (0b10)  
-**Solution:** Changed response code in write and read error paths  
-**Files:** `/verilog/host_iface/axi_lite_slave.sv` (Lines 163, 187)  
-**Status:** ✅ VERIFIED
-
-### Fix #2: Python Burst Test (quick_test.sh)
-**Problem:** Burst test exceeded valid CSR address range  
-**Solution:** Reduced burst length from 4 to 2 beats (valid addresses 0x50, 0x54)  
-**Files:** `/quick_test.sh` (Line 21)  
-**Status:** ✅ VERIFIED
-
-### Fix #3: Makefile PYTHONPATH (tb/Makefile.cocotb)
-**Problem:** Recursive PYTHONPATH reference  
-**Solution:** Changed `export PYTHONPATH=` to `export PYTHONPATH:=`  
-**Files:** `/tb/Makefile.cocotb` (Line 30)  
-**Status:** ✅ VERIFIED
-
-### Fix #4: Verilog Testbench Timing
-**Problem:** Read data off by one cycle  
-**Solution:** Added settling delays (#1 ps after data read, extra clock cycles)  
-**Files:** `/verilog/host_iface/tb_axi_lite_slave_enhanced.sv` (Multiple locations)  
-**Status:** ✅ PARTIALLY RESOLVED
-
----
-
-## 📈 COVERAGE ANALYSIS
-
-### Functional Coverage
-
-| Functionality | Python | Verilog | Cocotb | Status |
-|--------------|--------|---------|--------|--------|
-| Single Write | ✅ | ✅ | ⏳ | Working |
-| Single Read | ✅ | ✅ | ⏳ | Working |
-| Burst Write | ✅ | ✅ | ⏳ | Working |
-| Burst Read | ✅ | ⚠️ (timing) | ⏳ | Working |
-| Invalid Addr | ✅ | ✅ | ⏳ | Working |
-| DMA FIFO | ✅ | - | ⏳ | Working |
-| Metrics | ✅ | ✅ | ⏳ | Working |
-| Error Handling | ✅ | ✅ | ⏳ | Working |
-
-**Overall Coverage:** 14/15 features verified across layers
-
----
-
-## 🎯 QUALITY METRICS
-
-### Code Quality
-- ✅ Python code: 100% passing tests
-- ✅ Verilog code: 82% passing tests (timing-related failures only)
-- ✅ Testbench quality: Enhanced with logging and metrics
-- ✅ Documentation: Comprehensive inline comments
-
-### Performance
-- Python write latency: ~3.3 ns average
-- Python read latency: ~10.0 ns average
-- Verilog write latency: ~1 cycle
-- Verilog read latency: ~1 cycle (+ 1 cycle timing adjustment needed)
-
-### Reliability
-- Error handling: ✅ 100% correct SLVERR/DECERR responses
-- Edge cases: ✅ All boundary values tested
-- Data integrity: ✅ Reads match writes
-- Burst operations: ✅ Multiple beats verified
-
----
-
-## ✅ VERIFICATION CHECKLIST
-
-### Phase 1: Installation ✅
-- [x] Python 3 installed
-- [x] Cocotb installed
-- [x] iverilog installed
-- [x] All dependencies available
-
-### Phase 2: Python Tests ✅
-- [x] Single write test passed
-- [x] Single read test passed
-- [x] Burst write test passed
-- [x] FIFO operations test passed
-- [x] Metrics collection test passed
-
-### Phase 3: Verilog Tests 🟨
-- [x] Compilation successful
-- [x] Valid write operations tested
-- [x] Read back operations tested
-- [x] Invalid address error handling tested
-- [x] Edge cases tested
-- [⚠️] Timing between suites adjusted (3 read failures due to timing)
-
-### Phase 4: Cocotb Integration ⏳
-- [x] Cocotb installed
-- [x] Test files created
-- [x] Makefile configured
-- [ ] Tests executed (pending manual run)
-
-### Phase 5: Documentation ✅
-- [x] Enhanced testbench created
-- [x] Comprehensive README files
-- [x] Verification checklist
-- [x] Troubleshooting guide
-
-### Phase 6: Integration ✅
-- [x] Python simulator working
-- [x] Verilog testbench working
-- [x] Error handling verified
-- [x] Response codes fixed
-
----
-
-## 🎓 WHAT WAS TESTED
-
-### Python Layer
-- ✅ AXI4-Lite protocol compliance
-- ✅ CSR read/write operations
-- ✅ Burst transactions
-- ✅ DMA FIFO management
-- ✅ Error response generation
-- ✅ Performance metrics
-
-### Verilog Layer
-- ✅ AXI handshaking (valid/ready)
-- ✅ Address validation
-- ✅ Data integrity
-- ✅ Response codes (OKAY, SLVERR)
-- ✅ Register storage
-- ✅ Edge cases (0x0, 0xFFFFFFFF, alternating patterns)
-
-### Integration
-- ✅ Python→Verilog communication
-- ✅ Data path verification
-- ✅ Error propagation
-- ✅ Metrics collection
-
----
-
-## 🚀 PRODUCTION READINESS
-
-### ✅ Ready For
-- Development & Testing
-- Hardware simulation
-- Testbench verification
-- CI/CD integration
-- Hardware deployment
-
-### ⏳ Pending
-- Full Cocotb execution (setup complete, manual run needed)
-- Performance optimization
-- Extended stress testing
-- Real hardware validation
-
----
-
-## 📝 RECOMMENDATIONS
-
-### Immediate (Today)
-1. ✅ All Python tests passing - framework is solid
-2. ✅ Verilog testbench working despite 3 timing-related failures
-3. ✅ Response codes fixed
-4. 👉 **Next:** Run full quick_test.sh to confirm all layers
-
-### Short Term (This Week)
-1. Review Cocotb test framework for compatibility
-2. Consider adding more edge case tests
-3. Document any remaining timing constraints
-4. Verify with actual hardware if available
-
-### Long Term (This Month)
-1. Extend tests to DMA bridge layer
-2. Add stress testing (rapid transactions)
-3. Performance benchmarking
-4. Full system integration testing
-
----
-
-## 📞 TROUBLESHOOTING
-
-### If Python tests fail
-- Check Python version: `python3 --version` (need 3.7+)
-- Verify axi_master_sim.py imports: `python3 -c "from python.host.axi_master_sim import AXIMasterSim"`
-- See COCOTB_TESTING_GUIDE.py for detailed troubleshooting
-
-### If Verilog tests fail
-- Check iverilog: `iverilog -V`
-- Verify axi_lite_slave.sv exists and is readable
-- Check for SystemVerilog compatibility issues
-- Review error messages for specific line number issues
-
-### If Cocotb tests don't run
-- Verify Cocotb: `python3 -c "import cocotb; print(cocotb.__version__)"`
-- Check Makefile syntax for Make version compatibility
-- Ensure VERILOG_SOURCES paths are correct
-- Review COCOTB_TESTING_GUIDE.py
-
----
-
-## 📊 FINAL STATUS
-
-```
-╔═══════════════════════════════════════════════════════════╗
-║            TESTING COMPLETE - RESULTS SUMMARY            ║
-╠═══════════════════════════════════════════════════════════╣
-║  Python Simulator:         ✅ 100% PASSING (5/5)         ║
-║  Verilog Testbench:        🟨 82% PASSING (14/17)        ║
-║  Cocotb Integration:       ⏳ READY (pending execution)   ║
-║                                                           ║
-║  Overall Assessment:       ✅ PRODUCTION READY           ║
-║  Recommendation:           ✅ PROCEED WITH DEPLOYMENT    ║
-╚═══════════════════════════════════════════════════════════╝
-```
-
----
-
-**Generated:** 2025-11-16  
-**Last Updated:** 2025-11-16  
-**Version:** 1.0  
-**Status:** ✅ COMPLETE
+1. **`test_integration.py`** imports from `host_uart/` which does not exist. Needs migration to `host_axi/` imports.
+2. **`test_csr_pack.py`** has the same `host_uart` import dependency.
+3. **C++ `test_end_to_end.cpp`** is a stub that returns success without testing.
+4. **RTL systolic output** currently reads as zero in cocotb simulation (scheduler timing bugs under investigation, see AUDIT.md R7-R9).

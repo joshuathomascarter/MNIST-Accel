@@ -1,36 +1,35 @@
-# ACCEL-v1 Hardware Architecture
+# ACCEL-v1 Hardware Design
 
-> 14×14 Weight-Stationary Systolic Array with BSR Sparse Acceleration (PYNQ-Z2)
+> 14×14 Weight-Stationary Systolic Array — BSR Sparse Acceleration — Zynq-7020
 
 ---
 
-## 📐 System Architecture
+## System Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              ZYNQ ULTRASCALE+ / Z7020                       │
+│                              Zynq Z7020 (PL)                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  ┌──────────────┐     ┌─────────────────────────────────────────────────┐   │
 │  │              │     │                 ACCEL-v1 (PL)                   │   │
 │  │   ARM PS     │     │  ┌───────────┐  ┌───────────┐  ┌────────────┐  │   │
 │  │              │     │  │           │  │           │  │            │  │   │
-│  │  ┌────────┐  │ AXI │  │  BSR DMA  │─▶│  Weight   │─▶│  16×16     │  │   │
-│  │  │ Linux  │  │ HP  │  │  Engine   │  │  Buffer   │  │  14×14     │  │   │
-│  │  │ Driver │◀─┼─────┼─▶│           │  │  (BRAM)   │  │  Systolic  │  │   │
-│  │  └────────┘  │     │  └───────────┘  └───────────┘  │  Array     │  │   │
-│  │              │     │                                 │            │  │   │
-│  │  ┌────────┐  │ AXI │  ┌───────────┐  ┌───────────┐  │   ┌────┐   │  │   │
-│  │  │ Python │  │Lite │  │    CSR    │  │Activation │─▶│   │ PE │×  │  │   │
-│  │  │ PYNQ   │◀─┼─────┼─▶│  Control  │  │  Buffer   │  │   └────┘   │  │   │
-│  │  └────────┘  │     │  │           │  │  (BRAM)   │  │    196     │  │   │
-│  │  └────────┘  │     │  │           │  │  (BRAM)   │  │            │──┼───┼──▶ Output
+│  │  ┌────────┐  │ AXI │  │  BSR DMA  │─▶│  Weight   │─▶│  14×14     │  │   │
+│  │  │ Linux  │  │ HP  │  │  Engine   │  │  Buffer   │  │  Systolic  │  │   │
+│  │  │ Driver │◀─┼─────┼─▶│           │  │  (BRAM)   │  │  Array     │  │   │
+│  │  └────────┘  │     │  └───────────┘  └───────────┘  │            │  │   │
+│  │              │     │                                 │  196 PEs   │  │   │
+│  │  ┌────────┐  │ AXI │  ┌───────────┐  ┌───────────┐  │  INT8 MAC  │  │   │
+│  │  │ Python │  │Lite │  │    CSR    │  │Activation │─▶│            │  │   │
+│  │  │ PYNQ   │◀─┼─────┼─▶│  Control  │  │  Buffer   │  │            │  │   │
+│  │  └────────┘  │     │  │           │  │  (BRAM)   │  │            │──┼───┼─▶ Output
 │  │              │     │  └───────────┘  └───────────┘  └────────────┘  │   │
 │  └──────────────┘     │                                                 │   │
 │                       │  ┌───────────┐  ┌───────────────────────────┐  │   │
-│        DDR4           │  │   BSR     │  │    Output Accumulator     │  │   │
-│   ┌─────────────┐     │  │ Scheduler │  │    + ReLU + Quantize      │  │   │
-│   │ Weights     │     │  │           │  │                           │  │   │
-│   │ Activations │◀────┼──│           │◀─│    (INT32 → INT8)         │  │   │
+│        DDR3           │  │   BSR     │  │    Output Accumulator     │  │   │
+│   ┌─────────────┐     │  │ Scheduler │  │    + ReLU + Requantize    │  │   │
+│   │ Weights     │     │  │           │  │    (INT32 → INT8)         │  │   │
+│   │ Activations │◀────┼──│           │◀─│                           │  │   │
 │   │ Results     │     │  └───────────┘  └───────────────────────────┘  │   │
 │   └─────────────┘     └─────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -38,7 +37,7 @@
 
 ---
 
-## 🔲 14×14 Systolic Array (Weight-Stationary)
+## Systolic Array (14×14, Weight-Stationary)
 
 ```
                     Activations (broadcast down columns)
@@ -56,11 +55,6 @@
     └────┘    │PE   │PE   │PE   │PE   │ ... │PE   │───▶ psum[1]
               │1,0  │1,1  │1,2  │1,3  │     │1,13 │
               └──┬──┴──┬──┴──┬──┴──┬──┴─────┴──┬──┘
-    ┌────┐       ↓     ↓     ↓     ↓           ↓
-    │w[2]│───▶┌─────┬─────┬─────┬─────┬─────┬─────┐
-    └────┘    │PE   │PE   │PE   │PE   │ ... │PE   │───▶ psum[2]
-              │2,0  │2,1  │2,2  │2,3  │     │2,13 │
-              └─────┴─────┴─────┴─────┴─────┴─────┘
                  :     :     :     :           :
     ┌────┐       ↓     ↓     ↓     ↓           ↓
     │w[13]│──▶┌─────┬─────┬─────┬─────┬─────┬─────┐
@@ -68,33 +62,29 @@
               │13,0 │13,1 │13,2 │13,3 │     │13,13│
               └─────┴─────┴─────┴─────┴─────┴─────┘
 
-    Weight      Each PE:                      Partial sums
-    rows        • Stores 1 weight (INT8)      accumulate
-    (14)        • MAC: acc += w × a           horizontally
-                • Passes activation down      (INT32)
+   Each PE: stores 1 weight (INT8), acc += w × a (INT8×INT8→INT32)
+   Activations propagate down, partial sums accumulate right.
 ```
 
-### Dataflow: Weight-Stationary
+### Dataflow Timing
 
-1. **Load Phase**: Weights loaded into PEs (stay fixed for entire tile)
-2. **Compute Phase**: Activations stream through, MACs accumulate
-3. **Drain Phase**: Partial sums collected from right edge
+1. **Load phase** — Weights loaded systolically into PEs (14 cycles)
+2. **Compute phase** — Activations stream through, MACs accumulate
+3. **Drain phase** — Partial sums collected from right edge
 
 ```
 Cycle:    1    2    3    4    5    ...   K+13
-         ┌────────────────────────────────────┐
-Row 0:   │ a0   a1   a2   a3   ...   aK-1     │ → psum[0] complete
-Row 1:   │      a0   a1   a2   ...   aK-2     │ → psum[1] complete  
-Row 2:   │           a0   a1   ...   aK-3     │ → psum[2] complete
+Row 0:   │ a0   a1   a2   a3   ...   aK-1     │  → psum[0]
+Row 1:   │      a0   a1   a2   ...   aK-2     │  → psum[1]
+Row 2:   │           a0   a1   ...   aK-3     │  → psum[2]
   :      │                                    │
-Row 13:  │                          a0   ...  │ → psum[13] complete
-         └────────────────────────────────────┘
+Row 13:  │                          a0   ...  │  → psum[13]
           ◄──── K cycles + 13 skew cycles ────►
 ```
 
 ---
 
-## 🧮 Processing Element (PE) Architecture
+## Processing Element
 
 ```
                     ┌─────────────────────────────────┐
@@ -115,344 +105,170 @@ Row 13:  │                          a0   ...  │ → psum[13] complete
                     │                                 │
                     └─────────────────────────────────┘
 
-    Timing: 1 cycle latency (fully pipelined)
-    Power:  ~0.5 mW per PE @ 200 MHz (estimated)
+    Latency: 1 cycle (fully pipelined)
+    MAC unit: mac8.sv with zero-value bypass and operand isolation
 ```
 
 ---
 
-## 📦 BSR (Block Sparse Row) Format
+## BSR Sparse Format
 
-The accelerator skips zero blocks entirely, saving compute and memory bandwidth.
+The BSR scheduler skips zero-weight blocks entirely. Metadata (row pointers + column indices) is stored in BRAM and read by the hardware FSM to determine which blocks to load.
 
 ### Memory Layout
 
 ```
-Dense Matrix (64×64, ~70% block-sparse):        BSR Format:
-┌────┬────┬────┬────┐                           
-│████│    │████│    │  Block Row 0              Header (12 bytes):
-│████│    │████│    │  (2 non-zero blocks)      ┌──────────────────┐
-├────┼────┼────┼────┤                           │ nnz_blocks: 5    │ uint32
-│    │████│    │    │  Block Row 1              │ num_blk_rows: 4  │ uint32
-│    │████│    │    │  (1 non-zero block)       │ num_blk_cols: 4  │ uint32
-├────┼────┼────┼────┤                           └──────────────────┘
-│████│    │    │████│  Block Row 2              
-│████│    │    │████│  (2 non-zero blocks)      row_ptr[5] (10 bytes):
-├────┼────┼────┼────┤                           ┌─────────────────────────────┐
-│    │    │    │    │  Block Row 3              │ 0 │ 2 │ 3 │ 5 │ 5 │        │
-│    │    │    │    │  (0 non-zero blocks)      └─────────────────────────────┘
-└────┴────┴────┴────┘                            ↑   ↑   ↑   ↑   ↑
-                                                 │   │   │   │   └─ end (row 3)
-Each block: 14×14 = 196 INT8 values              │   │   │   └─ start row 3
-                                                 │   │   └─ start row 2
-                                                 │   └─ start row 1
-                                                 └─ start row 0 (always 0)
+Dense Matrix (example, 70% block-sparse):       BSR Encoding:
 
-                                                col_idx[5] (10 bytes):
-                                                ┌───────────────────────────┐
-                                                │ 0 │ 2 │ 1 │ 0 │ 3 │       │
-                                                └───────────────────────────┘
-                                                  ↑   ↑   ↑   ↑   ↑
-                                                  │   │   │   └───┴─ row 2 blocks
-                                                  │   │   └─ row 1 block
-                                                  └───┴─ row 0 blocks
+┌────┬────┬────┬────┐                           row_ptr[]:  [0, 2, 3, 5, 5]
+│████│    │████│    │  Row 0: 2 non-zero         col_idx[]:  [0, 2, 1, 0, 3]
+├────┼────┼────┼────┤                           data[]:     [Block(0,0), Block(0,2),
+│    │████│    │    │  Row 1: 1 non-zero                     Block(1,1), Block(2,0),
+├────┼────┼────┼────┤                                        Block(2,3)]
+│████│    │    │████│  Row 2: 2 non-zero
+├────┼────┼────┼────┤                           Each block: 14×14 = 196 INT8 values
+│    │    │    │    │  Row 3: 0 non-zero
+└────┴────┴────┴────┘
 
-                                                data[5 × 256] (1280 bytes):
-                                                ┌─────────────────────────────┐
-                                                │ Block(0,0) │ Block(0,2) │  │
-                                                │ Block(1,1) │ Block(2,0) │  │
-                                                │ Block(2,3) │            │  │
-                                                └─────────────────────────────┘
+Sparsity savings:  70% sparse → 3.3× fewer blocks → 3.3× less compute
+                   90% sparse → 10× fewer blocks  → ~9× effective speedup
 ```
-
-### Sparsity Savings
-
-| Sparsity | Dense Blocks | NNZ Blocks | Compute Savings |
-|----------|-------------|------------|-----------------|
-| 0%       | 16          | 16         | 0%              |
-| 50%      | 16          | 8          | 50%             |
-| 70%      | 16          | 5          | 69%             |
-| 90%      | 16          | 2          | 88%             |
 
 ---
 
-## 🔌 AXI Interface Connections
+## AXI Interface
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           ACCEL_TOP                                     │
-│                                                                         │
-│   AXI4-Lite Slave (Control)              AXI4 Master (Data)             │
-│   ┌─────────────────────────┐            ┌─────────────────────────┐   │
-│   │ Address   Register      │            │ Channel    Purpose      │   │
-│   ├─────────────────────────┤            ├─────────────────────────┤   │
-│   │ 0x00      CTRL          │            │ AR/R       Read weights │   │
-│   │ 0x04      STATUS        │            │            Read acts    │   │
-│   │ 0x08      BSR_ADDR_LO   │            │                         │   │
-│   │ 0x0C      BSR_ADDR_HI   │            │ AW/W       Write output │   │
-│   │ 0x10      ACT_ADDR_LO   │            │                         │   │
-│   │ 0x14      ACT_ADDR_HI   │            │ Burst      Up to 256B   │   │
-│   │ 0x18      OUT_ADDR_LO   │            │ Width      64-bit       │   │
-│   │ 0x1C      OUT_ADDR_HI   │            └─────────────────────────┘   │
-│   │ 0x20      TILE_CONFIG   │                                          │
-│   │ 0x24      IRQ_ENABLE    │            AXI Stream (optional debug)   │
-│   │ 0x28      IRQ_STATUS    │            ┌─────────────────────────┐   │
-│   │ 0x2C      PERF_CYCLES   │            │ TDATA      256 bits     │   │
-│   │ 0x30      PERF_STALLS   │            │ TVALID/TREADY           │   │
-│   └─────────────────────────┘            └─────────────────────────┘   │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### CSR Register Map
+### CSR Register Map (AXI4-Lite)
 
 | Offset | Name | R/W | Description |
 |--------|------|-----|-------------|
 | 0x00 | CTRL | RW | `[0]` START, `[1]` RESET, `[2]` IRQ_EN |
 | 0x04 | STATUS | RO | `[0]` BUSY, `[1]` DONE, `[2]` ERROR |
-| 0x08 | BSR_ADDR | RW | DDR address of BSR weight data |
-| 0x10 | ACT_ADDR | RW | DDR address of activation data |
-| 0x18 | OUT_ADDR | RW | DDR address for output results |
+| 0x08 | BSR_ADDR | RW | DDR base address for BSR weight data |
+| 0x10 | ACT_ADDR | RW | DDR base address for activation data |
+| 0x18 | OUT_ADDR | RW | DDR base address for output results |
 | 0x20 | TILE_CFG | RW | `[15:0]` M, `[31:16]` N, `[47:32]` K |
 | 0x2C | CYCLES | RO | Performance counter: total cycles |
 | 0x30 | STALLS | RO | Performance counter: stall cycles |
 
----
+### AXI4 Data Interface
 
-## 🎯 Zynq Z2 (PYNQ-Z2) Deployment
-
-### Target: Xilinx XC7Z020-1CLG400C
-
-#### Resource Utilization Estimates
-
-| Resource | Used | Available | Utilization |
-|----------|------|-----------|-------------|
-| LUTs     | ~16K | 53,200    | 30%         |
-| FFs      | ~10K | 106,400   | 9%          |
-| BRAM     | 56   | 140       | 40%         |
-| DSP48    | 196  | 220       | 89% ✅      |
-
-> ✅ **14×14 Array**: 196 DSPs fits perfectly in Z7020's 220 DSPs (89% utilization)
-
-### Implemented: 14×14 Array for Z7020/PYNQ-Z2
-
-```
-parameter N_ROWS = 14;  // 14×14 = 196 PEs
-parameter N_COLS = 14;  // Fits in 196 DSPs (89% of Z7020)
-```
-
-### Vivado Project Setup
-
-```bash
-# 1. Create project
-vivado -mode batch -source scripts/create_project.tcl
-
-# 2. Or manually:
-cd hw/rtl
-vivado &
-
-# In Vivado GUI:
-# - Create Project → RTL Project
-# - Add sources: rtl/**/*.sv
-# - Add constraints: constraints/pynq_z2.xdc
-# - Set top: accel_top
-```
-
-### Block Design (Recommended)
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Vivado Block Design                          │
-│                                                                 │
-│  ┌──────────────┐      ┌──────────────┐     ┌──────────────┐   │
-│  │   ZYNQ PS    │      │  AXI Inter-  │     │  accel_top   │   │
-│  │              │      │  connect     │     │  (Your IP)   │   │
-│  │  M_AXI_HPM0 ─┼─────▶│              │────▶│  S_AXI_LITE  │   │
-│  │              │      │              │     │              │   │
-│  │  S_AXI_HP0 ◀─┼──────│              │◀────│  M_AXI       │   │
-│  │              │      └──────────────┘     │              │   │
-│  │  FCLK_CLK0  ─┼──────────────────────────▶│  clk         │   │
-│  │  (100 MHz)   │                           │              │   │
-│  └──────────────┘                           └──────────────┘   │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Pin Constraints (pynq_z2.xdc)
-
-```tcl
-# Clock (directly from PS, no external pin needed)
-# LEDs for debug
-set_property PACKAGE_PIN R14 [get_ports {debug_led[0]}]
-set_property PACKAGE_PIN P14 [get_ports {debug_led[1]}]
-set_property PACKAGE_PIN N16 [get_ports {debug_led[2]}]
-set_property PACKAGE_PIN M14 [get_ports {debug_led[3]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {debug_led[*]}]
-
-# Buttons for manual control (optional)
-set_property PACKAGE_PIN D19 [get_ports btn0]
-set_property PACKAGE_PIN D20 [get_ports btn1]
-set_property IOSTANDARD LVCMOS33 [get_ports btn*]
-```
-
-### PYNQ Python Driver
-
-```python
-from pynq import Overlay, allocate
-import numpy as np
-
-class AccelDriver:
-    """PYNQ driver for ACCEL-v1 sparse accelerator."""
-    
-    # CSR offsets
-    CTRL = 0x00
-    STATUS = 0x04
-    BSR_ADDR = 0x08
-    ACT_ADDR = 0x10
-    OUT_ADDR = 0x18
-    TILE_CFG = 0x20
-    
-    def __init__(self, bitstream="accel_top.bit"):
-        self.ol = Overlay(bitstream)
-        self.accel = self.ol.accel_top_0
-        self.dma = self.ol.axi_dma_0
-        
-    def run_gemm(self, weights_bsr: bytes, activations: np.ndarray) -> np.ndarray:
-        """Run sparse GEMM on hardware."""
-        M, K = activations.shape
-        # ... allocate buffers, configure CSRs, start, wait ...
-        
-    def wait_done(self, timeout_ms=1000):
-        """Poll STATUS register until DONE bit set."""
-        import time
-        start = time.time()
-        while (time.time() - start) * 1000 < timeout_ms:
-            status = self.accel.read(self.STATUS)
-            if status & 0x2:  # DONE bit
-                return True
-            time.sleep(0.001)
-        raise TimeoutError("Accelerator timeout")
-```
-
-### Build and Deploy
-
-```bash
-# 1. Synthesize and implement
-cd vivado_project
-vivado -mode batch -source build.tcl
-
-# 2. Generate bitstream
-# (Done by build.tcl, or: Flow → Generate Bitstream)
-
-# 3. Copy to PYNQ board
-scp accel_top.bit xilinx@pynq:/home/xilinx/
-
-# 4. On PYNQ board
-python3
->>> from accel_driver import AccelDriver
->>> accel = AccelDriver("accel_top.bit")
->>> accel.run_gemm(weights, activations)
-```
+- 64-bit data width, burst transfers up to 256B
+- Read channel: weight and activation DMA from DDR
+- Write channel: output results back to DDR
 
 ---
 
-## 📁 RTL File Structure
+## RTL Module Hierarchy
 
 ```
 hw/rtl/
 ├── top/
-│   ├── accel_top.sv           # Top-level with AXI interfaces
-│   └── accel_top_dual_clk.sv  # Optional dual-clock version
+│   ├── accel_top.sv                 # Top-level integration
+│   └── accel_top_dual_clk.sv       # Dual-clock wrapper (50/200 MHz)
 ├── systolic/
-│   ├── systolic_array.sv      # 16×16 PE array
-│   └── pe.sv                  # Single processing element
+│   ├── pe.sv                        # Processing element
+│   ├── systolic_array.sv           # Dense systolic array
+│   └── systolic_array_sparse.sv    # Sparse-aware array (BSR)
 ├── mac/
-│   └── mac8.sv                # INT8 MAC unit
+│   └── mac8.sv                      # INT8 MAC with zero-bypass
 ├── buffer/
-│   ├── act_buffer.sv          # Double-buffered activations
-│   ├── wgt_buffer.sv          # Weight BRAM
-│   └── output_accumulator.sv  # Output collection + ReLU
+│   ├── act_buffer.sv                # Double-buffered activation BRAM
+│   ├── wgt_buffer.sv               # Weight BRAM
+│   └── output_accumulator.sv       # INT32 accumulation + requantize
 ├── dma/
-│   ├── bsr_dma.sv             # BSR weight loader (AXI master)
-│   └── act_dma.sv             # Activation streamer
+│   ├── act_dma.sv                   # Activation DMA (AXI4 master)
+│   ├── bsr_dma.sv                   # BSR metadata + weight loader
+│   ├── out_dma.sv                   # Output DMA
+│   └── dma_pack_112.sv             # 64-bit → 112-bit data packing
 ├── control/
-│   ├── csr.sv                 # Control/Status registers
-│   ├── scheduler.sv           # Dense tile scheduler
-│   └── bsr_scheduler.sv       # Sparse block scheduler
-└── host_iface/
-    ├── axi_lite_slave.sv      # AXI-Lite for CSRs
-    └── axi_dma_bridge.sv      # AXI4 master wrapper
+│   ├── csr.sv                       # Control/status registers
+│   ├── bsr_scheduler.sv            # Sparse block scheduler FSM
+│   ├── pulse_sync.sv               # CDC pulse synchronizer
+│   └── sync_2ff.sv                  # 2-FF synchronizer
+├── host_iface/
+│   ├── axi_lite_slave.sv           # AXI4-Lite CSR interface
+│   └── axi_dma_bridge.sv          # AXI4 DMA arbiter
+└── monitor/
+    └── perf.sv                      # Performance counters
 ```
 
 ---
 
-## 🧪 Simulation
+## Resource Estimates (XC7Z020)
 
-### Verilator (Fast)
+| Resource | Estimated | Available | Utilization |
+|----------|-----------|-----------|-------------|
+| LUTs | ~18,000 | 53,200 | 34% |
+| FFs | ~12,000 | 106,400 | 11% |
+| BRAM (36 Kb) | 64 | 140 | 46% |
+| DSP48E1 | 196 | 220 | 89% |
+
+---
+
+## Simulation
+
+### Verilator
 
 ```bash
 cd hw/sim
-make -f Makefile.verilator test_systolic_array
-./build/Vsystolic_array
+make
 ```
 
-### Icarus Verilog
-
-```bash
-cd hw/sim/sv
-iverilog -g2012 -o systolic_tb.vvp \
-    systolic_tb.sv \
-    ../../rtl/systolic/*.sv \
-    ../../rtl/mac/*.sv
-vvp systolic_tb.vvp
-```
-
-### Cocotb (Python testbench)
+### Cocotb
 
 ```bash
 cd hw/sim/cocotb
-make SIM=verilator
+make
 ```
+
+### SystemVerilog Testbenches
+
+| Testbench | Module Under Test |
+|-----------|-------------------|
+| `accel_top_tb.sv` | Full integration |
+| `accel_top_tb_full.sv` | Extended integration |
+| `systolic_tb.sv` | Systolic array |
+| `pe_tb.sv` | Single PE |
+| `bsr_dma_tb.sv` | BSR DMA transfers |
+| `output_accumulator_tb.sv` | Accumulator + requantize |
+| `perf_tb.sv` | Performance counters |
+| `integration_tb.sv` | Multi-module integration |
+| `meta_decode_tb.sv` | Metadata decoder |
+| `tb_axi_lite_slave_enhanced.sv` | AXI-Lite CSR |
 
 ---
 
-## 📊 Performance Estimates
+## FPGA Deployment (PYNQ-Z2)
 
-### MNIST CNN Inference
+### Synthesis
 
-| Layer | M | N | K | Tile-ops (Dense) | Tile-ops (70% Sparse) | Cycles |
-|-------|---|---|---|------------------|----------------------|--------|
-| conv1 | 676 | 32 | 9 | 147 | 44 | 750 |
-| conv2 | 576 | 64 | 288 | 4,410 | 1,323 | 22.5K |
-| fc1 | 1 | 128 | 9216 | 6,590 | 1,977 | 33.6K |
-| fc2 | 1 | 10 | 128 | 10 | 3 | 51 |
-
-**Total: ~57K cycles @ 200 MHz = ~0.28 ms/image (70% sparse)**
-
----
-
-## 🔧 Customization
-
-### Changing Array Size
-
-Edit `rtl/systolic/systolic_array.sv`:
-```systemverilog
-module systolic_array #(
-    parameter N_ROWS = 16,  // Change to 14 for Z7020
-    parameter N_COLS = 16,  // Change to 14 for Z7020
-    // ...
-)
+```bash
+vivado -mode batch -source tools/synthesize_vivado.tcl
 ```
 
-### Changing Block Size
+### Block Design
 
-Edit `rtl/control/bsr_scheduler.sv`:
-```systemverilog
-localparam BLOCK_SIZE = 16;  // Must match N_ROWS/N_COLS
+```
+┌─────────────────────────────────────────────────────┐
+│  ┌──────────┐     ┌──────────────┐   ┌───────────┐  │
+│  │ ZYNQ PS  │     │ AXI Intercon │   │ accel_top │  │
+│  │ M_AXI_HP ─┼────▶│              │──▶│ S_AXI_LITE│  │
+│  │ S_AXI_HP ◀┼─────│              │◀──│ M_AXI     │  │
+│  │ FCLK_CLK ─┼─────────────────────▶│ clk       │  │
+│  └──────────┘     └──────────────┘   └───────────┘  │
+└─────────────────────────────────────────────────────┘
 ```
 
-And update C++ packer:
-```cpp
-// hw/sim/cpp/include/bsr_packer.hpp
-constexpr std::size_t BSR_BLOCK_SIZE = 16;  // Keep in sync
+### Deploy
+
+```bash
+scp build/accel_top.bit xilinx@pynq:/home/xilinx/
+
+# On the board:
+python3 -c "
+from pynq import Overlay
+ol = Overlay('accel_top.bit')
+print('Accelerator loaded')
+"
 ```

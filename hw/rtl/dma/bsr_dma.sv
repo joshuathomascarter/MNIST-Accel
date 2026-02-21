@@ -316,7 +316,9 @@ module bsr_dma #(
                 // Last beat per block: 4 valid + 4 padding bytes.
 
                 SETUP_WEIGHTS: begin
-                    words_remaining <= total_blocks * 25;
+                    // Force to LUT fabric — not performance-critical, saves 1-2 DSPs
+                    // total_blocks * 25 = total_blocks * (16 + 8 + 1)
+                    words_remaining <= (total_blocks << 4) + (total_blocks << 3) + total_blocks;
                     wgt_addr        <= 0;
                     state           <= READ_WEIGHTS;
                 end

@@ -58,7 +58,8 @@ module pe #(
         .acc    (acc)
     );
 
-    // Simulation-only assertions
+    // Simulation-only assertions (skipped during synthesis)
+`ifndef SYNTHESIS
     /* verilator lint_off SYNCASYNCNET */
     property p_no_load_and_compute;
         @(posedge clk) disable iff (!rst_n) (load_weight |-> !en);
@@ -72,6 +73,7 @@ module pe #(
     endproperty
     // cover property (p_clear_works);
     /* verilator lint_on SYNCASYNCNET */
+`endif
 
 endmodule
 `default_nettype wire

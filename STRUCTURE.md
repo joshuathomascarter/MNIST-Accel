@@ -1,204 +1,69 @@
-# ACCEL-v1 Project Structure
-
-This document describes the organization of the ACCEL-v1 sparse CNN accelerator project.
-
-## Directory Layout
+# Project Structure
 
 ```
-ResNet-Accel/
-├── hw/                           # Hardware Design & Verification
-│   ├── rtl/                       # Register Transfer Level (RTL)
-│   │   ├── buffer/                # FIFO, accumulator buffers
-│   │   ├── control/               # Control path, scheduler, CSR
-│   │   ├── dma/                   # DMA engines (activation, weight, BSR)
-│   │   ├── host_iface/            # AXI interfaces to host
-│   │   ├── mac/                   # Multiply-Accumulate (MAC8) unit
-│   │   ├── meta/                  # Metadata decoder for sparse formats
-│   │   ├── monitor/               # Performance counters
-│   │   ├── systolic/              # Systolic array (PE grid)
-│   │   └── top/                   # Top-level integration (accel_top.sv)
-│   │
-│   ├── sim/                       # Simulation & Testbenches
-│   │   ├── sv/                    # SystemVerilog testbenches
-│   │   ├── cpp/                   # C++ testbenches (Verilator)
-│   │   ├── cocotb/                # Python-based testbenches (cocotb)
-│   │   ├── Makefile               # Simulation build rules
-│   │   └── README.md              # Simulation guide
-│   │
-│   ├── impl/                      # Implementation & Synthesis
-│   │   ├── scripts/               # Vivado TCL scripts
-│   │   └── README.md              # Implementation guide
-│   │
-│   └── constraints/               # Timing & I/O Constraints
-│       └── *.xdc                  # Xilinx Design Constraint files
+ACCEL-v1/
+├── hw/                              # Hardware (RTL + Verification)
+│   ├── rtl/                         # Production SystemVerilog (21 modules)
+│   │   ├── top/                     #   accel_top.sv, accel_top_dual_clk.sv
+│   │   ├── systolic/                #   pe.sv, systolic_array.sv, systolic_array_sparse.sv
+│   │   ├── mac/                     #   mac8.sv (INT8 MAC, zero-bypass)
+│   │   ├── control/                 #   bsr_scheduler.sv, csr.sv, CDC primitives
+│   │   ├── dma/                     #   act_dma.sv, bsr_dma.sv, out_dma.sv
+│   │   ├── buffer/                  #   act_buffer.sv, wgt_buffer.sv, output_accumulator.sv
+│   │   ├── host_iface/              #   axi_lite_slave.sv, axi_dma_bridge.sv
+│   │   └── monitor/                 #   perf.sv (performance counters)
+│   ├── rtl_synth/                   # Synthesis-ready copies (stripped assertions)
+│   ├── sim/                         # Simulation
+│   │   ├── sv/                      #   SystemVerilog testbenches (10 files)
+│   │   └── cocotb/                  #   Python cocotb AXI tests
+│   └── reports/                     # Synthesis reports
 │
-├── sw/                            # Software (Drivers, Models, Tests)
-│   ├── exporters/                 # Model exporters (PyTorch → INT8)
-│   ├── golden/                    # Golden reference models
-│   ├── golden_models/             # Standalone golden models
-│   ├── host/                      # Host-side driver & benchmarks
-│   ├── host_axi/                  # AXI master simulator
-│   ├── training/                  # Training utilities
-│   ├── tests/                     # Python unit tests
-│   ├── utils/                     # Utility functions
-│   ├── INT8 quantization/         # Quantization scripts
-│   ├── MNIST CNN/                 # MNIST training example
-│   └── README.md                  # Software guide
+├── sw/                              # Software
+│   ├── cpp/                         # C++ host driver framework
+│   │   ├── include/                 #   Headers (compute, driver, memory, utils)
+│   │   ├── src/                     #   Implementation
+│   │   ├── apps/                    #   Applications (inference, benchmark)
+│   │   └── tests/                   #   Unit tests
+│   └── ml_python/                   # Python ML tooling
+│       ├── training/                #   Model training, BSR export
+│       ├── exporters/               #   Weight format converters
+│       ├── golden/                  #   Bit-exact reference models
+│       ├── golden_models/           #   Standalone golden models
+│       ├── host/                    #   PYNQ driver, AXI simulation
+│       ├── host_axi/               #   AXI CSR interface
+│       ├── demo/                    #   MNIST classification demo
+│       ├── tests/                   #   Python tests
+│       ├── INT8 quantization/       #   Post-training quantization
+│       └── MNIST CNN/               #   CNN training
 │
-├── docs/                          # Documentation
-│   ├── architecture/              # Architecture specs
-│   │   ├── ARCHITECTURE.md
-│   │   ├── HOST_RS_TILER.md
-│   │   ├── ROW_STATIONARY_DATAFLOW.md
-│   │   └── SPARSITY_FORMAT.md
-│   │
-│   ├── guides/                    # Practical guides
-│   │   ├── SIMULATION_GUIDE.md
-│   │   ├── FPGA_DEPLOYMENT.md
-│   │   ├── QUANTIZATION.md
-│   │   └── POWER_ANALYSIS.md
-│   │
-│   ├── figs/                      # Diagrams & visuals
-│   ├── project/                   # Project tracking docs
-│   ├── verification/              # Test results & checklist
-│   └── archive/                   # Deprecated docs
+├── data/                            # Model weights & datasets
+│   ├── bsr_export_14x14/           #   14×14 BSR weights (row_ptr, col_idx, blocks)
+│   ├── bsr_export/                  #   Legacy BSR export
+│   ├── int8/                        #   INT8 quantized weights + scales
+│   ├── checkpoints/                 #   FP32 training checkpoints
+│   └── MNIST/                       #   Raw MNIST dataset
 │
-├── data/                          # Datasets & Weights
-│   ├── models/                    # Pre-trained weights
-│   ├── datasets/                  # MNIST, ImageNet, etc.
-│   ├── fixtures/                  # Test fixtures
-│   ├── int8/                      # Quantized weights
-│   ├── bsr_export/                # Block-sparse weights
-│   ├── checkpoints/               # Training checkpoints
-│   └── MNIST/                     # MNIST raw data
+├── docs/                            # Documentation
+│   ├── architecture/                #   Architecture specs, dataflow, BSR format
+│   ├── guides/                      #   Simulation, deployment, quantization guides
+│   ├── verification/                #   Test results, verification checklist
+│   └── figs/                        #   Diagrams
 │
-├── tools/                         # Build Tools & Scripts
-│   ├── build/                     # Build scripts (Vivado, Verilator)
-│   ├── test/                      # Test runners
-│   ├── ci/                        # CI/CD workflows
-│   ├── run/                       # Execution scripts
-│   ├── Makefile.verilator         # Verilator simulation
-│   ├── build.sh                   # Main build script
-│   ├── test.sh                    # Test runner
-│   └── synthesize_vivado.tcl      # Vivado synthesis
+├── tools/                           # Build & CI
+│   ├── build.sh                     #   Verilator build script
+│   ├── test.sh                      #   Test runner
+│   ├── synthesize_vivado.tcl        #   Vivado synthesis
+│   └── run/                         #   Execution scripts
 │
-├── build/                         # Generated Artifacts (gitignored)
-│   ├── obj_dir/                   # Verilator output
-│   ├── vivado/                    # Vivado project
-│   └── logs/                      # Build logs
-│
-├── .github/                       # GitHub Configuration
-│   └── workflows/                 # CI/CD pipelines
-│
-├── README.md                      # Project overview
-├── STRUCTURE.md                   # This file
-├── .gitignore                     # Git ignore rules
-└── ACCEL-v1.code-workspace       # VS Code workspace config
+├── README.md                        # Project overview
+├── STRUCTURE.md                     # This file
+└── AUDIT.md                         # Internal code audit
 ```
 
-## Key Components
+## Conventions
 
-### Hardware (hw/)
-- **RTL Design**: Weight-stationary systolic array with INT8 quantization
-- **Simulation**: Testbenches in SystemVerilog, C++, and Python (cocotb)
-- **Constraints**: XDC files for timing and I/O mapping
-
-### Software (sw/)
-- **Exporters**: Convert PyTorch models to INT8 fixed-point
-- **Golden Models**: Reference implementations for verification
-- **Host Driver**: Communication with accelerator over AXI
-- **Tests**: Unit tests and integration tests
-
-### Documentation (docs/)
-- Architecture specifications
-- Design guides (quantization, sparsity, dataflow)
-- Implementation guides
-- Verification results
-
-### Data (data/)
-- Datasets (MNIST, imagenet fixtures)
-- Pre-trained weights (FP32, INT8)
-- Test fixtures for verification
-
-### Tools (tools/)
-- Build scripts for Vivado and Verilator
-- Test runners and CI/CD integration
-- Execution scripts for board deployment
-
-## Workflow
-
-### Development
-```bash
-# Simulate RTL
-cd hw/sim
-make -f Makefile.cocotb SIM=cocotb MODULE=test_systolic_array
-
-# Run Python tests
-cd sw/tests
-python -m pytest test_*.py
-
-# Build for FPGA
-cd tools
-./synthesize_vivado.tcl
-```
-
-### Deployment
-```bash
-# Build bitstream
-cd hw/impl
-vivado -mode batch -source ../../../tools/synthesize_vivado.tcl
-
-# Run on board
-cd sw/host
-python accel.py --bitstream design.bit
-```
-
-## File Naming Conventions
-
-- **RTL Files**: `*.sv` (SystemVerilog 2017+)
-- **Testbenches**: `*_tb.sv` or `*_test.py`
-- **Constraints**: `*.xdc`
-- **Python**: `*.py` (PEP 8 compliant)
-- **Build Scripts**: `Makefile`, `*.tcl`, `*.sh`
-
-## Dependencies
-
-- Verilog/SystemVerilog simulator (Vivado, Verilator, VCS)
-- Python 3.8+
-- PyTorch (for model export)
-- cocotb (for Python testbenches)
-- Vivado 2021.1+ (for FPGA implementation)
-
-## Quick Start
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/joshuathomascarter/ResNet-Accel.git
-   cd ResNet-Accel
-   ```
-
-2. **Run simulations**
-   ```bash
-   cd hw/sim
-   make -f Makefile.cocotb
-   ```
-
-3. **Export weights for hardware**
-   ```bash
-   cd sw/training
-   python export_bsr_14x14.py --from-int8
-   ```
-
-4. **Synthesize for FPGA**
-   ```bash
-   cd tools
-   ./build.sh
-   ```
-
-## Maintainers
-
-- Josh Carter (@joshuathomascarter)
-
-## License
-
-See LICENSE file for details.
+- **RTL**: SystemVerilog 2017+, all modules in `hw/rtl/`
+- **Testbenches**: `*_tb.sv` (SystemVerilog) or `test_*.py` (cocotb/pytest)
+- **Parameters**: Array size and block size are 14×14 throughout
+- **Data format**: INT8 weights/activations, INT32 accumulators, BSR sparse encoding
+- **Build**: CMake for C++, Make for RTL simulation, Vivado TCL for synthesis

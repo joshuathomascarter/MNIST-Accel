@@ -43,7 +43,8 @@ module mac8 (
 
     assign acc = acc_reg;
 
-    // Simulation-only assertions
+    // Simulation-only assertions (skipped during synthesis)
+`ifndef SYNTHESIS
     property p_no_unknowns;
         @(posedge clk) disable iff (!rst_n) (en |-> (!$isunknown(a) && !$isunknown(b)));
     endproperty
@@ -55,6 +56,7 @@ module mac8 (
     endproperty
     assert property (p_clr_priority)
         else $error("MAC8: clear did not reset accumulator");
+`endif
 
 endmodule
 

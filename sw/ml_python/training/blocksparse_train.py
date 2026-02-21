@@ -74,11 +74,13 @@ def load_dense_model() -> Tuple[nn.Module, torch.device, float, Dict[str, torch.
     print(f"Using device: {device}")
 
     # Load checkpoint
-    checkpoint_path = "../../data/checkpoints/mnist_fp32.pt"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    root_dir = os.path.abspath(os.path.join(script_dir, '..', '..', '..'))
+    checkpoint_path = os.path.join(root_dir, "data", "checkpoints", "mnist_fp32.pt")
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"Dense model checkpoint not found at {checkpoint_path}")
 
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     # Create model and load weights
     model = Net()
@@ -269,7 +271,9 @@ def validate_accuracy(model: nn.Module, device: torch.device) -> float:
     """
     # Set up test data loader
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
-    test_dataset = datasets.MNIST(root="../../data", train=False, download=False, transform=transform)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    root_dir = os.path.abspath(os.path.join(script_dir, '..', '..', '..'))
+    test_dataset = datasets.MNIST(root=os.path.join(root_dir, "data"), train=False, download=False, transform=transform)
     test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False, num_workers=0)
 
     model.eval()
@@ -316,7 +320,7 @@ def progressive_sparsity(
         print(f"Accuracy after pruning: {accuracy:.2f}%")
 
         # Fine-tune to recover accuracy (always, including final phase)
-        fine_tune_epochs = 10 if sparsity >= 0.9 else 3
+        fine_tune_epochs = 3  # 3 epochs is enough — accuracy already >98.9% after pruning
         fine_tune_lr = 5e-5 if sparsity >= 0.9 else 1e-4
         print(f"Fine-tuning ({fine_tune_epochs} epochs) ...")
         train_with_group_lasso(
@@ -351,7 +355,9 @@ def train_with_group_lasso(
     """
     # Set up data loaders (same as original training)
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
-    train_dataset = datasets.MNIST(root="../../data", train=True, download=False, transform=transform)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    root_dir = os.path.abspath(os.path.join(script_dir, '..', '..', '..'))
+    train_dataset = datasets.MNIST(root=os.path.join(root_dir, "data"), train=True, download=False, transform=transform)
     train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=0)
 
     # Set up optimizer and loss

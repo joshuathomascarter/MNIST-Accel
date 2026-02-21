@@ -89,8 +89,8 @@ INT8 → INT32 → INT8 Quantization Pipeline
 Input Matrices (Host)          Hardware Computation         Output (Host)
 ┌─────────────────┐            ┌─────────────────┐          ┌──────────────┐
 │   A[M×K] INT8   │ ───────▶   │                 │          │              │
-│   B[K×N] INT8   │ UART       │  Systolic Array │ UART     │  C[M×N] INT8 │
-│   Scales: Sa,Sw │ Protocol   │                 │ Protocol │  Scale: Sc   │
+│   B[K×N] INT8   │ AXI4       │  Systolic Array │ AXI4     │  C[M×N] INT8 │
+│   Scales: Sa,Sw │ DMA        │                 │ DMA      │  Scale: Sc   │
 └─────────────────┘            │ ┌─────────────┐ │          └──────────────┘
                                │ │PE  PE  PE..│ │                │
 ┌─────────────────┐            │ │PE  PE  PE..│ │          ┌──────────────┐

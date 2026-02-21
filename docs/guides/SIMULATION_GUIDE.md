@@ -21,9 +21,9 @@ ACCEL-v1 supports multiple RTL simulation backends for different use cases:
 | **ModelSim** | Medium | **Industry-grade** | Formal verification, waveform debug |
 
 **Current Status:**
-- ✅ iverilog: Fully supported (see `scripts/test.sh`)
-- ⚠️ Verilator: Documented below, requires `verilator` package
-- ⚠️ ModelSim: Documented below, requires Mentor license
+-  iverilog: Fully supported (see `tools/test.sh`)
+-  Verilator: Documented below, requires `verilator` package
+-  ModelSim: Documented below, requires Mentor license
 
 ---
 
@@ -41,7 +41,7 @@ brew install icarus-verilog gtkwave
 ### Usage
 ```bash
 # Run all tests
-./scripts/test.sh
+./tools/test.sh
 
 # Run specific module test
 iverilog -g2012 -o test.vvp \
@@ -51,8 +51,8 @@ vvp test.vvp
 ```
 
 ### Pros/Cons
-- ✅ **Pros**: Fast compile, zero license cost, good for CI/CD
-- ❌ **Cons**: Slow simulation (1-10 MHz), limited SystemVerilog support
+-  **Pros**: Fast compile, zero license cost, good for CI/CD
+-  **Cons**: Slow simulation (1-10 MHz), limited SystemVerilog support
 
 ---
 
@@ -78,7 +78,7 @@ sudo make install
 
 ### Makefile Integration
 
-Create `testbench/verilator/Makefile`:
+Create `hw/sim/sv/Makefile`:
 
 ```makefile
 # =============================================================================
@@ -105,8 +105,6 @@ RTL_SOURCES = \
     ../../rtl/control/csr.sv \
     ../../rtl/dma/bsr_dma.sv \
     ../../rtl/dma/dma_lite.sv \
-    ../../rtl/uart/uart_rx.sv \
-    ../../rtl/uart/uart_tx.sv \
     ../../rtl/monitor/perf.sv \
     ../../rtl/top/accel_top.sv
 
@@ -116,7 +114,7 @@ CPP_SOURCES = \
 # Build executable
 accel_top: $(RTL_SOURCES) $(CPP_SOURCES)
 	$(VERILATOR) $(VERILATOR_FLAGS) $(RTL_SOURCES) $(CPP_SOURCES)
-	@echo "✅ Verilator build complete: obj_dir/Vaccel_top"
+	@echo " Verilator build complete: obj_dir/Vaccel_top"
 
 # Run simulation
 run: accel_top
@@ -136,7 +134,7 @@ clean:
 
 ### C++ Testbench Example
 
-Create `testbench/verilator/test_accel_verilator.cpp`:
+Create `hw/sim/sv/test_accel_verilator.cpp`:
 
 ```cpp
 #include "Vaccel_top.h"
@@ -185,17 +183,17 @@ int main(int argc, char** argv) {
         dut->eval();
         tfp->dump((cycle * 2 + 11) * CLK_PERIOD / 2);
         
-        // Example: Monitor UART output
-        if (dut->uart_tx_valid) {
-            std::cout << "UART TX: 0x" << std::hex 
-                     << (int)dut->uart_tx_data << std::endl;
+        // Example: Monitor AXI output
+        if (dut->m_axi_rvalid) {
+            std::cout << "AXI RD: 0x" << std::hex
+                     << (int)dut->m_axi_rdata << std::endl;
         }
     }
     
     tfp->close();
     delete dut;
     
-    std::cout << "✅ Simulation complete! See trace.vcd" << std::endl;
+    std::cout << " Simulation complete! See trace.vcd" << std::endl;
     return 0;
 }
 ```
@@ -266,8 +264,6 @@ RTL_SOURCES = \
     ../../rtl/dma/bsr_dma.sv \
     ../../rtl/dma/dma_lite.sv \
     ../../rtl/meta/meta_decode.sv \
-    ../../rtl/uart/uart_rx.sv \
-    ../../rtl/uart/uart_tx.sv \
     ../../rtl/monitor/perf.sv \
     ../../rtl/top/accel_top.sv \
     ../../rtl/top/top_sparse.sv
@@ -369,10 +365,10 @@ vsim -c work.accel_top -do "
 |---------|----------|-----------|----------|
 | **Speed** | 1× (baseline) | 10-100× | 5-20× |
 | **SystemVerilog** | Partial (2012) | Good (most features) | **Full (IEEE 1800)** |
-| **SVA Assertions** | ❌ No | ⚠️ Limited | ✅ **Full support** |
-| **Coverage** | ❌ No | ⚠️ Line coverage | ✅ **Functional + code** |
+| **SVA Assertions** |  No |  Limited |  **Full support** |
+| **Coverage** |  No |  Line coverage |  **Functional + code** |
 | **Waveforms** | VCD only | VCD/FST | **Proprietary (better)** |
-| **License** | ✅ Free (GPL) | ✅ Free (GPL) | 💰 **Commercial** |
+| **License** |  Free (GPL) |  Free (GPL) |  **Commercial** |
 | **Industry Use** | Academia | Google, AMD | Intel, NVIDIA, AMD |
 
 ---
@@ -396,7 +392,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - run: sudo apt-get install iverilog
-      - run: ./scripts/test.sh
+      - run: ./tools/test.sh
       
   verilator_regression:
     runs-on: ubuntu-latest

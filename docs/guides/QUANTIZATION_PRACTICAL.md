@@ -38,31 +38,30 @@ b"\x00\x00\x00?"  # little-endian bytes (illustrative)
 
 ### Writing Scales to CSRs (host-side example)
 
-This example demonstrates writing activation and weight scales to the accelerator using the existing UART packet format. Replace `uart` with an instance of `UARTDriver` (or `MockUARTDriver` in tests).
+This example demonstrates writing activation and weight scales to the accelerator via AXI4-Lite CSR registers.
 
 ```python
-from host_uart.uart_driver import UARTDriver
-from host_uart.csr_map import CMD_WRITE, CSR_SCALE_ACT, CSR_SCALE_WGT
+from host_axi.csr_map import CSR_SCALE_ACT, CSR_SCALE_WGT
 import struct
 
-# Initialize UART driver
-uart = UARTDriver('/dev/ttyUSB0', baudrate=115200)
+# Initialize AXI-Lite driver (PYNQ overlay or simulation)
+from host.accel import AccelDriver
+driver = AccelDriver()
 
 # Scale values (example)
 Sa = 0.125   # activation scale
 Sw = 0.0625  # weight scale
 
-# Pack scale values and CSR addresses into payloads
-payload_sa = CSR_SCALE_ACT.to_bytes(4, 'little') + struct.pack('<f', Sa)
-payload_sw = CSR_SCALE_WGT.to_bytes(4, 'little') + struct.pack('<f', Sw)
+# Convert to Q16.16 fixed-point for hardware
+sa_fixed = int(Sa * 65536)
+sw_fixed = int(Sw * 65536)
 
-# Send CSR write commands
-uart.send_packet(CMD_WRITE, payload_sa)
-uart.send_packet(CMD_WRITE, payload_sw)
+# Write scale CSR registers
+driver.csr_write(CSR_SCALE_ACT, sa_fixed)
+driver.csr_write(CSR_SCALE_WGT, sw_fixed)
 
-# Optional: read back CSR to verify
-# uart.send_packet(CMD_READ, CSR_SCALE_ACT.to_bytes(4, 'little'))
-# resp = uart.recv_packet()
+# Read back to verify
+assert driver.csr_read(CSR_SCALE_ACT) == sa_fixed
 ```
 
 ### Packing Fixed-Point Scale (hardware fixed-point representation)
@@ -98,7 +97,7 @@ Check `csr_map.py` for whether scales are written as FP32 or fixed-point. Use th
 
 ### Communication Errors
 - **Problem**: Packets get dropped due to CRC mismatch or communication issues.
-- **Solution**: Enable verbose logging on the host and check the stream parser behavior in `host_uart/uart_driver.py`.
+- **Solution**: Enable verbose logging on the host and check the stream parser behavior in `host/axi_driver.py`.
 
 ## Numeric Example: Scale Combination and Overflow
 
@@ -133,9 +132,8 @@ This shows how the INT32 accumulator output `C_int32` maps back to the floating-
 2. Calibrate activation scales (`Sa`) using representative calibration dataset.
 3. Decide on output scale or implement right-shift/scale combination on host/hardware.
 4. Pack scales using `struct.pack('<f', scale)` or fixed-point encoder as required by `csr_map.py`.
-5. Write scales to CSRs and verify readback (use `MockUARTDriver` for local tests).
+5. Write scales to CSRs and verify readback (use `MockAXILiteDriver` for local tests).
 6. Run bit-exact tests with small matrices to confirm behavior before full model deployment.
 
 ---
 
-If you'd like, I can now automatically insert example scripts into `python/INT8 quantization/` and a short notebook demonstrating the calibration workflow. Say "add scripts and notebook" and I'll create them next.

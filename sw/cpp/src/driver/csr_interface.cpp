@@ -191,14 +191,14 @@ void CSRInterface::setMatrixDimensions(uint32_t M, uint32_t N, uint32_t K) {
 }
 
 void CSRInterface::setTileDimensions(uint32_t MT, uint32_t NT, uint32_t KT) {
-    write32(REG_DIMS_MT, MT);   // If this register exists
-    write32(REG_DIMS_NT, NT);
-    write32(REG_DIMS_KT, KT);
+    write32(REG_TILES_TM, MT);
+    write32(REG_TILES_TN, NT);
+    write32(REG_TILES_TK, KT);
 }
 
 void CSRInterface::setScale(uint32_t scale_act, uint32_t scale_wgt) {
-    write32(REG_SCALE_ACT, scale_act);
-    write32(REG_SCALE_WGT, scale_wgt);
+    write32(REG_SCALE_SA, scale_act);
+    write32(REG_SCALE_SW, scale_wgt);
 }
 
 // =============================================================================

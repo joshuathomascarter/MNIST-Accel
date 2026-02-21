@@ -37,7 +37,7 @@
 │    └────┬─────────┘    └────────────┘            │
 │         │                                          │
 │         ▼                                          │
-│   [Your 8×8 Systolic Array]                       │
+│   [Your 14×14 Systolic Array]                       │
 └──────────────────────────────────────────────────┘
 ```
 
@@ -209,11 +209,11 @@ print("Results:", np.array(results))  # NumPy reads from DDR
 
 | Interface | You Use? | For What?              | Your Usage   | Max Available |
 |-----------|----------|------------------------|--------------|---------------|
-| **GP0**   | ✅ YES   | Control (CSRs)         | ~1 KB        | 400 MB/s      |
-| **HP0**   | ✅ YES   | Data (weights/results) | ~443 MB/s    | 1200 MB/s     |
-| **ACP**   | ❌ NO    | Not needed             | 0            | 600 MB/s      |
+| **GP0**   | YES   | Control (CSRs)         | ~1 KB        | 400 MB/s      |
+| **HP0**   | YES   | Data (weights/results) | ~443 MB/s    | 1200 MB/s     |
+| **ACP**   | NO    | Not needed             | 0            | 600 MB/s      |
 
-**Your bottleneck:** Computation (64 MACs/cycle), NOT bandwidth!
+**Your bottleneck:** Computation (196 MACs/cycle), NOT bandwidth!
 
 ---
 
@@ -273,12 +273,12 @@ module accel_top (
 
 ## Common Mistakes to Avoid
 
-**❌ DON'T:**
+**DON'T:**
 - Use ACP for large matrices (too big for cache)
 - Use GP0 for data transfer (too slow)
 - Try to access DDR directly without AXI (not possible)
 
-**✅ DO:**
+**DO:**
 - Use GP0 for control only (START, STATUS, addresses)
 - Use HP0 for all data movement (weights, activations, results)
 - Use 64-bit bursts on HP0 (faster than single reads)
@@ -315,10 +315,10 @@ module accel_top (
 
 Now that you understand the ports, complete your architecture spec:
 
-1. ✅ Data path diagram (showing GP0 and HP0)
-2. ✅ Module hierarchy (AXI Lite Slave + AXI Master)
-3. ✅ Interface specs (all signal widths documented)
-4. ✅ Bandwidth calculations (443 MB/s < 1200 MB/s)
-5. ✅ Performance model (6.4 GOPS dense, 54 GOPS sparse)
+1. Data path diagram (showing GP0 and HP0)
+2. Module hierarchy (AXI Lite Slave + AXI Master)
+3. Interface specs (all signal widths documented)
+4. Bandwidth calculations (443 MB/s < 1200 MB/s)
+5. Performance model (6.4 GOPS dense, 54 GOPS sparse)
 
 **You're ready to start coding on Nov 26!**

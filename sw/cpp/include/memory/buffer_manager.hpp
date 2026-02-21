@@ -78,6 +78,7 @@ struct TileDescriptor {
 
     bool     is_first_k;      // First K-tile → clear accumulators
     bool     is_last_k;       // Last K-tile  → trigger output DMA
+    bool     wgt_cached;      // Weight tile already in BRAM — skip DMA
 };
 
 // =============================================================================

@@ -2,12 +2,12 @@
 # synthesize_vivado.tcl — Xilinx Vivado Synthesis Script for ACCEL-v1
 # =============================================================================
 # Author: Joshua Carter
-# Date: November 19, 2025
-# Target: Xilinx Artix-7 XC7A100T-1CSG324C
+# Date: February 2026
+# Target: Xilinx Zynq-7020 (PYNQ-Z2) — xc7z020clg400-1
 # Tools: Vivado 2023.2+
 #
-# Usage:
-#   vivado -mode batch -source scripts/synthesize_vivado.tcl
+# Usage (from hw/ directory):
+#   vivado -mode batch -source ../tools/synthesize_vivado.tcl
 #
 # Outputs:
 #   - vivado_proj/accel_v1.xpr (project file)
@@ -22,7 +22,7 @@
 # =============================================================================
 set proj_name "accel_v1"
 set proj_dir "./vivado_proj"
-set part "xc7a100tcsg324-1"  # Artix-7 100T, speed grade -1
+set part "xc7z020clg400-1"   # Zynq-7020 (PYNQ-Z2), speed grade -1
 set top_module "accel_top"
 set clk_period_ns 10.0  # 100 MHz target frequency
 
@@ -52,18 +52,21 @@ puts "========================================="
 puts "Step 2: Adding RTL Sources"
 puts "========================================="
 
-# Add all SystemVerilog files (.sv only - industry standard)
+# Add all SystemVerilog files (.sv only — industry standard)
+# Glob paths are relative to hw/ (run from the hw/ directory).
+# Note: rtl/top/deprecated/ is excluded intentionally.
 set rtl_files [glob -nocomplain \
-    rtl/systolic/*.sv \
+    rtl/systolic/pe.sv \
+    rtl/systolic/systolic_array.sv \
+    rtl/systolic/systolic_array_sparse.sv \
     rtl/mac/*.sv \
     rtl/buffer/*.sv \
     rtl/control/*.sv \
     rtl/dma/*.sv \
-    rtl/meta/*.sv \
     rtl/monitor/*.sv \
-    rtl/uart/*.sv \
     rtl/host_iface/*.sv \
-    rtl/top/*.sv \
+    rtl/top/accel_top.sv \
+    rtl/top/accel_top_dual_clk.sv \
 ]
 
 add_files -fileset sources_1 $rtl_files
@@ -124,12 +127,8 @@ puts "========================================="
 puts "Step 4: Running Synthesis"
 puts "========================================="
 
-# Synthesis settings
-set_property -name {STEPS.SYNTH_DESIGN.ARGS.MORE OPTIONS} \
-             -value {-mode out_of_context} \
-             -objects [get_runs synth_1]
-
-# Enable flatten_hierarchy for better optimization
+# Synthesis settings — NOT out-of-context since this is the top-level
+# with full I/O. Flatten hierarchy for best area/timing optimisation.
 set_property STEPS.SYNTH_DESIGN.ARGS.FLATTEN_HIERARCHY rebuilt [get_runs synth_1]
 
 # Run synthesis
@@ -162,11 +161,19 @@ puts "========================================="
 puts "Step 5: Checking Timing"
 puts "========================================="
 
-set wns [get_property SLACK [get_timing_paths]]
-set tns [get_property SLACK [get_timing_paths -slack_lesser_than 0.0 -max_paths 100]]
-
+set wns [get_property SLACK [get_timing_paths -max_paths 1]]
 puts "Worst Negative Slack (WNS): $wns ns"
-puts "Total Negative Slack (TNS): $tns ns"
+
+# TNS only meaningful when there are failing paths
+set failing_paths [get_timing_paths -slack_lesser_than 0.0 -max_paths 100 -quiet]
+if {[llength $failing_paths] > 0} {
+    set tns 0.0
+    foreach p $failing_paths { set tns [expr {$tns + [get_property SLACK $p]}] }
+    puts "Total Negative Slack (TNS): $tns ns"
+} else {
+    set tns 0.0
+    puts "Total Negative Slack (TNS): 0.0 ns (all paths met)"
+}
 
 if {$wns < 0.0} {
     puts "WARNING: Timing constraints NOT met!"
@@ -221,8 +228,16 @@ puts "========================================="
 puts "Step 7: Post-Route Timing Analysis"
 puts "========================================="
 
-set pr_wns [get_property SLACK [get_timing_paths]]
-set pr_tns [get_property SLACK [get_timing_paths -slack_lesser_than 0.0 -max_paths 100]]
+set pr_wns [get_property SLACK [get_timing_paths -max_paths 1]]
+
+# TNS for post-route
+set pr_failing [get_timing_paths -slack_lesser_than 0.0 -max_paths 100 -quiet]
+if {[llength $pr_failing] > 0} {
+    set pr_tns 0.0
+    foreach p $pr_failing { set pr_tns [expr {$pr_tns + [get_property SLACK $p]}] }
+} else {
+    set pr_tns 0.0
+}
 
 puts "Post-Route WNS: $pr_wns ns"
 puts "Post-Route TNS: $pr_tns ns"
@@ -272,26 +287,35 @@ puts "========================================="
 set util_rpt [report_utilization -return_string]
 puts $util_rpt
 
-# Extract key metrics
-set lut_used [get_property LUT_AS_LOGIC [get_cells *]]
-set ff_used [get_property FF [get_cells *]]
-set bram_used [get_property RAMB36E1 [get_cells *]]
-set dsp_used [get_property DSP48E1 [get_cells *]]
+# Also dump a machine-readable JSON summary
+set json_file "reports/synthesis_summary.json"
+set jf [open $json_file w]
+
+puts $jf "\{"
+puts $jf "  \"part\":            \"$part\","
+puts $jf "  \"top_module\":      \"$top_module\","
+puts $jf "  \"target_freq_mhz\": [expr {1000.0 / $clk_period_ns}],"
+puts $jf "  \"achieved_freq_mhz\": [expr {1000.0 / ($clk_period_ns - $pr_wns)}],"
+puts $jf "  \"wns_ns\":          $pr_wns,"
+puts $jf "  \"tns_ns\":          $pr_tns"
+puts $jf "\}"
+
+close $jf
+puts "Wrote $json_file"
 
 puts ""
 puts "==================================================================="
 puts "                    SYNTHESIS SUMMARY"
 puts "==================================================================="
-puts "Target Device:       $part (Artix-7 100T)"
+puts "Target Device:       $part (Zynq-7020 / PYNQ-Z2)"
 puts "Target Frequency:    [expr {1000.0 / $clk_period_ns}] MHz"
 puts "Achieved Frequency:  [expr {1000.0 / ($clk_period_ns - $pr_wns)}] MHz"
-puts "Slack:               $pr_wns ns"
+puts "Slack (WNS):         $pr_wns ns"
 puts ""
-puts "Resource Utilization (Estimated):"
-puts "  LUTs:              ~15,000 / 63,400  (24%)"
-puts "  Flip-Flops:        ~12,000 / 126,800 (9%)"
-puts "  BRAM (36Kb):       ~40 / 135         (30%)"
-puts "  DSP48E1:           20 / 240          (8%)"
+puts "Resource Utilization:"
+puts "  (Full breakdown in reports/impl_utilization.rpt)"
+puts ""
+puts "Zynq-7020 Resources: 53,200 LUTs | 106,400 FFs | 140 BRAM36 | 220 DSPs"
 puts ""
 puts "Power (Estimated):   <2W @ 100 MHz"
 puts "==================================================================="
