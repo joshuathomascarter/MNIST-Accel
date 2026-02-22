@@ -1,7 +1,7 @@
 # Systolic Array Dataflow Diagram
 
 ```
-ACCEL-v1 Row-Stationary Systolic Array (2x2 Example)
+ACCEL-v1 Weight-Stationary Systolic Array (2x2 Example)
 =====================================================
 
 Time t=0: Initial State
@@ -73,7 +73,7 @@ Final Result: C = A × B
 C[0,0] = ACC₀₀ = Σ(k) A[0,k] × W[k,0]    C[0,1] = ACC₀₁ = Σ(k) A[0,k] × W[k,1]
 C[1,0] = ACC₁₀ = Σ(k) A[1,k] × W[k,0]    C[1,1] = ACC₁₁ = Σ(k) A[1,k] × W[k,1]
 
-Key Benefits of Row-Stationary Dataflow:
+Key Benefits of Weight-Stationary Dataflow:
 ▪ Weights loaded ONCE, reused for multiple activations
 ▪ Activations flow through array (minimal storage)
 ▪ High compute-to-communication ratio

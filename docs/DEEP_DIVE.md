@@ -85,7 +85,7 @@ for m_tile in range(0, M, 14):      # Output row tiles
 |----------|--------------|------------------|----------|
 | Weight-Stationary | ★★★★★ | ★★☆☆☆ | Large batch, sparse weights |
 | Output-Stationary | ★★☆☆☆ | ★★★★☆ | Small batch |
-| Row-Stationary | ★★★★☆ | ★★★★☆ | Balanced workloads |
+| Input-Stationary | ★★★☆☆ | ★★★★☆ | Balanced workloads |
 
 We use **weight-stationary** because:
 1. Weights are loaded once per K-tile, reused across all M

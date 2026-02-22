@@ -721,7 +721,7 @@ module accel_top #(
     //               Hardware uses MT/KT (block counts from bsr_block_rows/cols).
     //   Tm/Tn/Tk:   Dense-mode tile sizes. BSR scheduler generates its own.
     //   m/n/k_idx:  Dense-mode tile loop counters. BSR iterates row_ptr.
-    //   bank_sel_*: Legacy double-buffer selection. Output accumulator
+    //   bank_sel_*: Double-buffer selection. Output accumulator
     //               manages bank_sel internally.
     //   Sw_bits:    Weight quantization scale. Host pre-combines Sa*Sw into
     //               Sa_bits so hardware only needs one scale factor.
@@ -772,7 +772,7 @@ module accel_top #(
         .core_done_tile_pulse   (sched_done),
         .core_bank_sel_rd_A     (accum_bank_sel),
         .core_bank_sel_rd_B     (1'b0),
-        .rx_illegal_cmd         (1'b0),  // No UART, no illegal commands
+        .rx_illegal_cmd         (1'b0),  // Tied off — error detection via CSR STATUS
         // Control Outputs
         .start_pulse            (start_pulse),
         .abort_pulse            (abort_pulse),
@@ -788,7 +788,7 @@ module accel_top #(
         .m_idx                  (_unused_m_idx),
         .n_idx                  (_unused_n_idx),
         .k_idx                  (_unused_k_idx),
-        // Bank Selection (legacy, unused in sparse)
+        // Bank Selection (unused in BSR sparse mode)
         .bank_sel_wr_A          (_unused_bank_sel_wr_A),
         .bank_sel_wr_B          (_unused_bank_sel_wr_B),
         .bank_sel_rd_A          (_unused_bank_sel_rd_A),
@@ -1400,7 +1400,7 @@ module accel_top #(
     // quantized) and writes them to DDR at cfg_dma_dst_addr.
     //
     // If cfg_dma_dst_addr == 0, the output DMA immediately signals done,
-    // preserving the legacy CSR-only readback path.
+    // preserving the CSR-based readback path.
     out_dma #(
         .AXI_ADDR_W  (AXI_ADDR_W),
         .AXI_DATA_W  (AXI_DATA_W),

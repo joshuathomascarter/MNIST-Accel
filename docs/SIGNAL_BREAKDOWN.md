@@ -393,7 +393,7 @@ These signals are driven **directly** by `u_bsr_scheduler` (no mux — dense sch
 | `.core_done_tile_pulse` | in | `sched_done` ← `u_bsr_scheduler` |
 | `.core_bank_sel_rd_A` | in | `1'b0` (unused in BSR mode) |
 | `.core_bank_sel_rd_B` | in | `1'b0` (unused in BSR mode) |
-| `.rx_illegal_cmd` | in | `1'b0` (no UART) |
+| `.rx_illegal_cmd` | in | `1'b0` (tied off) |
 | `.start_pulse` | out | `start_pulse` → `sched_start`, `u_perf` |
 | `.abort_pulse` | out | `abort_pulse` → `u_bsr_scheduler.abort` |
 | `.irq_en` | out | (unconnected) |

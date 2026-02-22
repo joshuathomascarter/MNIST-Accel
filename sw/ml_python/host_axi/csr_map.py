@@ -25,7 +25,6 @@ INDEX_k = 0x24  #: k index
 BUFF = 0x28  #: Buffer control
 SCALE_Sa = 0x2C  #: Activation scale (float32)
 SCALE_Sw = 0x30  #: Weight scale (float32)
-# UART registers removed (0x34, 0x38)
 STATUS = 0x3C  #: Status register
 # DMA CSR registers (BSR DMA)
 DMA_LAYER = 0x50  #: DMA: layer selection (0-7)
@@ -63,8 +62,8 @@ BSR_IDX_ADDR = 0xDC     #: col_idx array DRAM address
 BSR_CONFIG_SCHED_MODE = 1 << 0   #: Scheduler mode: 0=BSR, 1=Dense
 BSR_CONFIG_MODE_BSR = 0         #: Use BSR sparse scheduler
 BSR_CONFIG_MODE_DENSE = 1 << 0  #: Use Dense GEMM scheduler
-BSR_CONFIG_VERIFY = 1 << 1      #: Enable verification (legacy)
-BSR_CONFIG_ZERO_SKIP = 1 << 2   #: Enable zero-skip (legacy)
+BSR_CONFIG_VERIFY = 1 << 1      #: Enable verification mode
+BSR_CONFIG_ZERO_SKIP = 1 << 2   #: Enable zero-skip optimization
 
 # BSR_STATUS bits
 BSR_STATUS_READY = 1 << 0   #: BSR engine ready
@@ -80,8 +79,6 @@ CTRL_IRQEN = 1 << 2  #: Interrupt enable (RW)
 # STATUS bits
 STS_BUSY = 1 << 0  #: Accelerator busy (RO)
 STS_DONE_TILE = 1 << 1  #: Tile done (R/W1C)
-# UART error bits removed
-
 # BUFF bits
 WR_A = 1 << 0  #: Write bank A
 WR_B = 1 << 1  #: Write bank B
@@ -209,13 +206,13 @@ def unpack_SCALE(b: bytes) -> tuple:
     return (int(unpack_f32(b[0:4])), int(unpack_f32(b[4:8])))
 
 
-def pack_UART(len_max: int, crc_en: int) -> bytes:
-    """Pack UART configuration registers"""
-    return pack_u32(len_max) + pack_u32(crc_en)
+def pack_DMA_CFG(burst_len: int, enable: int) -> bytes:
+    """Pack DMA configuration registers"""
+    return pack_u32(burst_len) + pack_u32(enable)
 
 
-def unpack_UART(b: bytes) -> tuple:
-    """Unpack UART configuration registers"""
+def unpack_DMA_CFG(b: bytes) -> tuple:
+    """Unpack DMA configuration registers"""
     return (unpack_u32(b[0:4]), unpack_u32(b[4:8]))
 
 

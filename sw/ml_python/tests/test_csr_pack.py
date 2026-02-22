@@ -38,9 +38,9 @@ def test_SCALE():
     assert unpack_SCALE(v) == (55, 77)
 
 
-def test_UART():
-    v = pack_UART(1234, 1)
-    assert unpack_UART(v) == (1234, 1)
+def test_DMA_CFG():
+    v = pack_DMA_CFG(1234, 1)
+    assert unpack_DMA_CFG(v) == (1234, 1)
 
 
 def test_STATUS():

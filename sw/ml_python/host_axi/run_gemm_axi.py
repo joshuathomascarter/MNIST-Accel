@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-run_gemm_axi.py - AXI4-Based Host Row-Stationary Tiler for ACCEL-v1
+run_gemm_axi.py - AXI4-Based Host Weight-Stationary Tiler for ACCEL-v1
 
 This implements the host-side matrix tiling and orchestration using AXI4 burst DMA
-instead of UART for 27,000× faster data transfer.
+for high-bandwidth data transfer to the accelerator.
 
 Matrix Multiplication: C = A × B
 - A: [M×K] activation matrix (via AXI burst read from DDR)
@@ -15,8 +15,6 @@ AXI4 Protocol:
 - Burst transfers up to 256 beats (1 KB per transaction)
 - Outstanding transactions for pipelining
 - CSR configuration via AXI4-Lite
-
-Author: ACCEL-v1 Team
 """
 
 import argparse
@@ -75,10 +73,8 @@ class HostAXITiler:
     """
     Host-side Weight-Stationary Tiler using AXI4 DMA
     
-    Engineer's Note:
-    This class replaces the old UART driver.
-    It manages the memory map in DDR and issues AXI transactions.
-    Speedup Factor: ~27,000x over UART (14.4 KB/s vs 400 MB/s).
+    Host-side tiler that manages the DDR memory map and issues AXI transactions
+    to configure and drive the accelerator's systolic array.
     """
 
     def __init__(
@@ -322,7 +318,7 @@ class HostAXITiler:
                         self.log(f"Configuration failed for tile [{m_idx}, {n_idx}, {k_idx}]")
                         return None
 
-                    # Send data via AXI (27,000× faster than UART)
+                    # Send data via AXI burst transfer
                     if not self.send_tile_data_axi(a_tile_padded, b_tile_padded):
                         self.log(f"Data transfer failed for tile [{m_idx}, {n_idx}, {k_idx}]")
                         return None
