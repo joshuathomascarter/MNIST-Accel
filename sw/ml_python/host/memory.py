@@ -9,7 +9,7 @@ Provides utilities for:
   - Memory layout optimization
   - Cache-aligned allocation
 
-Author: ACCEL-v1 Team
+Author: Joshua Carter
 Date: December 2024
 """
 

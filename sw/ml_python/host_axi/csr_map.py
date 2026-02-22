@@ -26,16 +26,33 @@ BUFF = 0x28  #: Buffer control
 SCALE_Sa = 0x2C  #: Activation scale (float32)
 SCALE_Sw = 0x30  #: Weight scale (float32)
 STATUS = 0x3C  #: Status register
-# DMA CSR registers (BSR DMA)
-DMA_LAYER = 0x50  #: DMA: layer selection (0-7)
-DMA_CTRL = 0x54  #: DMA: control (start/reset)
-DMA_COUNT = 0x58  #: DMA: blocks written
-DMA_STATUS = 0x5C  #: DMA: status
-
 # Performance monitor registers (Read-Only)
-PERF_TOTAL = 0x40  #: Total cycles from start to done
-PERF_ACTIVE = 0x44  #: Cycles where busy was high
-PERF_IDLE = 0x48  #: Cycles where busy was low
+PERF_TOTAL = 0x40          #: Total cycles from start to done
+PERF_ACTIVE = 0x44         #: Cycles where busy was high
+PERF_IDLE = 0x48           #: Cycles where busy was low
+PERF_DMA_BYTES = 0x4C      #: Total DMA bytes transferred
+PERF_BLOCKS_DONE = 0x50    #: Non-zero BSR blocks computed
+PERF_STALL_CYCLES = 0x54   #: Scheduler busy, PEs idle (stall cycles)
+
+# Result registers (Read-Only, captured on done)
+RESULT_0 = 0x80  #: Output accumulator result[0]
+RESULT_1 = 0x84  #: Output accumulator result[1]
+RESULT_2 = 0x88  #: Output accumulator result[2]
+RESULT_3 = 0x8C  #: Output accumulator result[3]
+
+# Weight DMA control registers (BSR weights)
+DMA_SRC_ADDR = 0x90        #: DMA source address in DDR
+DMA_DST_ADDR = 0x94        #: DMA destination (buffer select in MSBs)
+DMA_XFER_LEN = 0x98        #: DMA transfer length in bytes
+DMA_CTRL = 0x9C            #: DMA control [0]=start(W1P), [1]=busy(RO), [2]=done(R/W1C)
+
+# Activation DMA control registers
+ACT_DMA_SRC_ADDR = 0xA0    #: Activation DMA source address
+ACT_DMA_LEN = 0xA4         #: Activation DMA transfer length
+ACT_DMA_CTRL = 0xA8        #: Activation DMA control [0]=start(W1P), [2]=done(R/W1C)
+
+# DMA bytes transferred (Read-Only)
+DMA_BYTES_XFERRED = 0xB8   #: Bytes transferred (RO)
 
 # ---------------------------------------------------------------------------
 # BSR / HYBRID SCHEDULER REGISTERS (0xC0 - 0xDF)
@@ -104,10 +121,21 @@ CSR_LAYOUT = [
     (PERF_TOTAL, "PERF_TOTAL", "u32", "Total cycles from start to done (RO)"),
     (PERF_ACTIVE, "PERF_ACTIVE", "u32", "Cycles where busy was high (RO)"),
     (PERF_IDLE, "PERF_IDLE", "u32", "Cycles where busy was low (RO)"),
-    (DMA_LAYER, "DMA_LAYER", "u32", "BSR DMA: Active Layer"),
-    (DMA_CTRL, "DMA_CTRL", "u32", "BSR DMA: Control (start, reset)"),
-    (DMA_COUNT, "DMA_COUNT", "u32", "BSR DMA: Blocks loaded"),
-    (DMA_STATUS, "DMA_STATUS", "u32", "BSR DMA status"),
+    (PERF_DMA_BYTES, "PERF_DMA_BYTES", "u32", "Total DMA bytes transferred (RO)"),
+    (PERF_BLOCKS_DONE, "PERF_BLOCKS_DONE", "u32", "Non-zero BSR blocks computed (RO)"),
+    (PERF_STALL_CYCLES, "PERF_STALL_CYCLES", "u32", "Stall cycles (RO)"),
+    (RESULT_0, "RESULT_0", "u32", "Output result[0] (RO)"),
+    (RESULT_1, "RESULT_1", "u32", "Output result[1] (RO)"),
+    (RESULT_2, "RESULT_2", "u32", "Output result[2] (RO)"),
+    (RESULT_3, "RESULT_3", "u32", "Output result[3] (RO)"),
+    (DMA_SRC_ADDR, "DMA_SRC_ADDR", "u32", "DMA source address in DDR"),
+    (DMA_DST_ADDR, "DMA_DST_ADDR", "u32", "DMA destination address"),
+    (DMA_XFER_LEN, "DMA_XFER_LEN", "u32", "DMA transfer length (bytes)"),
+    (DMA_CTRL, "DMA_CTRL", "u32", "DMA control (start/busy/done)"),
+    (ACT_DMA_SRC_ADDR, "ACT_DMA_SRC_ADDR", "u32", "Activation DMA source address"),
+    (ACT_DMA_LEN, "ACT_DMA_LEN", "u32", "Activation DMA transfer length"),
+    (ACT_DMA_CTRL, "ACT_DMA_CTRL", "u32", "Activation DMA control"),
+    (DMA_BYTES_XFERRED, "DMA_BYTES_XFERRED", "u32", "DMA bytes transferred (RO)"),
     (BSR_CONFIG, "BSR_CONFIG", "u32", "BSR config / scheduler mode select"),
     (BSR_NUM_BLOCKS, "BSR_NUM_BLOCKS", "u32", "Number of non-zero BSR blocks"),
     (BSR_BLOCK_ROWS, "BSR_BLOCK_ROWS", "u32", "Block grid rows"),

@@ -35,11 +35,9 @@ from host_axi.csr_map import Config, pack_u32, pack_f32, unpack_u32
 @dataclass
 class GEMMConfig:
     """
-    GEMM operation configuration
+    GEMM operation configuration.
     
-    Engineer's Note:
-    This class defines the problem size and tiling strategy.
-    The tiling parameters (Tm, Tn, Tk) MUST match the hardware synthesis parameters.
+    Tm, Tn, Tk MUST match the hardware synthesis parameters.
     If they mismatch, the hardware will produce garbage or hang.
     """
 
@@ -58,9 +56,8 @@ class GEMMConfig:
             raise ValueError(f"Matrix dimensions must be positive: M={self.M}, N={self.N}, K={self.K}")
         if self.Tm <= 0 or self.Tn <= 0 or self.Tk <= 0:
             raise ValueError(f"Tile dimensions must be positive: Tm={self.Tm}, Tn={self.Tn}, Tk={self.Tk}")
-        # Engineer's Note:
-        # The hardware currently requires perfect tiling (no remainders).
-        # Future work: Implement padding in software or edge handling in hardware.
+        # Hardware currently requires perfect tiling (no remainders).
+        # TODO: Implement padding in software or edge handling in hardware.
         if self.M % self.Tm != 0:
             raise ValueError(f"M={self.M} must be divisible by Tm={self.Tm}")
         if self.N % self.Tn != 0:

@@ -32,8 +32,8 @@
 
 | # | Issue | Location | Notes |
 |---|-------|----------|-------|
-| 4 | `test_integration.py` broken import | `sw/ml_python/tests/test_integration.py` | Imports from nonexistent `host_uart/` directory. |
-| 5 | `test_csr_pack.py` partial | `sw/ml_python/tests/test_csr_pack.py` | Missing `host_uart` dependency. |
+| 4 | `test_integration.py` | `sw/ml_python/tests/test_integration.py` | Fixed — now imports from `host_axi/`. |
+| 5 | `test_csr_pack.py` | `sw/ml_python/tests/test_csr_pack.py` | Fixed — uses `host_axi` CSR helpers. |
 | 6 | DMA 64-bit width mismatch | `hw/rtl/dma/` | 64-bit AXI data bus requires multi-beat transfers for 14-wide (112-bit) activation vectors. Packing module (`dma_pack_112.sv`) exists but adds latency. |
 
 ### LOW Priority
@@ -90,5 +90,5 @@
 2. Validate on PYNQ-Z2 hardware with MNIST inference
 3. Implement dual-clock wrapper with proper CDC
 4. Complete C++ end-to-end test
-5. Fix broken Python test imports (`host_uart` dependency)
+5. ~~Fix broken Python test imports~~ (resolved — migrated to `host_axi`)
 6. Power measurement on FPGA vs. estimation

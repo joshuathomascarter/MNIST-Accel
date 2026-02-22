@@ -235,6 +235,94 @@ cd sw/ml_python/training
 python3 export_bsr_14x14.py --from-int8
 ```
 
+---
+
+## Running All Tests
+
+Below are the commands to exercise every layer of the stack. All commands
+assume you are in the project root (`ResNet-Accel-2/`).
+
+### 1. Python ML & Golden Model Tests (pytest)
+
+These tests verify BSR INT8 GEMM correctness, weight exporter output, MAC
+golden models, edge-case saturation, CSR register packing, and the AXI
+host tiler integration.
+
+```bash
+source .venv/bin/activate
+cd sw/ml_python
+python -m pytest tests/ -v
+```
+
+Individual test files:
+
+| File | What it tests |
+|------|---------------|
+| `test_golden_models.py` | BSR INT8 GEMM vs. numpy reference |
+| `test_exporters.py` | BSR export format and metadata |
+| `test_mac.py` | MAC8 golden model (matches RTL semantics) |
+| `test_edges.py` | Zero matrices, INT8 saturation, identity |
+| `test_csr_pack.py` | CSR register pack/unpack round-trips |
+| `test_integration.py` | End-to-end tiled GEMM, Config serialization, AXI tiler |
+
+### 2. C++ Host Driver Tests (CMake / CTest)
+
+```bash
+cd sw/cpp
+mkdir -p build && cd build
+cmake ..
+make -j$(nproc)
+ctest --output-on-failure
+```
+
+### 3. RTL Simulation — Verilator
+
+Requires [Verilator 5.x+](https://verilator.org/guide/latest/install.html).
+
+```bash
+cd hw/sim
+make          # builds + runs all SV testbenches
+```
+
+Individual testbenches: `make pe_tb`, `make systolic_tb`, `make accel_top_tb`, etc.
+
+### 4. RTL Simulation — Cocotb
+
+Requires `cocotb` and a Verilog simulator (Verilator or Icarus).
+
+```bash
+cd hw/sim/cocotb
+make                        # default top-level AXI test
+make -f Makefile.accel_top  # full accel_top cocotb test
+```
+
+### 5. Yosys Synthesis (Xilinx 7-Series)
+
+Requires [Yosys](https://github.com/YosysHQ/yosys) (any recent build).
+
+```bash
+cd hw
+bash yosys_run.sh
+```
+
+This preprocesses the RTL (strips SVA assertions), maps to Xilinx 7-series
+primitives, and writes a gate-level netlist to `hw/reports/yosys_netlist.json`.
+
+### 6. Vivado Synthesis (Optional — Zynq-7020)
+
+Requires Xilinx Vivado 2021.1+.
+
+```bash
+vivado -mode batch -source tools/synthesize_vivado.tcl
+```
+
+### 7. MNIST Demo
+
+```bash
+python3 sw/ml_python/demo/classify_digit.py           # interactive (tkinter)
+python3 sw/ml_python/demo/classify_digit.py --test 50  # batch MNIST test
+```
+
 ### FPGA Deployment (Zynq-7020)
 
 ```bash

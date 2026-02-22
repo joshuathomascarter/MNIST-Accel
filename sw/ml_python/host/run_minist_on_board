@@ -34,9 +34,83 @@ except ImportError:
     PYNQ_AVAILABLE = False
 
 
+# =============================================================================
+# im2col: reshape convolution inputs into a GEMM-compatible matrix
+# =============================================================================
+def im2col(input_3d: np.ndarray, kH: int, kW: int,
+           stride: int = 1, padding: int = 0) -> np.ndarray:
+    """
+    Convert a 3-D feature map (C, H, W) into a 2-D im2col matrix (K, N).
+    
+    K = C_in * kH * kW   (reduction dimension — same as weight cols)
+    N = H_out * W_out     (spatial output positions)
+    
+    Args:
+        input_3d: Input feature map (C, H, W)
+        kH, kW:   Kernel height and width
+        stride:   Convolution stride
+        padding:  Zero-padding
+        
+    Returns:
+        col_matrix: (K, N) INT8
+    """
+    C, H, W = input_3d.shape
+    
+    # Pad if needed
+    if padding > 0:
+        input_3d = np.pad(input_3d,
+                          ((0, 0), (padding, padding), (padding, padding)),
+                          mode='constant', constant_values=0)
+        _, H, W = input_3d.shape
+    
+    H_out = (H - kH) // stride + 1
+    W_out = (W - kW) // stride + 1
+    K = C * kH * kW
+    N = H_out * W_out
+    
+    col = np.zeros((K, N), dtype=input_3d.dtype)
+    
+    for h in range(H_out):
+        for w in range(W_out):
+            patch = input_3d[:, h*stride:h*stride+kH, w*stride:w*stride+kW]
+            col[:, h * W_out + w] = patch.flatten()
+    
+    return col
+
+
+def max_pool_2d(input_3d: np.ndarray, pool_size: int = 2) -> np.ndarray:
+    """
+    2×2 max pooling on a 3-D feature map (C, H, W).
+    
+    Args:
+        input_3d: Input (C, H, W)
+        pool_size: Pooling window size
+        
+    Returns:
+        Pooled output (C, H//pool_size, W//pool_size)
+    """
+    C, H, W = input_3d.shape
+    H_out = H // pool_size
+    W_out = W // pool_size
+    output = np.zeros((C, H_out, W_out), dtype=input_3d.dtype)
+    
+    for c in range(C):
+        for h in range(H_out):
+            for w in range(W_out):
+                block = input_3d[c,
+                                 h*pool_size:(h+1)*pool_size,
+                                 w*pool_size:(w+1)*pool_size]
+                output[c, h, w] = block.max()
+    
+    return output
+
+
 def load_bsr_layer(layer_dir):
     """Load BSR-format weights for one layer."""
-    weights = np.load(os.path.join(layer_dir, "weights_int8.bsr"), allow_pickle=True)
+    bsr_path = os.path.join(layer_dir, "weights.bsr")
+    if not os.path.exists(bsr_path):
+        bsr_path = os.path.join(layer_dir, "weights_int8.bsr")
+    weights = np.load(bsr_path, allow_pickle=True)
     meta_path = os.path.join(layer_dir, "weights.meta.json")
     with open(meta_path) as f:
         meta = json.load(f)
@@ -48,6 +122,18 @@ def load_bsr_layer(layer_dir):
 def quantize_input(x_fp32, scale):
     """Quantize FP32 input to INT8."""
     return np.clip(np.rint(x_fp32 / scale), -128, 127).astype(np.int8)
+
+
+def dequantize_output(out_int32: np.ndarray, Sa: float, Sw: float) -> np.ndarray:
+    """Dequantize INT32 accumulator output back to approximate FP32."""
+    return out_int32.astype(np.float32) * Sa * Sw
+
+
+def requantize_to_int8(x_fp32: np.ndarray) -> tuple:
+    """Requantize FP32 intermediate to INT8 for the next layer."""
+    scale = np.max(np.abs(x_fp32)) / 127.0 if np.max(np.abs(x_fp32)) > 0 else 1.0
+    x_int8 = np.clip(np.rint(x_fp32 / scale), -128, 127).astype(np.int8)
+    return x_int8, scale
 
 
 def main():
@@ -114,39 +200,164 @@ def main():
     correct = 0
     total_cycles = 0
 
+    # Load golden labels if available
+    labels_path = os.path.join(data_dir, "..", "sw", "ml_python", "golden", "mnist_labels.npy")
+    labels = np.load(labels_path) if os.path.exists(labels_path) else None
+
     for i in range(num_images):
-        # Normalize input (same as training: (x/255 - 0.1307) / 0.3081)
+        # ─── Preprocess input ───────────────────────────────────────────
+        # Normalize same as training: (x/255 - 0.1307) / 0.3081
         img = images[i].astype(np.float32) / 255.0
         img = (img - 0.1307) / 0.3081
 
         # Quantize input to INT8
-        input_scale = np.max(np.abs(img)) / 127.0
+        input_scale = np.max(np.abs(img)) / 127.0 if np.max(np.abs(img)) > 0 else 1.0
         img_int8 = quantize_input(img, input_scale)
 
-        # TODO: Dispatch each layer through the accelerator
-        # For now, this is a placeholder showing the API flow.
-        # Each layer needs: configure_dimensions → load_sparse_weights →
-        #                    load_activations → start → wait → read_results
+        # Reshape to (1, 28, 28) — single channel
+        act = img_int8.reshape(1, 28, 28)
+        act_scale = input_scale
 
-        # Example for fc1 layer (when all layers are ready):
-        # accel.configure_dimensions(M=1, N=128, K=9216)
-        # accel.load_sparse_weights(row_ptr, col_idx, weight_blocks)
-        # accel.load_activations(act_int8)
-        # accel.start()
-        # accel.wait_for_done()
-        # result = accel.read_results()
+        print(f"\n── Image {i+1}/{num_images} ──")
+
+        # ─── Layer 1: conv1 (1,28,28) → (32,26,26) ────────────────────
+        if "conv1" in layer_data:
+            ld = layer_data["conv1"]
+            meta = ld["meta"]
+            M_conv1 = meta["original_shape"][0]   # 32 filters
+            K_conv1 = meta["original_shape"][1]   # 1*3*3 = 9
+
+            # im2col: (1, 28, 28) → (9, 676)  where 676 = 26*26
+            col = im2col(act, kH=3, kW=3, stride=1, padding=0)
+            N_conv1 = col.shape[1]  # 676
+
+            output_int32 = accel.run_layer(
+                "conv1", ld["row_ptr"], ld["col_idx"], ld["weights"],
+                col.T,  # (N, K) → load_activations expects (M, K) but we transpose inside
+                M=M_conv1, N=N_conv1, K=K_conv1,
+                Sa=act_scale, Sw=1.0
+            )
+
+            # Dequant → ReLU → reshape to (32, 26, 26) → requantize
+            out_fp32 = dequantize_output(output_int32, act_scale, 1.0)
+            out_fp32 = np.maximum(out_fp32, 0)  # ReLU
+            H_out1 = int(np.sqrt(N_conv1))
+            act = out_fp32.reshape(M_conv1, H_out1, H_out1)
+            act_int8, act_scale = requantize_to_int8(act)
+            act = act_int8
+        else:
+            print("  SKIP conv1 (weights not found)")
+
+        # ─── Layer 2: conv2 (32,26,26) → (64,24,24) → pool → (64,12,12) ─
+        if "conv2" in layer_data:
+            ld = layer_data["conv2"]
+            meta = ld["meta"]
+            M_conv2 = meta["original_shape"][0]   # 64 filters
+            K_conv2 = meta["original_shape"][1]   # 32*3*3 = 288
+
+            # im2col: (32, 26, 26) → (288, 576)  where 576 = 24*24
+            col = im2col(act, kH=3, kW=3, stride=1, padding=0)
+            N_conv2 = col.shape[1]  # 576
+
+            output_int32 = accel.run_layer(
+                "conv2", ld["row_ptr"], ld["col_idx"], ld["weights"],
+                col.T,
+                M=M_conv2, N=N_conv2, K=K_conv2,
+                Sa=act_scale, Sw=1.0
+            )
+
+            # Dequant → ReLU → reshape → max_pool → requantize
+            out_fp32 = dequantize_output(output_int32, act_scale, 1.0)
+            out_fp32 = np.maximum(out_fp32, 0)  # ReLU
+            H_out2 = int(np.sqrt(N_conv2))
+            act_3d = out_fp32.reshape(M_conv2, H_out2, H_out2)
+            act_pooled = max_pool_2d(act_3d, pool_size=2)  # (64, 12, 12)
+            act_int8, act_scale = requantize_to_int8(act_pooled)
+            act = act_int8
+        else:
+            print("  SKIP conv2 (weights not found)")
+
+        # ─── Layer 3: fc1 — flatten(64,12,12)=9216 → 128 ──────────────
+        if "fc1" in layer_data:
+            ld = layer_data["fc1"]
+            meta = ld["meta"]
+            M_fc1 = meta["original_shape"][0]   # 128
+            K_fc1 = meta["original_shape"][1]   # 9216
+
+            # Flatten activations to 1-D, then reshape for GEMM
+            act_flat = act.flatten().astype(np.int8)
+            # For single image: M=128, K=9216, N=1
+            act_2d = act_flat.reshape(1, K_fc1)  # (1, 9216) — one "batch"
+            N_fc1 = 1
+
+            output_int32 = accel.run_layer(
+                "fc1", ld["row_ptr"], ld["col_idx"], ld["weights"],
+                act_2d,
+                M=M_fc1, N=N_fc1, K=K_fc1,
+                Sa=act_scale, Sw=1.0
+            )
+
+            # Dequant → ReLU → requantize
+            out_fp32 = dequantize_output(output_int32, act_scale, 1.0)
+            out_fp32 = np.maximum(out_fp32, 0)  # ReLU
+            act_int8, act_scale = requantize_to_int8(out_fp32.flatten())
+            act = act_int8
+        else:
+            print("  SKIP fc1 (weights not found)")
+
+        # ─── Layer 4: fc2 — 128 → 10 (logits, no ReLU) ────────────────
+        if "fc2" in layer_data:
+            ld = layer_data["fc2"]
+            meta = ld["meta"]
+            M_fc2 = meta["original_shape"][0]   # 10
+            K_fc2 = meta["original_shape"][1]   # 128
+
+            act_2d = act.flatten()[:K_fc2].reshape(1, K_fc2).astype(np.int8)
+            N_fc2 = 1
+
+            output_int32 = accel.run_layer(
+                "fc2", ld["row_ptr"], ld["col_idx"], ld["weights"],
+                act_2d,
+                M=M_fc2, N=N_fc2, K=K_fc2,
+                Sa=act_scale, Sw=1.0
+            )
+
+            # Final logits — no ReLU
+            logits = dequantize_output(output_int32, act_scale, 1.0).flatten()[:10]
+        else:
+            print("  SKIP fc2 (weights not found)")
+            logits = np.zeros(10)
+
+        # ─── Classify ──────────────────────────────────────────────────
+        predicted = int(np.argmax(logits))
+        
+        # Softmax for confidence
+        exp_l = np.exp(logits - logits.max())
+        probs = exp_l / exp_l.sum()
+        confidence = probs[predicted] * 100
+
+        label = int(labels[i]) if labels is not None else -1
+        ok = "✓" if predicted == label else "✗" if label >= 0 else "?"
+        if label >= 0 and predicted == label:
+            correct += 1
+        
+        print(f"  Result: predicted={predicted} ({confidence:.1f}%)  "
+              f"true={label if label >= 0 else '?'}  {ok}")
 
     print(f"\nInference complete.")
     print(f"  Images processed: {num_images}")
-    if correct > 0:
+    if labels is not None:
         print(f"  Accuracy: {100.0 * correct / num_images:.1f}%")
 
     # Read performance counters
-    perf = accel.read_perf_counters()
+    perf = accel.get_performance_stats()
     print(f"\nPerformance:")
     print(f"  Total cycles: {perf.get('total_cycles', 'N/A')}")
     print(f"  Active cycles: {perf.get('active_cycles', 'N/A')}")
-    print(f"  Utilization: {perf.get('utilization_pct', 'N/A')}")
+    util = 0
+    if perf.get('total_cycles', 0) > 0:
+        util = 100.0 * perf['active_cycles'] / perf['total_cycles']
+    print(f"  Utilization: {util:.1f}%")
 
 
 if __name__ == "__main__":

@@ -30,7 +30,7 @@ OUTPUT FORMAT:
 USAGE:
     python export_bsr_14x14.py [--input CHECKPOINT] [--output DIR] [--quantized]
 
-Author: ACCEL-BSR Team
+Author: Joshua Carter
 """
 
 import os

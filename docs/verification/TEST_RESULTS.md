@@ -42,8 +42,8 @@
 | `test_exporters.py` | Implemented | BSR export format verification |
 | `test_mac.py` | Implemented | MAC8 golden model vs RTL comparison |
 | `test_edges.py` | Implemented | Edge case testing (zeros, saturation) |
-| `test_csr_pack.py` | Partial | CSR pack/unpack (imports missing `host_uart`) |
-| `test_integration.py` | Broken | Imports from nonexistent `host_uart/` directory |
+| `test_csr_pack.py` | Passing | CSR pack/unpack via `host_axi` |
+| `test_integration.py` | Passing | End-to-end GEMM tiling, CSR round-trips, AXI host tiler |
 | `post_training_quant_tests.py` | Implemented | Post-training quantization accuracy |
 
 ## Running Tests
@@ -89,7 +89,7 @@ python -m pytest tests/ -v
 
 ## Known Issues
 
-1. **`test_integration.py`** imports from `host_uart/` which does not exist. Needs migration to `host_axi/` imports.
-2. **`test_csr_pack.py`** has the same `host_uart` import dependency.
+1. ~~`test_integration.py`~~ — resolved, migrated to `host_axi/` imports.
+2. ~~`test_csr_pack.py`~~ — resolved, uses `host_axi` CSR helpers.
 3. **C++ `test_end_to_end.cpp`** is a stub that returns success without testing.
 4. **RTL systolic output** currently reads as zero in cocotb simulation (scheduler timing bugs under investigation, see AUDIT.md R7-R9).

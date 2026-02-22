@@ -21,7 +21,7 @@ Usage:
     accel.load_activations(activations)
     result = accel.run_inference()
 
-Author: ACCEL-v1 Team
+Author: Joshua Carter
 Date: December 2024
 """
 
@@ -59,12 +59,13 @@ class CSRMap:
     # Status register
     STATUS      = 0x3C  # [0]=busy, [1]=done_tile, [9]=error
     
-    # Performance counters
-    PERF_TOTAL  = 0x40  # Total cycles
-    PERF_ACTIVE = 0x44  # Active cycles
-    PERF_IDLE   = 0x48  # Idle cycles
-    PERF_HITS   = 0x4C  # Cache hits
-    PERF_MISS   = 0x50  # Cache misses
+    # Performance counters (Read-Only)
+    PERF_TOTAL      = 0x40  # Total cycles from start to done
+    PERF_ACTIVE     = 0x44  # Cycles where busy was high
+    PERF_IDLE       = 0x48  # Cycles where busy was low
+    PERF_DMA_BYTES  = 0x4C  # Total DMA bytes transferred
+    PERF_BLOCKS     = 0x50  # Non-zero BSR blocks computed
+    PERF_STALL      = 0x54  # Scheduler busy, PEs idle (stall cycles)
     
     # Results (first 4 output accumulators)
     RESULT_0    = 0x80
@@ -81,6 +82,9 @@ class CSRMap:
     ACT_DMA_LEN      = 0xA4  # Activation DMA length
     ACT_DMA_CTRL     = 0xA8  # Activation DMA control
     
+    # DMA bytes transferred (Read-Only)
+    DMA_BYTES_XFERRED = 0xB8  # Total bytes transferred by DMA
+
     # BSR / Hybrid Scheduler registers (0xC0 - 0xDF)
     # The accelerator has two schedulers sharing the same 14×14 systolic array:
     #   - BSR Scheduler: For sparse layers with BSR weights
@@ -91,6 +95,7 @@ class CSRMap:
     BSR_BLOCK_ROWS   = 0xC8  # Block grid rows
     BSR_BLOCK_COLS   = 0xCC  # Block grid columns
     BSR_STATUS       = 0xD0  # BSR engine status
+    BSR_ERROR_CODE   = 0xD4  # BSR error detail code (RO)
     BSR_PTR_ADDR     = 0xD8  # row_ptr array address
     BSR_IDX_ADDR     = 0xDC  # col_idx array address
     
@@ -341,6 +346,118 @@ class AccelDriver:
             'error': error
         }
     
+    def read_full_output(self, M: int, N: int) -> np.ndarray:
+        """
+        Read the full output matrix from DDR after compute completes.
+        
+        The output DMA (out_dma.sv) writes INT32 results back to DDR.
+        This method reads them into a numpy array.
+        
+        Args:
+            M: Output rows
+            N: Output columns
+            
+        Returns:
+            Output matrix (M, N) as INT32
+        """
+        total_elements = M * N
+        total_bytes = total_elements * 4  # INT32 = 4 bytes
+        
+        if self.simulation:
+            # Simulation: return zeros (no real compute)
+            return np.zeros((M, N), dtype=np.int32)
+        else:
+            # Allocate result buffer if needed
+            if self.result_buffer is None or len(self.result_buffer) < total_bytes:
+                self.result_buffer = allocate(shape=(total_bytes,), dtype=np.uint8)
+            
+            # Sync from device (DDR → CPU)
+            self.result_buffer.sync_from_device()
+            
+            # Interpret as INT32 and reshape
+            raw = np.frombuffer(
+                self.result_buffer[:total_bytes], dtype=np.int32
+            )
+            return raw.reshape(M, N).copy()
+
+    def run_layer(self, layer_name: str,
+                  row_ptr: np.ndarray, col_idx: np.ndarray,
+                  weights: np.ndarray,
+                  activations_2d: np.ndarray,
+                  M: int, N: int, K: int,
+                  Sa: float = 1.0, Sw: float = 1.0) -> np.ndarray:
+        """
+        Run a single GEMM layer end-to-end on the FPGA.
+        
+        This is the core dispatch function that:
+          1. Configures matrix dimensions in CSRs
+          2. Auto-selects BSR vs Dense scheduler
+          3. DMA weights + activations into DDR
+          4. Starts compute and waits for done
+          5. Reads full output from DDR
+        
+        Args:
+            layer_name: Human-readable name ("conv1", "fc2", etc.)
+            row_ptr:    BSR row pointer array
+            col_idx:    BSR column index array
+            weights:    BSR weight blocks (num_blocks, 14, 14) INT8
+            activations_2d: Activation matrix (M, K) INT8
+            M: Output rows (num filters or neurons)
+            N: Output columns (spatial positions or batch)
+            K: Reduction dimension (input channels × kernel, or fan-in)
+            Sa: Activation quantization scale
+            Sw: Weight quantization scale
+            
+        Returns:
+            Output matrix (M, N) as INT32
+        """
+        print(f"  [{layer_name}] GEMM: ({M}×{K}) × ({K}×{N}) → ({M}×{N})")
+        
+        # Step 1: Configure dimensions
+        self.configure_dimensions(M, N, K)
+        
+        # Step 2: Set quantization scales
+        self.set_scale_factors(Sa, Sw)
+        
+        # Step 3: Auto-select scheduler (BSR vs Dense)
+        weight_2d = weights.reshape(-1, weights.shape[-1]) if weights.ndim > 2 else weights
+        self.auto_select_scheduler(weight_2d, layer_name)
+        
+        # Step 4: Load weights via DMA
+        wgt_bytes = self.load_sparse_weights(row_ptr, col_idx, weights)
+        print(f"    Weights: {wgt_bytes} bytes → DDR")
+        
+        # Step 5: Load activations via DMA
+        # Ensure shape matches (M, K) — transpose if needed for GEMM convention
+        if activations_2d.shape != (M, K):
+            if activations_2d.shape == (K, N):
+                # Activations are (K, N) — the hardware expects (K, N) streamed
+                # through columns, but load_activations wants (M, K).
+                # For now, transpose to match CSR expectation.
+                activations_2d = activations_2d.T
+            else:
+                raise ValueError(
+                    f"Activation shape {activations_2d.shape} doesn't match "
+                    f"expected (M={M}, K={K}) or (K={K}, N={N})"
+                )
+        act_bytes = self.load_activations(activations_2d)
+        print(f"    Activations: {act_bytes} bytes → DDR")
+        
+        # Step 6: Run compute
+        success, info = self.run_inference(timeout_ms=5000)
+        if not success:
+            raise RuntimeError(f"Layer {layer_name} failed: {info}")
+        
+        cycles = info.get('cycles', 0)
+        util = info.get('utilization', 0)
+        print(f"    Compute: {cycles} cycles, {util:.1f}% utilization")
+        
+        # Step 7: Read full output
+        output = self.read_full_output(M, N)
+        print(f"    Output: {output.shape} INT32")
+        
+        return output
+
     def get_performance_stats(self) -> dict:
         """
         Read detailed performance statistics.
@@ -352,8 +469,9 @@ class AccelDriver:
             'total_cycles': self._csr_read(CSRMap.PERF_TOTAL),
             'active_cycles': self._csr_read(CSRMap.PERF_ACTIVE),
             'idle_cycles': self._csr_read(CSRMap.PERF_IDLE),
-            'cache_hits': self._csr_read(CSRMap.PERF_HITS),
-            'cache_misses': self._csr_read(CSRMap.PERF_MISS),
+            'dma_bytes': self._csr_read(CSRMap.PERF_DMA_BYTES),
+            'blocks_done': self._csr_read(CSRMap.PERF_BLOCKS),
+            'stall_cycles': self._csr_read(CSRMap.PERF_STALL),
         }
     
     def reset(self):

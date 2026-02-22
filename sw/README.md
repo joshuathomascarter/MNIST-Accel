@@ -184,5 +184,4 @@ Per-layer directories containing:
 
 - C++ driver has partial stub implementations (inference pipeline, some tests)
 - `host_axi/csr_map.py` uses non-standard register offsets (needs alignment with RTL CSR map)
-- Some Python test files reference a removed `host_uart/` module
 - See top-level [AUDIT.md](../AUDIT.md) for a complete code audit

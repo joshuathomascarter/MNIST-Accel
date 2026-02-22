@@ -12,8 +12,6 @@ Features:
   - AXI burst write with latency measurement
   - DMA status polling with timeout
   - Full end-to-end example with complete data flow
-
-Author: ACCEL-v1 Team
 """
 
 import struct
@@ -23,13 +21,58 @@ from axi_master_sim import AXIMasterSim, AXIResponse
 
 
 class AXILiteCSR:
-    """CSR address map for AXI4-Lite slave."""
+    """CSR address map for AXI4-Lite slave (matches csr.sv)."""
 
-    DMA_LAYER = 0x50
-    DMA_CTRL = 0x51
-    DMA_COUNT = 0x52
-    DMA_STATUS = 0x53
-    DMA_BURST = 0x54
+    # Control & dimensions
+    CTRL        = 0x00
+    DIMS_M      = 0x04
+    DIMS_N      = 0x08
+    DIMS_K      = 0x0C
+    STATUS      = 0x3C
+
+    # Performance counters (Read-Only)
+    PERF_TOTAL      = 0x40
+    PERF_ACTIVE     = 0x44
+    PERF_IDLE       = 0x48
+    PERF_DMA_BYTES  = 0x4C
+    PERF_BLOCKS     = 0x50
+    PERF_STALL      = 0x54
+
+    # Result registers
+    RESULT_0    = 0x80
+    RESULT_1    = 0x84
+    RESULT_2    = 0x88
+    RESULT_3    = 0x8C
+
+    # Weight DMA control
+    DMA_SRC_ADDR = 0x90
+    DMA_DST_ADDR = 0x94
+    DMA_XFER_LEN = 0x98
+    DMA_CTRL     = 0x9C
+
+    # Activation DMA control
+    ACT_DMA_SRC  = 0xA0
+    ACT_DMA_LEN  = 0xA4
+    ACT_DMA_CTRL = 0xA8
+
+    # DMA bytes transferred
+    DMA_BYTES_XFERRED = 0xB8
+
+    # BSR registers
+    BSR_CONFIG     = 0xC0
+    BSR_NUM_BLOCKS = 0xC4
+    BSR_BLOCK_ROWS = 0xC8
+    BSR_BLOCK_COLS = 0xCC
+    BSR_STATUS     = 0xD0
+    BSR_ERROR_CODE = 0xD4
+    BSR_PTR_ADDR   = 0xD8
+    BSR_IDX_ADDR   = 0xDC
+
+    # Legacy aliases (for backwards compatibility with existing code)
+    DMA_LAYER  = DMA_SRC_ADDR      # was 0x50, now correct at 0x90
+    DMA_COUNT  = DMA_BYTES_XFERRED # was 0x58, now correct at 0xB8
+    DMA_STATUS = BSR_STATUS        # was 0x5C, now correct at 0xD0
+    DMA_BURST  = DMA_XFER_LEN      # was 0x54, now correct at 0x98
 
 
 class AXIDriver:

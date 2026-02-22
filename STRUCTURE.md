@@ -38,7 +38,7 @@ ACCEL-v1/
 │
 ├── data/                            # Model weights & datasets
 │   ├── bsr_export_14x14/           #   14×14 BSR weights (row_ptr, col_idx, blocks)
-│   ├── bsr_export/                  #   Legacy BSR export
+│   ├── bsr_export/                  #   BSR export (28×28 input)
 │   ├── int8/                        #   INT8 quantized weights + scales
 │   ├── checkpoints/                 #   FP32 training checkpoints
 │   └── MNIST/                       #   Raw MNIST dataset

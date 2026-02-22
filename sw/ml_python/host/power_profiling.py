@@ -11,7 +11,7 @@ Provides power measurement and profiling utilities for:
 
 Requires: PYNQ framework on Zynq board
 
-Author: ACCEL-v1 Team
+Author: Joshua Carter
 Date: December 2024
 """
 

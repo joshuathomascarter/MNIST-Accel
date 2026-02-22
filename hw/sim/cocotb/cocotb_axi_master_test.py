@@ -14,7 +14,7 @@ Usage:
   cd /workspaces/ACCEL-v1/accel\ v1
   make -f tb/Makefile.cocotb sim
 
-Author: ACCEL-v1 Team
+Author: Joshua Carter
 """
 
 import cocotb

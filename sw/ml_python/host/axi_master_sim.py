@@ -15,7 +15,7 @@ Features:
   - Can be used with cocotb for RTL simulation or standalone Python
   - Metrics collection (latency, throughput, error counts)
 
-Author: ACCEL-v1 Team
+Author: Joshua Carter
 """
 
 import struct

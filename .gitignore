@@ -84,6 +84,9 @@ Thumbs.db
 *.fsdb
 *.view
 
+# Yosys intermediate files
+hw/.yosys_prep/
+
 # Build directories (all artifacts)
 build/
 sim_build/

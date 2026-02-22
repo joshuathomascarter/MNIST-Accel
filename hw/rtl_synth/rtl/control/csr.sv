@@ -105,7 +105,6 @@ module csr #(
   localparam BUFF         = 8'h28; // [0]=wrA (RW), [1]=wrB (RW), [8]=rdA (RO), [9]=rdB (RO)
   localparam SCALE_Sa     = 8'h2C; // float32 bits
   localparam SCALE_Sw     = 8'h30; // float32 bits
-  // UART registers removed
   localparam STATUS       = 8'h3C; // [0]=busy(RO), [1]=done_tile(R/W1C), [9]=err_illegal(R/W1C)
   // Performance monitor registers (Read-Only)
   localparam PERF_TOTAL   = 8'h40; // Total cycles from start to done
@@ -151,7 +150,6 @@ module csr #(
   reg [31:0] r_m_idx, r_n_idx, r_k_idx;
   reg        r_bank_sel_wr_A, r_bank_sel_wr_B;
   reg [31:0] r_Sa_bits, r_Sw_bits;
-  // UART regs removed
 
   // Sticky status
   reg        st_done_tile;
@@ -198,7 +196,6 @@ module csr #(
       r_bank_sel_wr_B  <= 1'b0;
       r_Sa_bits        <= 32'h3F80_0000; // 1.0f
       r_Sw_bits        <= 32'h3F80_0000; // 1.0f
-      // UART defaults removed
       st_done_tile     <= 1'b0;
       // st_err_crc       <= 1'b0; // Removed
       st_err_illegal   <= 1'b0;
@@ -251,7 +248,6 @@ module csr #(
           end
           SCALE_Sa:     r_Sa_bits <= csr_wdata;
           SCALE_Sw:     r_Sw_bits <= csr_wdata;
-          // UART writes removed
           STATUS: begin
             // R/W1C clears
             if (csr_wdata[1]) st_done_tile   <= 1'b0;
@@ -327,7 +323,6 @@ module csr #(
   assign bank_sel_wr_A = r_bank_sel_wr_A;
   assign bank_sel_wr_B = r_bank_sel_wr_B;
   assign Sa_bits = r_Sa_bits;  assign Sw_bits = r_Sw_bits;
-  // UART assigns removed
   assign dma_src_addr = r_dma_src_addr;
   assign dma_dst_addr = r_dma_dst_addr;
   assign dma_xfer_len = r_dma_xfer_len;

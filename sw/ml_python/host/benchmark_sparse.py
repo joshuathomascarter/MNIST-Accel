@@ -10,7 +10,7 @@ Benchmarks the sparse accelerator with various:
 
 Compares against NumPy CPU baseline.
 
-Author: ACCEL-v1 Team
+Author: Joshua Carter
 Date: December 2024
 """
 

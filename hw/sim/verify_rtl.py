@@ -26,7 +26,7 @@ OUTPUT:
     - PASS/FAIL summary
     - Error distribution if failures occur
 
-Author: ACCEL-BSR Team
+Author: Joshua Carter
 """
 
 import os

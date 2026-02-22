@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Comprehensive systolic array dataflow diagram (2x2 example with timing) -->
+<!-- Systolic array dataflow diagram (2x2 example with timing) -->
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
   <style>
     .pe { fill:#f4f6f8; stroke:#3b3f45; stroke-width:2; rx:8; } 

@@ -30,7 +30,6 @@ VERILATOR_FLAGS = \
     -I$(RTL_DIR)/mac \
     -I$(RTL_DIR)/meta \
     -I$(RTL_DIR)/monitor \
-    -I$(RTL_DIR)/uart \
     -I$(RTL_DIR)/top
 
 # Directories
@@ -52,8 +51,7 @@ RTL_SOURCES_ALL = \
     $(wildcard $(RTL_DIR)/host_iface/*.sv) \
     $(wildcard $(RTL_DIR)/mac/*.sv) \
     $(wildcard $(RTL_DIR)/meta/*.sv) \
-    $(wildcard $(RTL_DIR)/monitor/*.sv) \
-    $(wildcard $(RTL_DIR)/uart/*.sv)
+    $(wildcard $(RTL_DIR)/monitor/*.sv)
 
 RTL_SOURCES = $(filter-out %tb_%.sv, $(RTL_SOURCES_ALL))
 
@@ -190,7 +188,6 @@ files:
 	@echo "  MAC:         $(words $(wildcard $(RTL_DIR)/mac/*.sv))"
 	@echo "  Metadata:    $(words $(wildcard $(RTL_DIR)/meta/*.sv))"
 	@echo "  Monitor:     $(words $(wildcard $(RTL_DIR)/monitor/*.sv))"
-	@echo "  UART:        $(words $(wildcard $(RTL_DIR)/uart/*.sv))"
 	@echo "  Top:         $(words $(wildcard $(RTL_DIR)/top/*.sv))"
 	@echo "  ---"
 	@echo "  Total:       $(words $(RTL_SOURCES) $(TOP_FILE))"

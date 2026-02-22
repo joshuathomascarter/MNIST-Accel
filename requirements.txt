@@ -1,4 +1,12 @@
+# Core ML
 torch>=1.9
 torchvision>=0.10
 numpy>=1.21
 Pillow>=8.0
+
+# Testing
+pytest>=7.0
+matplotlib>=3.5
+
+# RTL co-simulation (optional — only needed for cocotb tests)
+# cocotb>=1.8

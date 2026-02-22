@@ -5,10 +5,7 @@ echo "================================"
 echo "ACCEL-v1 AXI Burst DMA Guide"
 echo "================================"
 echo ""
-echo "Speed comparison:"
-echo "  UART:  14.4 KB/s  (82 sec for 1.18 MB)"
-echo "  AXI:   400 MB/s   (3 ms for 1.18 MB)"
-echo "  Speedup: 27,000×"
+echo "AXI4 @ 100 MHz = 400 MB/s burst throughput"
 echo ""
 
 # Test in simulator mode
