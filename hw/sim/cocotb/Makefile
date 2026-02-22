@@ -20,7 +20,6 @@ VERILOG_SOURCES = \
     $(PWD)/../../rtl/buffer/act_buffer.sv \
     $(PWD)/../../rtl/buffer/wgt_buffer.sv \
     $(PWD)/../../rtl/systolic/pe.sv \
-    $(PWD)/../../rtl/systolic/systolic_array.sv \
     $(PWD)/../../rtl/systolic/systolic_array_sparse.sv \
     $(PWD)/../../rtl/mac/mac8.sv \
     $(PWD)/../../rtl/monitor/perf.sv

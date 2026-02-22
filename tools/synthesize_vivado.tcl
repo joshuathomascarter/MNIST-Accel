@@ -57,7 +57,6 @@ puts "========================================="
 # Note: rtl/top/deprecated/ is excluded intentionally.
 set rtl_files [glob -nocomplain \
     rtl/systolic/pe.sv \
-    rtl/systolic/systolic_array.sv \
     rtl/systolic/systolic_array_sparse.sv \
     rtl/mac/*.sv \
     rtl/buffer/*.sv \

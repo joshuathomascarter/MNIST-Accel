@@ -1,8 +1,8 @@
 <testsuites name="results">
   <testsuite name="all" package="all">
-    <property name="random_seed" value="1771523597" />
-    <testcase name="test_identity_14x14" classname="test_accel_top" file="/Users/joshcarter/ResNet-Accel-2/hw/sim/cocotb/test_accel_top.py" lineno="290" time="0.024565935134887695" sim_time_ns="2680.0" ratio_time="109094.15763269505" />
-    <testcase name="test_sparse_28x28" classname="test_accel_top" file="/Users/joshcarter/ResNet-Accel-2/hw/sim/cocotb/test_accel_top.py" lineno="396" time="0.03333711624145508" sim_time_ns="3920.0" ratio_time="117586.6554145867" />
-    <testcase name="test_random_14x14" classname="test_accel_top" file="/Users/joshcarter/ResNet-Accel-2/hw/sim/cocotb/test_accel_top.py" lineno="475" time="0.057576894760131836" sim_time_ns="2810.0" ratio_time="48804.29921944554" />
+    <property name="random_seed" value="1771735746" />
+    <testcase name="test_identity_14x14" classname="test_accel_top" file="/Users/joshcarter/ResNet-Accel-2/hw/sim/cocotb/test_accel_top.py" lineno="290" time="0.025329113006591797" sim_time_ns="2680.0" ratio_time="105807.1002842674" />
+    <testcase name="test_sparse_28x28" classname="test_accel_top" file="/Users/joshcarter/ResNet-Accel-2/hw/sim/cocotb/test_accel_top.py" lineno="396" time="0.03242301940917969" sim_time_ns="3920.0" ratio_time="120901.75657391611" />
+    <testcase name="test_random_14x14" classname="test_accel_top" file="/Users/joshcarter/ResNet-Accel-2/hw/sim/cocotb/test_accel_top.py" lineno="475" time="0.05896115303039551" sim_time_ns="2810.0" ratio_time="47658.49810554749" />
   </testsuite>
 </testsuites>

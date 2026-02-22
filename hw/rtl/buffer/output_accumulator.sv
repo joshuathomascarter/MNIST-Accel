@@ -404,10 +404,10 @@ module output_accumulator #(
         input [31:0] scale;
         input relu;
         
-        reg signed [49:0] scaled;  // 32×17=49 bits + sign = 50
+        reg signed [49:0] scaled;  // 32×18=50 bits (signed)
         reg signed [ACC_W-1:0] relu_val;
         reg signed [OUT_W-1:0] quant_val;
-        reg signed [16:0] scale_narrow; // 16-bit scale in signed 17-bit container
+        reg signed [17:0] scale_narrow; // 17-bit scale in signed 18-bit container
     begin
         // Step 1: ReLU activation (max(0, x))
         // Common in CNNs - introduces non-linearity
@@ -417,10 +417,11 @@ module output_accumulator #(
             relu_val = acc_val;
         
         // Step 2: Fixed-point scaling
-        // Use lower 16 bits of scale (Q0.16 fractional, sufficient for INT8 quant)
-        // 32×17 signed multiply fits in a single DSP48E1 (25×18 multiplier)
+        // Use lower 17 bits of scale (Q1.16: 1 integer bit + 16 fractional)
+        // Supports scale values up to ~1.99999 (0x1FFFF).
+        // 32×18 signed multiply still fits a single DSP48E1 (25×18 input).
         // Previously used full 32×33 multiply → 4 DSPs each × 8 = 32 DSPs!
-        scale_narrow = $signed({1'b0, scale[15:0]});
+        scale_narrow = $signed({1'b0, scale[16:0]});
         scaled = (relu_val * scale_narrow) >>> 16;
         
         // Step 3: Saturate to INT8 range
