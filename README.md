@@ -373,16 +373,6 @@ Per-channel symmetric quantization preserves accuracy:
 
 ---
 
-## Known Limitations
-
-- FPGA synthesis and on-board validation not yet completed
-- C++ host driver is a framework with partial stub implementations
-- Dual-clock wrapper (`accel_top_dual_clk.sv`) has known compilation issues
-- DMA data width (64-bit) requires multi-beat transfers for 14-wide activation vectors
-- See [AUDIT.md](AUDIT.md) for a detailed internal code audit
-
----
-
 ## References
 
 - Y. Chen et al., "Eyeriss: A Spatial Architecture for Energy-Efficient Dataflow for CNNs," ISCA 2016
