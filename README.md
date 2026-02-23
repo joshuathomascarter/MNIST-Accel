@@ -22,7 +22,7 @@ ACCEL-v1 is a sparse neural network inference accelerator targeting the Xilinx Z
 - BSR sparse format — hardware scheduler skips zero-weight blocks entirely
 - INT8 quantization — per-channel scaling, 0.2% accuracy loss on MNIST (98.7%)
 - AXI4 DMA + AXI4-Lite CSR control interface
-- Dual-clock architecture — 50 MHz control / 200 MHz datapath
+- Clock Archiecture — 115 MHz
 - Full software stack — Python training/export, C++ host driver framework
 
 **Status:** RTL simulation-verified (Verilator + cocotb). FPGA deployment pending.
