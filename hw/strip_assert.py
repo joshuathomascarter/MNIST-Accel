@@ -25,6 +25,17 @@ for root, dirs, files in os.walk(src_dir):
         # Remove assert/cover/assume property lines
         txt = re.sub(r'^\s*(assert|cover|assume)\s+property\b[^;]*;[^\n]*', '', txt, flags=re.MULTILINE)
 
+        # Yosys synthesis: always_ff @(posedge clk or negedge rst_n) with
+        # if (!rst_n || cpu_reset) — Yosys can't map 3 edge-sensitive events.
+        # Strip the secondary synchronous-reset term from the condition so
+        # Yosys infers a clean $adff for rst_n only.
+        txt = re.sub(
+            r'(@\(posedge\s+clk\s+or\s+negedge\s+(\w+)\)[\s\S]*?\n\s*if\s*\(!\2)\s*\|\|\s*\w+',
+            r'\1',
+            txt,
+        )
+
+
         # Yosys doesn't support 'parameter string' - downgrade to plain parameter
         txt = re.sub(r'\bparameter\s+string\b', 'parameter', txt)
 
@@ -75,7 +86,7 @@ for root, dirs, files in os.walk(src_dir):
                 i = j + 1
                 continue
 
-            # Remove if (cond) assert(...) ... ; (possibly multi-line)
+            # Remove if (cond) assert(...) ... ; — same line or next line
             if re.match(r'^\s*if\s*\(.*\)\s*assert\s*\(', stripped):
                 combined = stripped
                 j = i
@@ -84,6 +95,20 @@ for root, dirs, files in os.walk(src_dir):
                     combined += ' ' + lines[j].strip()
                 i = j + 1
                 continue
+
+            # Remove if (cond) lines whose body is an assert on the NEXT line
+            if re.match(r'^\s*if\s*\(', stripped):
+                # peek at next non-empty, non-comment line
+                j = i + 1
+                while j < len(lines) and not lines[j].strip():
+                    j += 1
+                if j < len(lines) and re.match(r'^\s*assert\s*\(', lines[j]):
+                    # skip the whole if-assert chain (assert line + optional else)
+                    j += 1
+                    while ';' not in ' '.join(lines[i:j]) and j < len(lines):
+                        j += 1
+                    i = j + 1
+                    continue
 
             # Remove else $fatal/$error/$warning lines (orphaned from assert removal)
             if re.match(r'^\s*else\s+\$(fatal|error|warning)', stripped):

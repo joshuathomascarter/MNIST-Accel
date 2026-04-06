@@ -1,0 +1,8 @@
+{
+  "n_test": 1000,
+  "fp32_correct": 987,
+  "fp32_accuracy": 0.987,
+  "int8_4tile_correct": 987,
+  "int8_4tile_accuracy": 0.987,
+  "accuracy_drop": 0.0
+}
