@@ -1,0 +1,57 @@
+{
+  "image_index": 0,
+  "true_label": 7,
+  "golden_prediction": 7,
+  "golden_logits": [
+    -2.2113897800445557,
+    -1.40341317653656,
+    -0.1294519007205963,
+    0.2108144313097,
+    -1.7610969543457031,
+    -2.1493821144104004,
+    -5.955045223236084,
+    4.388418197631836,
+    -1.9474067687988281,
+    -1.2395601272583008
+  ],
+  "n_parallel": 4,
+  "fc1_nnz_per_tile": [
+    113,
+    112,
+    111,
+    108
+  ],
+  "dram_layout": {
+    "fc2_weight_offset": 0,
+    "fc2_act_offset": 576,
+    "fc2_output_offset": 1152,
+    "fc1_indptr_offsets": [
+      4096,
+      11451,
+      18741,
+      25966
+    ],
+    "fc1_indices_offsets": [
+      4106,
+      11461,
+      18751,
+      25976
+    ],
+    "fc1_data_offsets": [
+      4219,
+      11573,
+      18862,
+      26084
+    ],
+    "fc1_act_offset": 32996,
+    "fc1_partial_offsets": [
+      69860,
+      70132,
+      70404,
+      70676
+    ],
+    "fc1_out_offset": 70948,
+    "fc2_act_offset_full": 71092,
+    "fc2_output_offset_full": 71668
+  }
+}

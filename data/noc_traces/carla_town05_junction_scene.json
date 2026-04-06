@@ -1,0 +1,113 @@
+{
+  "scene_name": "CARLA Town05 Junction Rush Hour",
+  "description": "Six-camera CARLA-style junction scene summary used to generate BEV frame and reduction traces for the competition demo.",
+  "planner_root": 10,
+  "controller": 0,
+  "bev_cells": 192,
+  "camera_setup_flits": 10,
+  "camera_setup_cycle": 0,
+  "secondary_ratio": 0.25,
+  "scales": [
+    {
+      "name": "p3",
+      "dense_flits": 12,
+      "release_cycle": 12,
+      "completion_cycle": 58
+    },
+    {
+      "name": "p4",
+      "dense_flits": 10,
+      "release_cycle": 68,
+      "completion_cycle": 106
+    },
+    {
+      "name": "p5",
+      "dense_flits": 8,
+      "release_cycle": 116,
+      "completion_cycle": 148
+    }
+  ],
+  "fusion_overlap_edges": [
+    [5, 6],
+    [6, 9],
+    [9, 10],
+    [10, 5],
+    [6, 10],
+    [9, 5]
+  ],
+  "planner_query_cycle": 166,
+  "head_response_cycle": 170,
+  "head_weight_cycle": 174,
+  "head_tiles": [8, 11, 12, 15],
+  "reduce_release_cycle": 48,
+  "camera_release_stride": 1,
+  "reduce_release_stride": 1,
+  "cameras": [
+    {
+      "name": "front",
+      "tile": 1,
+      "primary_fusion_tile": 5,
+      "secondary_fusion_tile": 6,
+      "token_counts": {
+        "p3": 30,
+        "p4": 22,
+        "p5": 15
+      }
+    },
+    {
+      "name": "front_left",
+      "tile": 2,
+      "primary_fusion_tile": 6,
+      "secondary_fusion_tile": 9,
+      "token_counts": {
+        "p3": 28,
+        "p4": 21,
+        "p5": 14
+      }
+    },
+    {
+      "name": "front_right",
+      "tile": 4,
+      "primary_fusion_tile": 9,
+      "secondary_fusion_tile": 10,
+      "token_counts": {
+        "p3": 27,
+        "p4": 19,
+        "p5": 13
+      }
+    },
+    {
+      "name": "rear_left",
+      "tile": 7,
+      "primary_fusion_tile": 10,
+      "secondary_fusion_tile": 5,
+      "token_counts": {
+        "p3": 24,
+        "p4": 17,
+        "p5": 12
+      }
+    },
+    {
+      "name": "rear",
+      "tile": 13,
+      "primary_fusion_tile": 5,
+      "secondary_fusion_tile": 6,
+      "token_counts": {
+        "p3": 22,
+        "p4": 16,
+        "p5": 10
+      }
+    },
+    {
+      "name": "rear_right",
+      "tile": 14,
+      "primary_fusion_tile": 6,
+      "secondary_fusion_tile": 9,
+      "token_counts": {
+        "p3": 26,
+        "p4": 18,
+        "p5": 12
+      }
+    }
+  ]
+}

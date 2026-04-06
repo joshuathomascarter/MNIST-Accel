@@ -1,0 +1,150 @@
+################################################################################
+# sram_1rw_wrapper.lef — Abstract LEF macro stub for P&R
+################################################################################
+# Technology: sky130 (1x grid = 0.46 um, 2x grid = 0.92 um)
+#
+# Represents the 2 kB (128 rows × 128-bit word) synchronous 1RW SRAM.
+# Dimensions derived from OpenRAM sky130_sram_1kbyte_1r1w scaled to 128-bit
+# word width:
+#   Height: 10 metal rows  × standard row height (2.72 um) ≈ ~300 um
+#   Width:  ~200 um (word-width scaling from 32-bit reference)
+#
+# Replace with real macro LEF from OpenRAM or foundry CAM when available.
+# See hw/openlane/soc_top_v2/config.tcl EXTRA_LEFS for how this is consumed.
+################################################################################
+
+VERSION 5.7 ;
+
+BUSBITCHARS "[]" ;
+DIVIDERCHAR "/" ;
+
+UNITS
+  DATABASE MICRONS 1000 ;
+END UNITS
+
+MACRO sram_1rw_wrapper
+
+  CLASS BLOCK ;
+  ORIGIN 0.0 0.0 ;
+  FOREIGN sram_1rw_wrapper 0.0 0.0 ;
+  SIZE 200.0 BY 300.0 ;
+
+  SYMMETRY X Y R90 ;
+
+  SITE unithd ;
+
+  # ── Power/Ground stripes ──────────────────────────────────────────────
+  PIN VDD
+    DIRECTION INOUT ;
+    USE POWER ;
+    SHAPE ABUTMENT ;
+    PORT
+      LAYER met1 ;
+        RECT  0.000 298.5  200.0  300.0 ;
+    END
+  END VDD
+
+  PIN VSS
+    DIRECTION INOUT ;
+    USE GROUND ;
+    SHAPE ABUTMENT ;
+    PORT
+      LAYER met1 ;
+        RECT  0.000  0.000  200.0    1.5 ;
+    END
+  END VSS
+
+  # ── Clock ─────────────────────────────────────────────────────────────
+  PIN clk
+    DIRECTION INPUT ;
+    USE SIGNAL ;
+    PORT
+      LAYER met2 ;
+        RECT  2.0  295.0  4.0  297.0 ;
+    END
+  END clk
+
+  # ── Control ───────────────────────────────────────────────────────────
+  PIN rst_n
+    DIRECTION INPUT ;
+    USE SIGNAL ;
+    PORT
+      LAYER met2 ;
+        RECT  6.0  295.0  8.0  297.0 ;
+    END
+  END rst_n
+
+  PIN en
+    DIRECTION INPUT ;
+    USE SIGNAL ;
+    PORT
+      LAYER met2 ;
+        RECT  10.0  295.0  12.0  297.0 ;
+    END
+  END en
+
+  PIN we
+    DIRECTION INPUT ;
+    USE SIGNAL ;
+    PORT
+      LAYER met2 ;
+        RECT  14.0  295.0  16.0  297.0 ;
+    END
+  END we
+
+  # ── Address bus [6:0] ─────────────────────────────────────────────────
+  PIN addr[0]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met2 ; RECT  18.0 295.0  20.0 297.0 ; END
+  END addr[0]
+  PIN addr[1]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met2 ; RECT  22.0 295.0  24.0 297.0 ; END
+  END addr[1]
+  PIN addr[2]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met2 ; RECT  26.0 295.0  28.0 297.0 ; END
+  END addr[2]
+  PIN addr[3]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met2 ; RECT  30.0 295.0  32.0 297.0 ; END
+  END addr[3]
+  PIN addr[4]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met2 ; RECT  34.0 295.0  36.0 297.0 ; END
+  END addr[4]
+  PIN addr[5]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met2 ; RECT  38.0 295.0  40.0 297.0 ; END
+  END addr[5]
+  PIN addr[6]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met2 ; RECT  42.0 295.0  44.0 297.0 ; END
+  END addr[6]
+
+  # ── Write data bus [127:0] — abbreviated (pins at 2-um pitch on top) ──
+  # Full bus: replace with complete 128-pin expansion from real macro LEF.
+  PIN wdata[0]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT  2.0 290.0  4.0 292.0 ; END
+  END wdata[0]
+
+  # ── Read data bus [127:0] — abbreviated ──────────────────────────────
+  PIN rdata[0]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT  2.0  4.0  4.0  6.0 ; END
+  END rdata[0]
+
+  # ── Obstruction (full cell body) ─────────────────────────────────────
+  OBS
+    LAYER met1 ;
+      RECT  0.0  0.0  200.0  300.0 ;
+    LAYER met2 ;
+      RECT  0.0  0.0  200.0  300.0 ;
+    LAYER met3 ;
+      RECT  0.0  0.0  200.0  300.0 ;
+  END
+
+END sram_1rw_wrapper
+
+END LIBRARY

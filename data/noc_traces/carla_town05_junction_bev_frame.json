@@ -1,0 +1,570 @@
+{
+  "name": "CARLA Town05 Junction Rush Hour BEV frame trace",
+  "description": "Six-camera CARLA-style junction scene summary used to generate BEV frame and reduction traces for the competition demo.",
+  "planner_root": 10,
+  "source_scene": "carla_town05_junction_scene.json",
+  "packets": [
+    {
+      "phase": "camera_setup",
+      "src": 0,
+      "dsts": [
+        1,
+        2,
+        4,
+        7,
+        13,
+        14
+      ],
+      "is_sparse": false,
+      "num_flits": 10,
+      "release_cycle": 0,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "p3_dense_ingress",
+      "src": 0,
+      "dsts": [
+        1,
+        2,
+        4,
+        7,
+        13,
+        14
+      ],
+      "is_sparse": false,
+      "num_flits": 12,
+      "release_cycle": 12,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "p3_front_primary",
+      "src": 1,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 22,
+      "release_cycle": 25,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_front_secondary",
+      "src": 1,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 8,
+      "release_cycle": 26,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_front_left_primary",
+      "src": 2,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 21,
+      "release_cycle": 26,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_front_left_secondary",
+      "src": 2,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 7,
+      "release_cycle": 27,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_front_right_primary",
+      "src": 4,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 20,
+      "release_cycle": 28,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_front_right_secondary",
+      "src": 4,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 7,
+      "release_cycle": 29,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_rear_left_primary",
+      "src": 7,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 18,
+      "release_cycle": 26,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_rear_left_secondary",
+      "src": 7,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 6,
+      "release_cycle": 27,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_rear_primary",
+      "src": 13,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 16,
+      "release_cycle": 27,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_rear_secondary",
+      "src": 13,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 6,
+      "release_cycle": 28,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_rear_right_primary",
+      "src": 14,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 20,
+      "release_cycle": 28,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_rear_right_secondary",
+      "src": 14,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 6,
+      "release_cycle": 29,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_completion",
+      "srcs": [
+        1,
+        2,
+        4,
+        7,
+        13,
+        14
+      ],
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "release_cycle": 58,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "p4_dense_ingress",
+      "src": 0,
+      "dsts": [
+        1,
+        2,
+        4,
+        7,
+        13,
+        14
+      ],
+      "is_sparse": false,
+      "num_flits": 10,
+      "release_cycle": 68,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "p4_front_primary",
+      "src": 1,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 16,
+      "release_cycle": 81,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_front_secondary",
+      "src": 1,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 6,
+      "release_cycle": 82,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_front_left_primary",
+      "src": 2,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 16,
+      "release_cycle": 82,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_front_left_secondary",
+      "src": 2,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 5,
+      "release_cycle": 83,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_front_right_primary",
+      "src": 4,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 14,
+      "release_cycle": 84,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_front_right_secondary",
+      "src": 4,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 5,
+      "release_cycle": 85,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_rear_left_primary",
+      "src": 7,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 13,
+      "release_cycle": 82,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_rear_left_secondary",
+      "src": 7,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 4,
+      "release_cycle": 83,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_rear_primary",
+      "src": 13,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 12,
+      "release_cycle": 83,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_rear_secondary",
+      "src": 13,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 4,
+      "release_cycle": 84,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_rear_right_primary",
+      "src": 14,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 14,
+      "release_cycle": 84,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_rear_right_secondary",
+      "src": 14,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 4,
+      "release_cycle": 85,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_completion",
+      "srcs": [
+        1,
+        2,
+        4,
+        7,
+        13,
+        14
+      ],
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "release_cycle": 106,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "p5_dense_ingress",
+      "src": 0,
+      "dsts": [
+        1,
+        2,
+        4,
+        7,
+        13,
+        14
+      ],
+      "is_sparse": false,
+      "num_flits": 8,
+      "release_cycle": 116,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "p5_front_primary",
+      "src": 1,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 11,
+      "release_cycle": 129,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_front_secondary",
+      "src": 1,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 4,
+      "release_cycle": 130,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_front_left_primary",
+      "src": 2,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 10,
+      "release_cycle": 130,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_front_left_secondary",
+      "src": 2,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 4,
+      "release_cycle": 131,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_front_right_primary",
+      "src": 4,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 10,
+      "release_cycle": 132,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_front_right_secondary",
+      "src": 4,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 3,
+      "release_cycle": 133,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_rear_left_primary",
+      "src": 7,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 9,
+      "release_cycle": 130,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_rear_left_secondary",
+      "src": 7,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 3,
+      "release_cycle": 131,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_rear_primary",
+      "src": 13,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 8,
+      "release_cycle": 131,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_rear_secondary",
+      "src": 13,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 2,
+      "release_cycle": 132,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_rear_right_primary",
+      "src": 14,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 9,
+      "release_cycle": 132,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_rear_right_secondary",
+      "src": 14,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 3,
+      "release_cycle": 133,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_completion",
+      "srcs": [
+        1,
+        2,
+        4,
+        7,
+        13,
+        14
+      ],
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "release_cycle": 148,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "fusion_overlap_5_6",
+      "src": 5,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "release_cycle": 158
+    },
+    {
+      "phase": "fusion_overlap_6_9",
+      "src": 6,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "release_cycle": 159
+    },
+    {
+      "phase": "fusion_overlap_9_10",
+      "src": 9,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 2,
+      "release_cycle": 160
+    },
+    {
+      "phase": "fusion_overlap_10_5",
+      "src": 10,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "release_cycle": 161
+    },
+    {
+      "phase": "fusion_overlap_6_10",
+      "src": 6,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 2,
+      "release_cycle": 162
+    },
+    {
+      "phase": "fusion_overlap_9_5",
+      "src": 9,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "release_cycle": 163
+    },
+    {
+      "phase": "planner_queries",
+      "src": 10,
+      "dsts": [
+        8,
+        11,
+        12,
+        15
+      ],
+      "is_sparse": true,
+      "num_flits": 2,
+      "release_cycle": 166,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "head_responses",
+      "srcs": [
+        8,
+        11,
+        12,
+        15
+      ],
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "release_cycle": 170,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "head_weights",
+      "src": 0,
+      "dsts": [
+        8,
+        11,
+        12,
+        15
+      ],
+      "is_sparse": false,
+      "num_flits": 8,
+      "release_cycle": 174,
+      "pair_release_stride": 1
+    }
+  ]
+}

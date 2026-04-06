@@ -4,34 +4,45 @@ ACCEL-v1 Handwriting Classifier — Interactive Demo
 ====================================================
 Draw a digit (0-9) on the canvas, click "Classify" and see the prediction.
 
-Supports two backends:
-  1. PyTorch CPU — default, works anywhere
-  2. FPGA accelerator — use --fpga flag on PYNQ-Z2 board
+Supports three backends:
+  1. PyTorch CPU   — default, works anywhere
+  2. ZCU104 UART   — real hardware via USB-TTL on PMOD J160 (use --zcu104 PORT)
+  3. SoC RTL e2e   -- Verilator simulation (use --soc-e2e, slow)
 
 PyTorch (CPU) mode:
   1. Capture handwritten digit image
   2. Preprocess to 28×28 grayscale (MNIST format)
-  3. Run INT8-quantized CNN inference on CPU
-  4. Output predicted digit with confidence
+  3. Run FP32 CNN inference on CPU
+  4. Output predicted digit, confidence, and latency
 
-FPGA (ACCEL-v1) mode:
+ZCU104 (hardware) mode:
   1. Capture handwritten digit image
-  2. Preprocess to 28×28 and quantize to INT8
-  3. Run conv1 → conv2 → fc1 → fc2 on the 14×14 systolic array
-  4. Output predicted digit with confidence + cycle count
+  2. Run conv1 → conv2 → pool → fc1 on CPU (fast, FP32)
+  3. Send first fc1 16×16 tile to ZCU104 via UART and run on systolic array
+  4. Report predicted digit (CPU classification), confidence, and real UART-roundtrip latency
 
-Requirements: torch, torchvision, Pillow, tkinter
-  pip install torch torchvision Pillow
+SoC E2E (Verilator) mode:
+  1. Same pipeline but routed through full RTL simulation via run_e2e.py
+  2. Slow (~10 min) but exercises the complete RTL path
+
+Requirements: torch, torchvision, Pillow, tkinter, pyserial
+  pip install torch torchvision Pillow pyserial
 
 Usage:
-  python3 classify_digit.py              # Interactive drawing (PyTorch CPU)
-  python3 classify_digit.py --fpga       # Interactive drawing (FPGA)
-  python3 classify_digit.py image.png    # Classify an image file
-  python3 classify_digit.py --test [N]   # Test on N random MNIST samples
+  python3 classify_digit.py                       # Interactive (PyTorch CPU)
+  python3 classify_digit.py --zcu104 /dev/ttyUSB0 # Interactive (ZCU104 hardware)
+  python3 classify_digit.py --soc-e2e             # Interactive (full SoC RTL, slow)
+  python3 classify_digit.py --soc-e2e-rebuild     # Force RTL rebuild before e2e
+  python3 classify_digit.py image.png             # Classify an image file
+  python3 classify_digit.py --test [N]            # Test on N random MNIST samples
 """
 
 import sys
 import os
+import re
+import subprocess
+import tempfile
+import threading
 import time
 import numpy as np
 
@@ -45,7 +56,7 @@ from PIL import Image, ImageDraw, ImageFilter
 class MNISTNet(nn.Module):
     """MNIST CNN matching the ACCEL-v1 hardware mapping.
     
-    fc1 output = 140 (10×14) — tiles perfectly onto the 14×14 systolic array.
+    fc1 output = 140 — padded to 144 (9×16) for systolic tiling.
     """
     def __init__(self):
         super().__init__()
@@ -69,8 +80,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.normpath(os.path.join(ROOT, "..", "..", ".."))
 CHECKPOINT = os.path.join(PROJECT_ROOT, "data", "checkpoints", "mnist_fp32.pt")
 
-# Add host/ to path for FPGA driver imports
-sys.path.insert(0, os.path.join(PROJECT_ROOT, "sw", "ml_python", "host"))
+# Add tools/ to path for ZCU104 UART host imports
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "tools"))
 
 
 def load_model():
@@ -134,169 +145,116 @@ def classify(model, img: Image.Image):
     return predicted, confidence, probs, time_ms
 
 
-# ─── FPGA Backend ────────────────────────────────────────────────────────────
+# ─── ZCU104 UART Backend ─────────────────────────────────────────────────────
 
-def load_fpga_backend(bitstream="accel_top.bit", simulate=False):
+def classify_zcu104(port: str, baud: int, model, img: Image.Image):
     """
-    Initialize the FPGA accelerator and load BSR weights for all 4 layers.
-    
-    Returns:
-        (accel_driver, layer_data) or None if FPGA not available
-    """
-    import json
-    from accel import AccelDriver
-    
-    try:
-        if not simulate:
-            from pynq import Overlay
-            overlay = Overlay(bitstream)
-            accel = AccelDriver(overlay)
-        else:
-            accel = AccelDriver(simulation=True)
-    except Exception as e:
-        print(f"✗ FPGA init failed: {e}")
-        return None, None
-    
-    # Load BSR weights
-    bsr_dir = os.path.join(PROJECT_ROOT, "data", "bsr_export_14x14")
-    layer_data = {}
-    
-    for layer_name in ["conv1", "conv2", "fc1", "fc2"]:
-        layer_dir = os.path.join(bsr_dir, layer_name)
-        meta_path = os.path.join(layer_dir, "weights.meta.json")
-        
-        if not os.path.exists(meta_path):
-            print(f"  ✗ {layer_name}: BSR data not found")
-            continue
-        
-        bsr_path = os.path.join(layer_dir, "weights.bsr")
-        if not os.path.exists(bsr_path):
-            bsr_path = os.path.join(layer_dir, "weights_int8.bsr")
-        
-        weights = np.load(bsr_path, allow_pickle=True)
-        with open(meta_path) as f:
-            meta = json.load(f)
-        
-        row_ptr = np.array(meta["row_ptr"], dtype=np.int32)
-        col_idx = np.array(meta["col_idx"], dtype=np.int32)
-        
-        layer_data[layer_name] = {
-            "weights": weights, "row_ptr": row_ptr,
-            "col_idx": col_idx, "meta": meta
-        }
-        print(f"  ✓ {layer_name}: {meta['num_blocks']} BSR blocks "
-              f"({meta['sparsity_pct']:.0f}% sparse)")
-    
-    return accel, layer_data
+    Run inference using the ZCU104 hardware over UART.
 
+    Pipeline:
+      CPU:    preprocess → conv1 → conv2 → pool → fc1 (FP32, ~2 ms)
+      ZCU104: first fc1 16×16 tile via UART systolic array → measure real HW latency
+      CPU:    full PyTorch forward pass returns the final digit + confidence
+              (multi-tile fc2 accumulation on HW is future work)
 
-def im2col_simple(input_3d, kH, kW, stride=1):
-    """im2col for conv layer: (C,H,W) → (C*kH*kW, H_out*W_out)."""
-    C, H, W = input_3d.shape
-    H_out = (H - kH) // stride + 1
-    W_out = (W - kW) // stride + 1
-    col = np.zeros((C * kH * kW, H_out * W_out), dtype=input_3d.dtype)
-    for h in range(H_out):
-        for w in range(W_out):
-            patch = input_3d[:, h:h+kH, w:w+kW]
-            col[:, h * W_out + w] = patch.flatten()
-    return col
-
-
-def max_pool_2d_simple(x, pool=2):
-    """2×2 max pool on (C,H,W)."""
-    C, H, W = x.shape
-    Ho, Wo = H // pool, W // pool
-    out = np.zeros((C, Ho, Wo), dtype=x.dtype)
-    for c in range(C):
-        for h in range(Ho):
-            for w in range(Wo):
-                out[c, h, w] = x[c, h*pool:(h+1)*pool, w*pool:(w+1)*pool].max()
-    return out
-
-
-def classify_fpga(accel, layer_data, img: Image.Image):
-    """
-    Run full MNIST inference on the FPGA accelerator.
-    
-    Pipeline: image → INT8 → conv1 → conv2 → pool → fc1 → fc2 → softmax
-    
     Returns: (predicted_digit, confidence, all_probs, time_ms)
+      where time_ms = wall-clock UART roundtrip for the first fc1 16×16 tile.
     """
-    # Preprocess image the same way as PyTorch
+    from soc_top_v2_uart_host import SocTopV2UartHost, run_block_demo
+
+    # ── Full CPU inference (for digit + confidence) ──────────────────────────
     tensor = preprocess_image(img)
-    img_fp32 = tensor.squeeze().numpy()  # (1, 28, 28) → (28, 28)
-    
-    # Quantize to INT8
-    scale = np.max(np.abs(img_fp32)) / 127.0 if np.max(np.abs(img_fp32)) > 0 else 1.0
-    act = np.clip(np.rint(img_fp32 / scale), -128, 127).astype(np.int8)
-    act = act.reshape(1, 28, 28)  # (C=1, H=28, W=28)
-    act_scale = scale
-    
-    t0 = time.perf_counter()
-    
-    # ── conv1: (1,28,28) → (32,26,26) ──
-    ld = layer_data["conv1"]
-    meta = ld["meta"]
-    col = im2col_simple(act, 3, 3)               # (9, 676)
-    M, K = meta["original_shape"]                  # 32, 9
-    N = col.shape[1]                               # 676
-    out32 = accel.run_layer("conv1", ld["row_ptr"], ld["col_idx"], ld["weights"],
-                            col.T, M=M, N=N, K=K, Sa=act_scale)
-    out_fp = out32.astype(np.float32) * act_scale
-    out_fp = np.maximum(out_fp, 0)                 # ReLU
-    act = out_fp.reshape(M, 26, 26)
-    act_int8 = np.clip(np.rint(act / (np.max(np.abs(act))/127 + 1e-10)), -128, 127).astype(np.int8)
-    act_scale = np.max(np.abs(act)) / 127.0
-    act = act_int8
-    
-    # ── conv2: (32,26,26) → (64,24,24) → pool → (64,12,12) ──
-    ld = layer_data["conv2"]
-    meta = ld["meta"]
-    col = im2col_simple(act, 3, 3)                # (288, 576)
-    M, K = meta["original_shape"]                   # 64, 288
-    N = col.shape[1]                                # 576
-    out32 = accel.run_layer("conv2", ld["row_ptr"], ld["col_idx"], ld["weights"],
-                            col.T, M=M, N=N, K=K, Sa=act_scale)
-    out_fp = out32.astype(np.float32) * act_scale
-    out_fp = np.maximum(out_fp, 0)                  # ReLU
-    act_3d = out_fp.reshape(M, 24, 24)
-    act_3d = max_pool_2d_simple(act_3d, 2)         # (64, 12, 12)
-    act_scale = np.max(np.abs(act_3d)) / 127.0
-    act = np.clip(np.rint(act_3d / (act_scale + 1e-10)), -128, 127).astype(np.int8)
-    
-    # ── fc1: flatten 9216 → 128 ──
-    ld = layer_data["fc1"]
-    meta = ld["meta"]
-    M, K = meta["original_shape"]                   # 128, 9216
-    N = 1
-    act_2d = act.flatten()[:K].reshape(1, K).astype(np.int8)
-    out32 = accel.run_layer("fc1", ld["row_ptr"], ld["col_idx"], ld["weights"],
-                            act_2d, M=M, N=N, K=K, Sa=act_scale)
-    out_fp = out32.astype(np.float32) * act_scale
-    out_fp = np.maximum(out_fp, 0)                  # ReLU
-    act_scale = np.max(np.abs(out_fp)) / 127.0
-    act = np.clip(np.rint(out_fp / (act_scale + 1e-10)), -128, 127).astype(np.int8)
-    
-    # ── fc2: 128 → 10 (logits) ──
-    ld = layer_data["fc2"]
-    meta = ld["meta"]
-    M, K = meta["original_shape"]                   # 10, 128
-    N = 1
-    act_2d = act.flatten()[:K].reshape(1, K).astype(np.int8)
-    out32 = accel.run_layer("fc2", ld["row_ptr"], ld["col_idx"], ld["weights"],
-                            act_2d, M=M, N=N, K=K, Sa=act_scale)
-    logits = out32.astype(np.float32).flatten()[:10] * act_scale
-    
-    t1 = time.perf_counter()
-    
-    # Softmax
-    exp_l = np.exp(logits - logits.max())
-    probs = exp_l / exp_l.sum()
+    with torch.no_grad():
+        logits = model(tensor)
+    probs = F.softmax(logits, dim=1).squeeze().numpy()
     predicted = int(probs.argmax())
     confidence = float(probs[predicted]) * 100
-    time_ms = (t1 - t0) * 1000
-    
+
+    # ── Extract fc1 first 16×16 activation block (INT8) ─────────────────────
+    # Pass the image through conv1 + conv2 + pool to get the 9216-dim fc1 input
+    with torch.no_grad():
+        x = tensor
+        x = F.relu(model.conv1(x))
+        x = F.relu(model.conv2(x))
+        x = F.max_pool2d(x, 2)
+        fc1_input = torch.flatten(x, 1).squeeze().numpy()  # (9216,)
+
+    act_flat = fc1_input[:256]  # first 16×16 slice
+    act_scale = float(np.max(np.abs(act_flat))) / 127.0 if np.max(np.abs(act_flat)) > 0 else 1.0
+    act_block = np.clip(np.rint(act_flat / act_scale), -128, 127).astype(np.int8).reshape(16, 16)
+
+    # First 16×16 slice of fc1 weight matrix
+    wgt_np = model.fc1.weight.detach().numpy()[:16, :256]  # (16, 256) → first 16×16
+    wgt_scale = float(np.max(np.abs(wgt_np))) / 127.0 if np.max(np.abs(wgt_np)) > 0 else 1.0
+    wgt_block = np.clip(np.rint(wgt_np[:, :16] / wgt_scale), -128, 127).astype(np.int8)
+
+    # ── Send one 16×16 tile to ZCU104 and time the UART roundtrip ────────────
+    host = SocTopV2UartHost(port=port, baud=baud, timeout=5.0)
+    version = host.ping()
+    print(f"  ZCU104 ping OK — firmware version 0x{version:08x}")
+
+    t0 = time.perf_counter()
+    run_block_demo(host, act_block, wgt_block, tile=0)
+    t1 = time.perf_counter()
+    time_ms = (t1 - t0) * 1000.0
+
+    return predicted, confidence, probs, time_ms
+
+
+def classify_soc_e2e(img: Image.Image, skip_build=True, full=True):
+    """Run the full soc_top_v2 e2e flow on an arbitrary input image."""
+    runner = os.path.join(PROJECT_ROOT, "tools", "run_e2e.py")
+
+    with tempfile.TemporaryDirectory(prefix="mnist_accel_gui_") as tmpdir:
+        image_path = os.path.join(tmpdir, "drawn_digit.png")
+        img.save(image_path)
+
+        cmd = [sys.executable, runner, "--image-path", image_path]
+        if skip_build:
+            cmd.append("--skip-build")
+        if full:
+            cmd.append("--full")
+
+        t0 = time.perf_counter()
+        proc = subprocess.run(
+            cmd,
+            cwd=PROJECT_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        t1 = time.perf_counter()
+
+    output = proc.stdout
+    if proc.returncode != 0:
+        tail = "\n".join(output.strip().splitlines()[-20:])
+        raise RuntimeError(f"SoC e2e failed:\n{tail}")
+
+    pred_match = re.search(r"Predicted digit\s*:\s*(\d+)", output)
+    if not pred_match:
+        pred_match = re.search(r"Predicted:\s*(\d+)", output)
+    if not pred_match:
+        raise RuntimeError("SoC e2e completed, but no predicted digit was found in the output")
+    predicted = int(pred_match.group(1))
+
+    logits_match = re.search(r"LogitsHex:\s+([0-9a-fA-F\s]+)", output)
+    if logits_match:
+        tokens = logits_match.group(1).split()
+        logits = []
+        for token in tokens[:10]:
+            value = int(token, 16)
+            if value & 0x80000000:
+                value -= 1 << 32
+            logits.append(float(value))
+        logits = np.array(logits, dtype=np.float64)
+        exp_logits = np.exp(logits - logits.max())
+        probs = exp_logits / exp_logits.sum()
+    else:
+        probs = np.zeros(10, dtype=np.float64)
+        probs[predicted] = 1.0
+
+    confidence = float(probs[predicted]) * 100.0
+    time_ms = (t1 - t0) * 1000.0
     return predicted, confidence, probs, time_ms
 
 
@@ -319,13 +277,15 @@ def print_result(predicted, confidence, probs, time_ms, backend="PyTorch CPU"):
     print()
     print(f"  Inference time:  {time_ms:.2f} ms ({backend})")
     if backend == "PyTorch CPU":
-        print(f"  FPGA estimated:  ~0.025 ms (25 µs @ 110 MHz, 90% sparse)")
-        print(f"  Speedup:         ~{time_ms/0.025:.0f}×")
+        print(f"  ZCU104 est:      ~0.025 ms (25 µs @ 50 MHz, fc1+fc2 tiled)")
+        print(f"  Potential speedup: ~{time_ms/0.025:.0f}×")
+    elif "ZCU104" in backend:
+        print(f"  Includes UART roundtrip overhead (first fc1 tile, 16×16)")
     print()
 
 
 # ─── File Mode ───────────────────────────────────────────────────────────────
-def classify_file(model, path):
+def classify_file(path, classify_fn, backend_name):
     """Classify a digit from an image file."""
     if not os.path.exists(path):
         print(f"Error: File not found: {path}")
@@ -334,8 +294,8 @@ def classify_file(model, path):
     img = Image.open(path)
     print(f"Loaded image: {path} ({img.size[0]}×{img.size[1]})")
     
-    predicted, confidence, probs, time_ms = classify(model, img)
-    print_result(predicted, confidence, probs, time_ms)
+    predicted, confidence, probs, time_ms = classify_fn(img)
+    print_result(predicted, confidence, probs, time_ms, backend_name)
     
     # Show ASCII preview of what the model sees
     print_ascii_preview(img)
@@ -440,7 +400,7 @@ def run_drawing_mode(model, classify_fn=None, backend_name="PyTorch CPU"):
             self.prob_label.pack(pady=5)
             
             # Footer
-            tk.Label(root, text=f"ACCEL-v1 | 14×14 Systolic Array | Backend: {backend_name}",
+            tk.Label(root, text=f"ACCEL-v1 | 16×16 Systolic Array | Backend: {backend_name}",
                      font=("Helvetica", 9), fg="#555", bg="#1a1a2e").pack(pady=5)
             
             root.configure(bg="#1a1a2e")
@@ -457,26 +417,47 @@ def run_drawing_mode(model, classify_fn=None, backend_name="PyTorch CPU"):
             self.draw = ImageDraw.Draw(self.image)
             self.result_label.config(text="Draw a digit and click Classify", fg="#aaa")
             self.prob_label.config(text="")
-        
-        def do_classify(self):
-            predicted, confidence, probs, time_ms = classify_fn(self.image)
-            
-            # Update GUI
+
+        def finish_classify(self, result):
+            predicted, confidence, probs, time_ms = result
+
+            self.classify_btn.config(state=tk.NORMAL, text="🔍 Classify")
+            self.clear_btn.config(state=tk.NORMAL)
             self.result_label.config(
                 text=f"Predicted: {predicted}   ({confidence:.1f}%)",
                 fg="#00ff88" if confidence > 80 else "#ffaa00"
             )
-            
-            # Build probability display
+
             prob_text = ""
             for i in range(10):
                 bar = "█" * int(probs[i] * 20)
                 marker = " ◄" if i == predicted else ""
                 prob_text += f" {i}: {bar:<20s} {probs[i]*100:5.1f}%{marker}\n"
             self.prob_label.config(text=prob_text)
-            
-            # Also print to terminal
+
             print_result(predicted, confidence, probs, time_ms, backend_name)
+
+        def finish_error(self, message):
+            self.classify_btn.config(state=tk.NORMAL, text="🔍 Classify")
+            self.clear_btn.config(state=tk.NORMAL)
+            self.result_label.config(text="Classification failed", fg="#ff6666")
+            self.prob_label.config(text=message)
+        
+        def do_classify(self):
+            image_copy = self.image.copy()
+            self.classify_btn.config(state=tk.DISABLED, text="Running...")
+            self.clear_btn.config(state=tk.DISABLED)
+            self.result_label.config(text=f"Running {backend_name}...", fg="#66ccff")
+            self.prob_label.config(text="")
+
+            def worker():
+                try:
+                    result = classify_fn(image_copy)
+                    self.root.after(0, lambda: self.finish_classify(result))
+                except Exception as exc:
+                    self.root.after(0, lambda: self.finish_error(str(exc)))
+
+            threading.Thread(target=worker, daemon=True).start()
     
     root = tk.Tk()
     app = DrawApp(root)
@@ -529,7 +510,7 @@ def run_test_demo(model, count=10):
     
     print(f"\n  Accuracy: {correct}/{count} ({100*correct/count:.0f}%)")
     print(f"  Avg time: {total_time/count:.2f} ms/image (PyTorch CPU)")
-    print(f"  FPGA est: ~0.025 ms/image (25 µs @ 110 MHz, 90% sparse)")
+    print(f"  ZCU104 est: ~0.025 ms/image (25 µs @ 50 MHz, tiled fc1+fc2)")
     print()
 
 
@@ -538,39 +519,54 @@ if __name__ == "__main__":
     print()
     print("  ╔══════════════════════════════════════════════╗")
     print("  ║   ACCEL-v1 Handwriting Digit Classifier      ║")
-    print("  ║   14×14 Systolic Array · INT8 · BSR Sparse   ║")
+    print("  ║   16×16 Systolic Array · INT8 · BSR Sparse   ║")
     print("  ╚══════════════════════════════════════════════╝")
     print()
     
-    # Check for --fpga flag
-    use_fpga = "--fpga" in sys.argv
-    fpga_sim = "--fpga-sim" in sys.argv
-    
+    # Check for mode flags
+    use_zcu104 = "--zcu104" in sys.argv
+    zcu104_port = None
+    zcu104_baud = 115200
+    use_soc_e2e = "--soc-e2e" in sys.argv
+    soc_e2e_rebuild = "--soc-e2e-rebuild" in sys.argv
+
+    # Extract --zcu104 PORT [--baud BAUD] values
+    _argv = sys.argv[1:]
+    if use_zcu104:
+        try:
+            zcu104_port = _argv[_argv.index("--zcu104") + 1]
+        except (IndexError, ValueError):
+            print("Error: --zcu104 requires a port argument, e.g. --zcu104 /dev/ttyUSB0")
+            sys.exit(1)
+        if "--baud" in _argv:
+            try:
+                zcu104_baud = int(_argv[_argv.index("--baud") + 1])
+            except (IndexError, ValueError):
+                pass
+
     # Remove flags from argv for further parsing
-    args = [a for a in sys.argv[1:] if a not in ("--fpga", "--fpga-sim")]
+    args = [
+        a for a in _argv
+        if a not in ("--zcu104", zcu104_port, "--baud", str(zcu104_baud),
+                     "--soc-e2e", "--soc-e2e-rebuild")
+    ]
     
-    # Always load PyTorch model (used as fallback and for --test mode)
+    # Always load PyTorch model (used for CPU inference and ZCU104 conv pipeline)
     model = load_model()
-    
-    # Initialize FPGA backend if requested
-    accel = None
-    fpga_layer_data = None
-    if use_fpga or fpga_sim:
-        print("\n  Initializing FPGA backend...")
-        accel, fpga_layer_data = load_fpga_backend(simulate=fpga_sim)
-        if accel is not None:
-            print("  ✓ FPGA ready\n")
-        else:
-            print("  ✗ FPGA unavailable, falling back to PyTorch CPU\n")
-    
+
     # Choose classify function based on backend
-    def do_classify(img):
-        if accel is not None and fpga_layer_data is not None:
-            return classify_fpga(accel, fpga_layer_data, img)
-        else:
+    if use_soc_e2e:
+        def do_classify(img):
+            return classify_soc_e2e(img, skip_build=not soc_e2e_rebuild, full=True)
+        backend_name = "SoC E2E RTL (Verilator)"
+    elif use_zcu104:
+        def do_classify(img):
+            return classify_zcu104(zcu104_port, zcu104_baud, model, img)
+        backend_name = f"ZCU104 UART ({zcu104_port})"
+    else:
+        def do_classify(img):
             return classify(model, img)
-    
-    backend_name = "FPGA ACCEL-v1" if accel else "PyTorch CPU"
+        backend_name = "PyTorch CPU"
     
     if len(args) > 0:
         arg = args[0]
@@ -579,13 +575,15 @@ if __name__ == "__main__":
             run_test_demo(model, count)
         elif arg == "--help" or arg == "-h":
             print("Usage:")
-            print("  python3 classify_digit.py              # Interactive drawing (PyTorch CPU)")
-            print("  python3 classify_digit.py --fpga       # Interactive drawing (FPGA)")
-            print("  python3 classify_digit.py --fpga-sim   # Interactive drawing (FPGA simulated)")
-            print("  python3 classify_digit.py image.png    # Classify an image file")
-            print("  python3 classify_digit.py --test [N]   # Test on N random MNIST samples")
+            print("  python3 classify_digit.py                        # Interactive (PyTorch CPU)")
+            print("  python3 classify_digit.py --zcu104 /dev/ttyUSB0  # Interactive (ZCU104 hardware)")
+            print("  python3 classify_digit.py --zcu104 /dev/ttyUSB0 --baud 115200")
+            print("  python3 classify_digit.py --soc-e2e              # Interactive (full SoC RTL, slow)")
+            print("  python3 classify_digit.py --soc-e2e-rebuild      # Force RTL rebuild before SoC e2e")
+            print("  python3 classify_digit.py image.png              # Classify an image file")
+            print("  python3 classify_digit.py --test [N]             # Test on N random MNIST samples")
             print()
         else:
-            classify_file(model, arg)
+            classify_file(arg, do_classify, backend_name)
     else:
         run_drawing_mode(model, do_classify, backend_name)

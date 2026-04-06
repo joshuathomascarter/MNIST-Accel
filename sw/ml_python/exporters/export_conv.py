@@ -1,6 +1,6 @@
 """
 Export Convolutional Layer Fixtures
-Creates sparse conv kernels (14×14 blocks) for hardware testing.
+Creates sparse conv kernels (16×16 blocks) for hardware testing.
 """
 
 import os
@@ -28,8 +28,8 @@ def create_conv_weights(
     # Flatten to 2D for block sparsity
     weights_2d = weights_4d.reshape(out_channels, -1)
 
-    # Apply block sparsity (14×14 to match systolic array)
-    mask = create_sparse_mask(weights_2d.shape, sparsity_pct, block_size=14, seed=seed)
+    # Apply block sparsity (16×16 to match systolic array)
+    mask = create_sparse_mask(weights_2d.shape, sparsity_pct, block_size=16, seed=seed)
     weights_sparse_2d = weights_2d * mask
 
     # Reshape back to 4D
@@ -49,7 +49,7 @@ def create_conv_weights(
             "kernel_size": kernel_size,
             "target_sparsity": sparsity_pct,
             "actual_sparsity": float(actual_sparsity),
-            "block_size": 14,
+            "block_size": 16,
         },
     }
 
@@ -82,8 +82,8 @@ def export_conv_fixtures(output_dir: str = None):
         filepath = os.path.join(output_dir, name)
         np.savez_compressed(filepath, weights=conv["weights_4d"], bias=conv["bias"])
 
-        # Build and save BSR (use 2D flattened version with 14×14 blocks)
-        bsr = build_bsr_from_dense(conv["weights_2d"], 14, 14)
+        # Build and save BSR (use 2D flattened version with 16×16 blocks)
+        bsr = build_bsr_from_dense(conv["weights_2d"], 16, 16)
 
         bsr_dir = os.path.join(output_dir, f"conv_{cfg['in_ch']}_{cfg['out_ch']}_k{cfg['k']}")
         os.makedirs(bsr_dir, exist_ok=True)
@@ -99,7 +99,7 @@ def export_conv_fixtures(output_dir: str = None):
         np.save(os.path.join(bsr_dir, "scales.npy"), scales)
         np.save(os.path.join(bsr_dir, "bias.npy"), conv["bias"])
 
-        print(f"  Blocks (14×14): {bsr['num_blocks']}, Sparsity: {bsr['sparsity_pct']:.1f}%")
+        print(f"  Blocks (16×16): {bsr['num_blocks']}, Sparsity: {bsr['sparsity_pct']:.1f}%")
 
         # Save metadata
         with open(os.path.join(bsr_dir, "metadata.json"), "w") as f:

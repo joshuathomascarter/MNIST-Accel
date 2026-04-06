@@ -20,7 +20,7 @@ class TestSparseMask:
         """Verify sparsity percentage is approximately correct"""
         shape = (128, 128)
         sparsity = 80.0
-        mask = create_sparse_mask(shape, sparsity, block_size=14, seed=42)
+        mask = create_sparse_mask(shape, sparsity, block_size=16, seed=42)
 
         actual_sparsity = 100.0 * (1.0 - np.count_nonzero(mask) / mask.size)
         assert abs(actual_sparsity - sparsity) < 5.0, f"Sparsity {actual_sparsity} not close to {sparsity}"
@@ -28,19 +28,19 @@ class TestSparseMask:
     def test_block_aligned(self):
         """Verify mask is block-aligned"""
         shape = (64, 64)
-        mask = create_sparse_mask(shape, 75.0, block_size=14, seed=0)
+        mask = create_sparse_mask(shape, 75.0, block_size=16, seed=0)
 
-        # Check all 14×14 blocks are either all-zero or all-one
-        for i in range(0, 64, 14):
-            for j in range(0, 64, 14):
-                block = mask[i : i + 14, j : j + 14]
+        # Check all 16×16 blocks are either all-zero or all-one
+        for i in range(0, 64, 16):
+            for j in range(0, 64, 16):
+                block = mask[i : i + 16, j : j + 16]
                 assert np.all(block == 0) or np.all(block == 1), f"Block at ({i}, {j}) is not uniform"
 
     def test_reproducible(self):
         """Verify same seed gives same mask"""
         shape = (128, 128)
-        mask1 = create_sparse_mask(shape, 80.0, block_size=14, seed=999)
-        mask2 = create_sparse_mask(shape, 80.0, block_size=14, seed=999)
+        mask1 = create_sparse_mask(shape, 80.0, block_size=16, seed=999)
+        mask2 = create_sparse_mask(shape, 80.0, block_size=16, seed=999)
 
         assert np.array_equal(mask1, mask2), "Same seed should produce same mask"
 
@@ -65,7 +65,7 @@ class TestTransformerExport:
 
         assert "d_model" in qkv["metadata"]
         assert "d_head" in qkv["metadata"]
-        assert qkv["metadata"]["block_size"] == 14
+        assert qkv["metadata"]["block_size"] == 16
 
 
 class TestMLPExport:
@@ -100,31 +100,31 @@ class TestConvExport:
         sparsity = conv["metadata"]["actual_sparsity"]
         assert 65.0 <= sparsity <= 75.0, f"Sparsity {sparsity} out of range"
 
-    def test_block_size_14(self):
-        """Verify Conv uses 14×14 blocks"""
+    def test_block_size_16(self):
+        """Verify Conv uses 16×16 blocks"""
         conv = create_conv_weights(in_channels=32, out_channels=64, kernel_size=3)
 
-        assert conv["metadata"]["block_size"] == 14
+        assert conv["metadata"]["block_size"] == 16
 
 
 class TestEdgeCases:
     def test_zero_sparsity(self):
         """Verify 0% sparsity creates dense matrix"""
-        mask = create_sparse_mask((128, 128), sparsity_pct=0.0, block_size=14)
+        mask = create_sparse_mask((128, 128), sparsity_pct=0.0, block_size=16)
 
         assert np.all(mask == 1), "0% sparsity should be all ones"
 
     def test_hundred_percent_sparsity(self):
         """Verify 100% sparsity creates empty matrix"""
-        mask = create_sparse_mask((128, 128), sparsity_pct=100.0, block_size=14)
+        mask = create_sparse_mask((128, 128), sparsity_pct=100.0, block_size=16)
 
         assert np.all(mask == 0), "100% sparsity should be all zeros"
 
     def test_non_divisible_shape(self):
         """Verify handling of shapes not divisible by block size"""
-        # 130×130 not divisible by 14
+        # 130×130 not divisible by 16
         # Current implementation doesn't pad (works with partial blocks)
-        mask = create_sparse_mask((130, 130), sparsity_pct=75.0, block_size=14)
+        mask = create_sparse_mask((130, 130), sparsity_pct=75.0, block_size=16)
 
         # Should maintain original shape
         assert mask.shape == (130, 130)

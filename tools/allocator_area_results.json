@@ -1,0 +1,47 @@
+{
+  "Baseline RR": {
+    "lines": 129,
+    "ff_blocks": 1,
+    "reg_assigns": 2,
+    "muxes": 7,
+    "est_ffs": 10,
+    "est_luts": 105,
+    "est_cells": 115
+  },
+  "Static Priority": {
+    "lines": 111,
+    "ff_blocks": 0,
+    "reg_assigns": 0,
+    "muxes": 5,
+    "est_ffs": 0,
+    "est_luts": 75,
+    "est_cells": 75
+  },
+  "Weighted RR (3:1)": {
+    "lines": 178,
+    "ff_blocks": 1,
+    "reg_assigns": 8,
+    "muxes": 17,
+    "est_ffs": 40,
+    "est_luts": 255,
+    "est_cells": 295
+  },
+  "QVN (2+2 split)": {
+    "lines": 176,
+    "ff_blocks": 2,
+    "reg_assigns": 4,
+    "muxes": 15,
+    "est_ffs": 20,
+    "est_luts": 225,
+    "est_cells": 245
+  },
+  "Sparsity-Aware (Ours)": {
+    "lines": 247,
+    "ff_blocks": 2,
+    "reg_assigns": 8,
+    "muxes": 16,
+    "est_ffs": 40,
+    "est_luts": 240,
+    "est_cells": 280
+  }
+}

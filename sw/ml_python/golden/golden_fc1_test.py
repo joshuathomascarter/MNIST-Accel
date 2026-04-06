@@ -116,7 +116,7 @@ def main():
     # Load BSR layer - go up three directories from sw/ml_python/golden to project root
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
-    data_dir = os.path.join(project_root, "data/bsr_export_14x14/fc1")
+    data_dir = os.path.join(project_root, "data/bsr_export_16x16/fc1")
     fc1 = load_bsr_layer(data_dir)
     
     print(f"\nFC1 Layer:")
@@ -148,12 +148,12 @@ def main():
     print(f"  Min: {np.min(C)}, Max: {np.max(C)}")
     
     # Save golden output
-    output_path = os.path.join(project_root, "data/bsr_export_14x14/fc1/golden_output.npy")
+    output_path = os.path.join(project_root, "data/bsr_export_16x16/fc1/golden_output.npy")
     np.save(output_path, C)
     print(f"\nSaved golden output to: {output_path}")
     
     # Also save as text for easy comparison
-    output_txt = os.path.join(project_root, "data/bsr_export_14x14/fc1/golden_output.txt")
+    output_txt = os.path.join(project_root, "data/bsr_export_16x16/fc1/golden_output.txt")
     with open(output_txt, "w") as f:
         f.write(f"# FC1 Golden Output (INT32)\n")
         f.write(f"# Shape: {C.shape}\n")

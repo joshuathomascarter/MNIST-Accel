@@ -45,11 +45,11 @@ void test_transfer_descriptor() {
     td.channel      = DMAChannel::Weight;
     td.src_addr     = 0x10000000;
     td.dst_addr     = 0;
-    td.length_bytes = 196;
+    td.length_bytes = 256;
     td.bank         = 0;
 
     ASSERT_EQ(td.src_addr, 0x10000000u);
-    ASSERT_EQ(td.length_bytes, 196u);
+    ASSERT_EQ(td.length_bytes, 256u);
     ASSERT_EQ(td.bank, 0u);
     ASSERT_TRUE(td.channel == DMAChannel::Weight);
 
@@ -146,24 +146,24 @@ void test_ddr_regions_no_overlap() {
 // Test: Transfer descriptor for a typical weight tile
 // =============================================================================
 void test_weight_tile_descriptor() {
-    // A single 14×14 INT8 weight tile is 196 bytes
+    // A single 16×16 INT8 weight tile is 256 bytes
     TransferDescriptor td;
     td.channel      = DMAChannel::Weight;
     td.src_addr     = ddr_layout::WEIGHTS_OFFSET;
     td.dst_addr     = 0;  // BRAM address set by hardware
-    td.length_bytes = 14 * 14 * 1;  // INT8
+    td.length_bytes = 16 * 16 * 1;  // INT8
     td.bank         = 0;
 
-    ASSERT_EQ(td.length_bytes, 196u);
+    ASSERT_EQ(td.length_bytes, 256u);
 
-    // Second tile starts 196 bytes later
+    // Second tile starts 256 bytes later
     TransferDescriptor td2;
     td2.channel      = DMAChannel::Weight;
-    td2.src_addr     = ddr_layout::WEIGHTS_OFFSET + 196;
-    td2.length_bytes = 196;
+    td2.src_addr     = ddr_layout::WEIGHTS_OFFSET + 256;
+    td2.length_bytes = 256;
     td2.bank         = 1;  // ping-pong to other bank
 
-    ASSERT_EQ(td2.src_addr, 196u);
+    ASSERT_EQ(td2.src_addr, 256u);
     ASSERT_EQ(td2.bank, 1u);
 
     PASS("weight_tile_descriptor");
@@ -176,11 +176,11 @@ void test_activation_tile_descriptor() {
     TransferDescriptor td;
     td.channel      = DMAChannel::Activation;
     td.src_addr     = ddr_layout::ACTS_OFFSET;
-    td.length_bytes = 14 * 14;  // 196 bytes
+    td.length_bytes = 16 * 16;  // 256 bytes
     td.bank         = 0;
 
     ASSERT_EQ(td.src_addr, 0x00400000u);
-    ASSERT_EQ(td.length_bytes, 196u);
+    ASSERT_EQ(td.length_bytes, 256u);
 
     PASS("activation_tile_descriptor");
 }
@@ -189,15 +189,15 @@ void test_activation_tile_descriptor() {
 // Test: Output tile descriptor
 // =============================================================================
 void test_output_tile_descriptor() {
-    // Output tiles use INT32 accumulators: 14×14×4 = 784 bytes
+    // Output tiles use INT32 accumulators: 16×16×4 = 1024 bytes
     TransferDescriptor td;
     td.channel      = DMAChannel::Output;
     td.src_addr     = 0;  // from accumulator
     td.dst_addr     = ddr_layout::OUTPUT_OFFSET;
-    td.length_bytes = 14 * 14 * 4;  // INT32
+    td.length_bytes = 16 * 16 * 4;  // INT32
     td.bank         = 0;
 
-    ASSERT_EQ(td.length_bytes, 784u);
+    ASSERT_EQ(td.length_bytes, 1024u);
     ASSERT_EQ(td.dst_addr, 0x00600000u);
 
     PASS("output_tile_descriptor");

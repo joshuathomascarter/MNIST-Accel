@@ -1,4 +1,23 @@
-# ACCEL-v1 Hardware Design
+# Hardware Design
+
+## Current Hardware Entry Points
+
+- Full SoC top: [hw/rtl/top/soc_top_v2.sv](hw/rtl/top/soc_top_v2.sv)
+- FPGA bringup bundle: [handoff/soc_top_v2/fpga_bringup/README.md](handoff/soc_top_v2/fpga_bringup/README.md)
+- FPGA board checklist: [handoff/soc_top_v2/fpga_bringup/docs/SOC_TOP_V2_FPGA_BOARD_INTEGRATION_CHECKLIST.md](handoff/soc_top_v2/fpga_bringup/docs/SOC_TOP_V2_FPGA_BOARD_INTEGRATION_CHECKLIST.md)
+- ASIC bringup bundle: [handoff/soc_top_v2/asic_bringup/README.md](handoff/soc_top_v2/asic_bringup/README.md)
+- OpenLane handoff source: [hw/openlane/soc_top_v2/README.md](hw/openlane/soc_top_v2/README.md)
+
+## Current Status
+
+- `soc_top_v2` is the active hardware target.
+- The current full-SoC FPGA board path is ZCU104 via `hw/rtl/top/zcu104_wrapper.sv`.
+- The current FPGA path is source-complete up to board wrapper, constraints, and bitstream generation.
+- The current ASIC path is source-complete up to external OpenROAD/OpenLane execution and backend signoff artifacts.
+
+## Note
+
+The remainder of this file is historical hardware background and older accelerator-only integration notes.
 
 > 14×14 Weight-Stationary Systolic Array — BSR Sparse Acceleration — Zynq-7020
 

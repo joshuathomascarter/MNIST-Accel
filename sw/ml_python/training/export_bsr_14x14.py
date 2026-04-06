@@ -1,30 +1,23 @@
 #!/usr/bin/env python3
 """
-export_bsr_14x14.py — 14×14 Block Sparse Row Export for Zynq Accelerator
+export_bsr_14x14.py — 16×16 Block Sparse Row Export for Accelerator
 =========================================================================
 
 PURPOSE:
-    Re-exports all model weights in BSR format with 14×14 block size to match
-    the Zynq-7020 systolic array hardware. The accelerator has a 14×14 PE grid
-    (196 DSP48E1s), so all tiles must align to this dimension.
-
-WHY 14×14?
-    - Zynq-7020 has 220 DSP48E1 slices
-    - 14×14 = 196 PEs fits within DSP budget with margin for control logic
-    - Using 16×16 (256 PEs) would exceed available DSPs
-    - Smaller tiles (8×8) waste bandwidth and increase scheduling overhead
+    Re-exports all model weights in BSR format with 16×16 block size to match
+    the systolic array hardware. The accelerator has a 16×16 PE grid,
+    so all tiles must align to this dimension.
 
 MEMORY ALIGNMENT REQUIREMENTS:
-    - Block data: 14×14 = 196 INT8 values = 196 bytes per block
-    - 196 bytes is NOT 64-bit aligned (196 % 8 = 4)
-    - We pad each block to 200 bytes (25 × 8 bytes) for AXI burst alignment
-    - Alternative: Pack 196 bytes contiguous, handle unaligned access in DMA
+    - Block data: 16×16 = 256 INT8 values = 256 bytes per block
+    - 256 bytes IS 64-bit aligned (256 % 8 = 0)
+    - Each block is exactly 32 × 8-byte AXI beats
 
 OUTPUT FORMAT:
     For each layer (e.g., fc1/):
         row_ptr.npy     - INT32 array, len = num_block_rows + 1
         col_idx.npy     - INT32 array, len = num_blocks
-        weights.bsr     - Binary INT8, num_blocks × 196 bytes (no padding)
+        weights.bsr     - Binary INT8, num_blocks × 256 bytes (no padding)
         weights.meta.json - Metadata with block dimensions, shapes, sparsity
 
 USAGE:
@@ -45,10 +38,10 @@ from pathlib import Path
 # =============================================================================
 # Constants — Hardware-Defined
 # =============================================================================
-BLOCK_SIZE = 14  # 14×14 PE array — DO NOT CHANGE without hardware redesign
+BLOCK_SIZE = 16  # 16×16 PE array — DO NOT CHANGE without hardware redesign
 BLOCK_H = BLOCK_SIZE
 BLOCK_W = BLOCK_SIZE
-BLOCK_ELEMENTS = BLOCK_H * BLOCK_W  # 196 INT8 values per block
+BLOCK_ELEMENTS = BLOCK_H * BLOCK_W  # 256 INT8 values per block
 
 # AXI alignment: 64-bit (8-byte) aligned for efficient DMA bursts
 AXI_ALIGN = 8  # bytes
@@ -79,32 +72,32 @@ class MNISTNet(nn.Module):
 
 
 # =============================================================================
-# BSR Construction with 14×14 Blocks
+# BSR Construction with 16×16 Blocks
 # =============================================================================
-def build_bsr_14x14(
+def build_bsr_16x16(
     weight: np.ndarray,
     threshold: float = 1e-10,
     quantize: bool = False,
     scale: Optional[np.ndarray] = None
 ) -> Dict:
     """
-    Convert dense weight matrix to 14×14 Block Sparse Row format.
+    Convert dense weight matrix to 16×16 Block Sparse Row format.
 
     ALGORITHM:
-        1. Pad weight matrix to multiple of 14×14
-        2. Divide into 14×14 blocks
+        1. Pad weight matrix to multiple of 16×16
+        2. Divide into 16×16 blocks
         3. Compute L2 norm of each block
         4. Keep blocks with norm > threshold (non-zero)
         5. Build CSR-like structure: row_ptr, col_idx, data
 
     PADDING LOGIC:
         For a matrix [M, K], we compute:
-            pad_M = (14 - M % 14) % 14
-            pad_K = (14 - K % 14) % 14
-        Padded dimensions become multiples of 14.
+            pad_M = (16 - M % 16) % 16
+            pad_K = (16 - K % 16) % 16
+        Padded dimensions become multiples of 16.
 
     WHY PADDING MATTERS:
-        - Hardware iterates over complete 14×14 tiles
+        - Hardware iterates over complete 16×16 tiles
         - Partial tiles at edges require padding to maintain alignment
         - Padding with zeros doesn't affect computation (0 × anything = 0)
         - Alternative: Handle partial tiles in scheduler (adds complexity)
@@ -117,21 +110,21 @@ def build_bsr_14x14(
 
     Returns:
         Dictionary with BSR components:
-            - data: [num_blocks, 14, 14] INT8 or FP32
+            - data: [num_blocks, 16, 16] INT8 or FP32
             - indices: [num_blocks] block column indices
             - indptr: [num_block_rows + 1] row pointers
             - shape: Original (unpadded) shape
-            - padded_shape: After padding to 14×14 alignment
-            - blocksize: (14, 14)
+            - padded_shape: After padding to 16×16 alignment
+            - blocksize: (16, 16)
             - Sparsity statistics
     """
     original_shape = weight.shape
     height, width = original_shape
 
     # -------------------------------------------------------------------------
-    # Step 1: Pad to 14×14 alignment
+    # Step 1: Pad to 16×16 alignment
     # -------------------------------------------------------------------------
-    # Calculate padding needed to reach next multiple of 14
+    # Calculate padding needed to reach next multiple of 16
     pad_h = (BLOCK_H - height % BLOCK_H) % BLOCK_H
     pad_w = (BLOCK_W - width % BLOCK_W) % BLOCK_W
 
@@ -163,7 +156,7 @@ def build_bsr_14x14(
             col_start = block_col * BLOCK_W
             col_end = col_start + BLOCK_W
 
-            # Extract 14×14 block
+            # Extract 16×16 block
             block = weight[row_start:row_end, col_start:col_end]
 
             # Check if block is non-zero (L2 norm above threshold)
@@ -208,7 +201,7 @@ def build_bsr_14x14(
     # -------------------------------------------------------------------------
     num_blocks = len(blocks_list)
     if num_blocks > 0:
-        data = np.stack(blocks_list, axis=0)  # [num_blocks, 14, 14]
+        data = np.stack(blocks_list, axis=0)  # [num_blocks, 16, 16]
     else:
         dtype = np.int8 if quantize else np.float32
         data = np.zeros((0, BLOCK_H, BLOCK_W), dtype=dtype)
@@ -243,19 +236,17 @@ def save_bsr_binary_int8(bsr_data: Dict, filepath: str):
     Save BSR blocks as contiguous INT8 binary file.
 
     FORMAT:
-        Block 0: [14×14 INT8 values, row-major] = 196 bytes
-        Block 1: [14×14 INT8 values, row-major] = 196 bytes
+        Block 0: [16×16 INT8 values, row-major] = 256 bytes
+        Block 1: [16×16 INT8 values, row-major] = 256 bytes
         ...
 
     MEMORY LAYOUT (for hardware DMA):
-        Byte offset of block N = N × 196
-        Within block: element[row][col] at offset row*14 + col
+        Byte offset of block N = N × 256
+        Within block: element[row][col] at offset row*16 + col
 
-    NOTE: 196 bytes is not 8-byte aligned. Options:
-        1. Contiguous (current): DMA handles unaligned, simpler format
-        2. Padded: Each block at 200 bytes (25 × 8), wastes 4 bytes/block
+    NOTE: 256 bytes is perfectly 8-byte aligned — no padding needed.
     """
-    data = bsr_data['data']  # [num_blocks, 14, 14]
+    data = bsr_data['data']  # [num_blocks, 16, 16]
 
     if data.dtype != np.int8:
         raise ValueError(f"Expected INT8 data, got {data.dtype}")
@@ -278,11 +269,11 @@ def save_bsr_metadata(bsr_data: Dict, filepath: str, layer_name: str):
     METADATA FIELDS:
         layer_name: Human-readable identifier
         shape: Original weight shape [out_features, in_features]
-        padded_shape: After 14×14 alignment
-        blocksize: [14, 14] — MUST match hardware
+        padded_shape: After 16×16 alignment
+        blocksize: [16, 16] — MUST match hardware
         num_blocks: Number of non-zero blocks
-        num_block_rows: M / 14 (output dimension tiles)
-        num_block_cols: K / 14 (input dimension tiles)
+        num_block_rows: M / 16 (output dimension tiles)
+        num_block_cols: K / 16 (input dimension tiles)
         density/sparsity_pct: Block-level sparsity
         row_ptr: CSR-style row pointer (len = num_block_rows + 1)
         col_idx: Column index for each block (len = num_blocks)
@@ -320,14 +311,14 @@ def save_bsr_metadata(bsr_data: Dict, filepath: str, layer_name: str):
 # =============================================================================
 # Layer Export Pipeline
 # =============================================================================
-def export_layer_14x14(
+def export_layer_16x16(
     name: str,
     weight: np.ndarray,
     output_dir: str,
     scales: Optional[np.ndarray] = None
 ) -> Dict:
     """
-    Export a single layer with 14×14 BSR format.
+    Export a single layer with 16×16 BSR format.
 
     Args:
         name: Layer name (e.g., 'fc1')
@@ -339,13 +330,13 @@ def export_layer_14x14(
         BSR data dictionary
     """
     print(f"\n{'='*60}")
-    print(f"Exporting {name} with 14×14 blocks")
+    print(f"Exporting {name} with 16×16 blocks")
     print(f"{'='*60}")
     print(f"  Original shape: {weight.shape}")
 
     # Build BSR with quantization if scales provided
     quantize = scales is not None
-    bsr_data = build_bsr_14x14(weight, quantize=quantize, scale=scales)
+    bsr_data = build_bsr_16x16(weight, quantize=quantize, scale=scales)
 
     print(f"  Padded shape:   {bsr_data['padded_shape']}")
     print(f"  Block layout:   {bsr_data['num_block_rows']} × {bsr_data['num_block_cols']} blocks")
@@ -403,12 +394,12 @@ def load_quantization_scales(int8_dir: str, layer_name: str) -> Optional[np.ndar
 # =============================================================================
 # Direct INT8 Export (from pre-quantized .npy files)
 # =============================================================================
-def build_bsr_14x14_int8_direct(
+def build_bsr_16x16_int8_direct(
     weight_int8: np.ndarray,
     threshold: float = 1e-10
 ) -> Dict:
     """
-    Convert pre-quantized INT8 weight matrix to 14×14 BSR format.
+    Convert pre-quantized INT8 weight matrix to 16×16 BSR format.
 
     This is used when weights are already quantized (from data/int8/*.npy).
     No additional quantization is performed - blocks are extracted directly.
@@ -423,7 +414,7 @@ def build_bsr_14x14_int8_direct(
     original_shape = weight_int8.shape
     height, width = original_shape
 
-    # Pad to 14×14 alignment
+    # Pad to 16×16 alignment
     pad_h = (BLOCK_H - height % BLOCK_H) % BLOCK_H
     pad_w = (BLOCK_W - width % BLOCK_W) % BLOCK_W
 
@@ -484,7 +475,7 @@ def build_bsr_14x14_int8_direct(
     }
 
 
-def export_int8_layer_14x14(
+def export_int8_layer_16x16(
     name: str,
     weight_int8: np.ndarray,
     output_dir: str
@@ -493,12 +484,12 @@ def export_int8_layer_14x14(
     Export a single layer from pre-quantized INT8 weights.
     """
     print(f"\n{'='*60}")
-    print(f"Exporting {name} (INT8) with 14×14 blocks")
+    print(f"Exporting {name} (INT8) with 16×16 blocks"))
     print(f"{'='*60}")
     print(f"  Original shape: {weight_int8.shape}")
     print(f"  Weight range:   [{weight_int8.min()}, {weight_int8.max()}]")
 
-    bsr_data = build_bsr_14x14_int8_direct(weight_int8)
+    bsr_data = build_bsr_16x16_int8_direct(weight_int8)
 
     print(f"  Padded shape:   {bsr_data['padded_shape']}")
     print(f"  Block layout:   {bsr_data['num_block_rows']} × {bsr_data['num_block_cols']} blocks")
@@ -532,7 +523,7 @@ def export_from_int8_dir(int8_dir: str, output_dir: str) -> Dict:
     os.makedirs(output_dir, exist_ok=True)
 
     print("\n" + "="*70)
-    print("BSR Export from INT8 Weights (14×14 blocks)")
+    print("BSR Export from INT8 Weights (16×16 blocks)")
     print("="*70)
     print(f"Source:  {int8_dir}")
     print(f"Output:  {output_dir}")
@@ -557,7 +548,7 @@ def export_from_int8_dir(int8_dir: str, output_dir: str) -> Dict:
             print(f"  Reshaping conv {name}: {weight_int8.shape} → ({out_c}, {in_c*kH*kW})")
             weight_int8 = weight_int8.reshape(out_c, -1)
 
-        bsr = export_int8_layer_14x14(name, weight_int8, output_dir)
+        bsr = export_int8_layer_16x16(name, weight_int8, output_dir)
 
         layer_stats.append({
             'name': name,
@@ -575,7 +566,7 @@ def export_from_int8_dir(int8_dir: str, output_dir: str) -> Dict:
 
     # Summary
     summary = {
-        'model': 'MNIST CNN INT8 (14×14 BSR)',
+        'model': 'MNIST CNN INT8 (16×16 BSR)',
         'hardware_block_size': BLOCK_SIZE,
         'source': 'int8_quantized',
         'total_blocks': total_blocks,
@@ -605,13 +596,13 @@ def export_from_int8_dir(int8_dir: str, output_dir: str) -> Dict:
 # =============================================================================
 # Full Model Export
 # =============================================================================
-def export_model_14x14(
+def export_model_16x16(
     model: nn.Module,
     output_dir: str,
     int8_dir: Optional[str] = None
 ) -> Dict:
     """
-    Export all layers of model in 14×14 BSR format.
+    Export all layers of model in 16×16 BSR format.
 
     Args:
         model: PyTorch model
@@ -624,7 +615,7 @@ def export_model_14x14(
     os.makedirs(output_dir, exist_ok=True)
 
     print("\n" + "="*70)
-    print("BSR Export for Zynq 14×14 Systolic Array")
+    print("BSR Export for 16×16 Systolic Array")
     print("="*70)
     print(f"Block size: {BLOCK_H}×{BLOCK_W} (hardware-defined)")
     print(f"Output directory: {output_dir}")
@@ -642,7 +633,7 @@ def export_model_14x14(
             if int8_dir:
                 scales = load_quantization_scales(int8_dir, name)
 
-            bsr = export_layer_14x14(name, weight, output_dir, scales)
+            bsr = export_layer_16x16(name, weight, output_dir, scales)
 
             layer_stats.append({
                 'name': name,
@@ -670,7 +661,7 @@ def export_model_14x14(
             if int8_dir:
                 scales = load_quantization_scales(int8_dir, name)
 
-            bsr = export_layer_14x14(name, weight_2d, output_dir, scales)
+            bsr = export_layer_16x16(name, weight_2d, output_dir, scales)
 
             layer_stats.append({
                 'name': name,
@@ -689,7 +680,7 @@ def export_model_14x14(
 
     # Save summary
     summary = {
-        'model': 'MNIST CNN (14×14 BSR)',
+        'model': 'MNIST CNN (16×16 BSR)',
         'hardware_block_size': BLOCK_SIZE,
         'total_blocks': total_blocks,
         'nonzero_blocks': total_nonzero,
@@ -720,7 +711,7 @@ def export_model_14x14(
 # =============================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description='Export model weights in 14×14 BSR format for Zynq accelerator'
+        description='Export model weights in 16×16 BSR format for accelerator'
     )
     parser.add_argument(
         '--checkpoint',
@@ -731,7 +722,7 @@ def main():
     parser.add_argument(
         '--output',
         type=str,
-        default='../../data/bsr_export_14x14',
+        default='../../data/bsr_export_16x16',
         help='Output directory'
     )
     parser.add_argument(
@@ -793,7 +784,7 @@ def main():
 
     # Export
     scales_dir = int8_dir if args.quantized else None
-    summary = export_model_14x14(model, output_dir, scales_dir)
+    summary = export_model_16x16(model, output_dir, scales_dir)
 
     print("\n✅ Export complete!")
     return summary

@@ -1,0 +1,505 @@
+{
+  "name": "nuScenes mini BEV frame trace",
+  "description": "Compressed frame-level packet trace for a six-camera BEV fusion pass derived from an autonomy-oriented mapping on the 4x4 mesh.",
+  "planner_root": 10,
+  "packets": [
+    {
+      "phase": "camera_setup",
+      "src": 0,
+      "dsts": [1, 2, 4, 7, 13, 14],
+      "is_sparse": false,
+      "num_flits": 10,
+      "release_cycle": 0,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "p3_dense_ingress",
+      "src": 0,
+      "dsts": [1, 2, 4, 7, 13, 14],
+      "is_sparse": false,
+      "num_flits": 12,
+      "release_cycle": 12,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "p3_cam1_primary",
+      "src": 1,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 21,
+      "release_cycle": 24,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_cam1_secondary",
+      "src": 1,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 7,
+      "release_cycle": 25,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_cam2_primary",
+      "src": 2,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 21,
+      "release_cycle": 26,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_cam2_secondary",
+      "src": 2,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 7,
+      "release_cycle": 27,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_cam4_primary",
+      "src": 4,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 21,
+      "release_cycle": 28,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_cam4_secondary",
+      "src": 4,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 7,
+      "release_cycle": 29,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_cam7_primary",
+      "src": 7,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 21,
+      "release_cycle": 30,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_cam7_secondary",
+      "src": 7,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 7,
+      "release_cycle": 31,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_cam13_primary",
+      "src": 13,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 21,
+      "release_cycle": 32,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_cam13_secondary",
+      "src": 13,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 7,
+      "release_cycle": 33,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_cam14_primary",
+      "src": 14,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 21,
+      "release_cycle": 34,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_cam14_secondary",
+      "src": 14,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 7,
+      "release_cycle": 35,
+      "release_stride": 1
+    },
+    {
+      "phase": "p3_completion",
+      "srcs": [1, 2, 4, 7, 13, 14],
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "release_cycle": 56,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "p4_dense_ingress",
+      "src": 0,
+      "dsts": [1, 2, 4, 7, 13, 14],
+      "is_sparse": false,
+      "num_flits": 10,
+      "release_cycle": 68,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "p4_cam1_primary",
+      "src": 1,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 15,
+      "release_cycle": 80,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_cam1_secondary",
+      "src": 1,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 5,
+      "release_cycle": 81,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_cam2_primary",
+      "src": 2,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 15,
+      "release_cycle": 82,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_cam2_secondary",
+      "src": 2,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 5,
+      "release_cycle": 83,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_cam4_primary",
+      "src": 4,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 15,
+      "release_cycle": 84,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_cam4_secondary",
+      "src": 4,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 5,
+      "release_cycle": 85,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_cam7_primary",
+      "src": 7,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 15,
+      "release_cycle": 86,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_cam7_secondary",
+      "src": 7,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 5,
+      "release_cycle": 87,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_cam13_primary",
+      "src": 13,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 15,
+      "release_cycle": 88,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_cam13_secondary",
+      "src": 13,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 5,
+      "release_cycle": 89,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_cam14_primary",
+      "src": 14,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 15,
+      "release_cycle": 90,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_cam14_secondary",
+      "src": 14,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 5,
+      "release_cycle": 91,
+      "release_stride": 1
+    },
+    {
+      "phase": "p4_completion",
+      "srcs": [1, 2, 4, 7, 13, 14],
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "release_cycle": 104,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "p5_dense_ingress",
+      "src": 0,
+      "dsts": [1, 2, 4, 7, 13, 14],
+      "is_sparse": false,
+      "num_flits": 8,
+      "release_cycle": 116,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "p5_cam1_primary",
+      "src": 1,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 10,
+      "release_cycle": 128,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_cam1_secondary",
+      "src": 1,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 4,
+      "release_cycle": 129,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_cam2_primary",
+      "src": 2,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 10,
+      "release_cycle": 130,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_cam2_secondary",
+      "src": 2,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 4,
+      "release_cycle": 131,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_cam4_primary",
+      "src": 4,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 10,
+      "release_cycle": 132,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_cam4_secondary",
+      "src": 4,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 4,
+      "release_cycle": 133,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_cam7_primary",
+      "src": 7,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 10,
+      "release_cycle": 134,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_cam7_secondary",
+      "src": 7,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 4,
+      "release_cycle": 135,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_cam13_primary",
+      "src": 13,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 10,
+      "release_cycle": 136,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_cam13_secondary",
+      "src": 13,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 4,
+      "release_cycle": 137,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_cam14_primary",
+      "src": 14,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 10,
+      "release_cycle": 138,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_cam14_secondary",
+      "src": 14,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "count": 4,
+      "release_cycle": 139,
+      "release_stride": 1
+    },
+    {
+      "phase": "p5_completion",
+      "srcs": [1, 2, 4, 7, 13, 14],
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "release_cycle": 146,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "fusion_overlap_5_6",
+      "src": 5,
+      "dst": 6,
+      "is_sparse": true,
+      "num_flits": 2,
+      "release_cycle": 156
+    },
+    {
+      "phase": "fusion_overlap_6_9",
+      "src": 6,
+      "dst": 9,
+      "is_sparse": true,
+      "num_flits": 2,
+      "release_cycle": 157
+    },
+    {
+      "phase": "fusion_overlap_9_10",
+      "src": 9,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 2,
+      "release_cycle": 158
+    },
+    {
+      "phase": "fusion_overlap_10_5",
+      "src": 10,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "release_cycle": 159
+    },
+    {
+      "phase": "fusion_overlap_6_10",
+      "src": 6,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 2,
+      "release_cycle": 160
+    },
+    {
+      "phase": "fusion_overlap_9_5",
+      "src": 9,
+      "dst": 5,
+      "is_sparse": true,
+      "num_flits": 2,
+      "release_cycle": 161
+    },
+    {
+      "phase": "planner_queries",
+      "src": 10,
+      "dsts": [8, 11, 12, 15],
+      "is_sparse": true,
+      "num_flits": 2,
+      "release_cycle": 164,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "head_responses",
+      "srcs": [8, 11, 12, 15],
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "release_cycle": 168,
+      "pair_release_stride": 1
+    },
+    {
+      "phase": "head_weights",
+      "src": 0,
+      "dsts": [8, 11, 12, 15],
+      "is_sparse": false,
+      "num_flits": 8,
+      "release_cycle": 172,
+      "pair_release_stride": 1
+    }
+  ]
+}

@@ -5,8 +5,9 @@ import torch.optim as optim  # Optimizers (Adam, SGD) for training
 import torch.nn.functional as F  # Activation functions (relu, etc.)
 
 # Data loading and preprocessing
-from torchvision import datasets, transforms  # MNIST dataset and image transforms
-from torch.utils.data import DataLoader  # Batch loading for training
+from torchvision import transforms  # Image transforms
+from torch.utils.data import DataLoader, TensorDataset  # Batch loading for training
+import struct, gzip  # Raw IDX file reading (torchvision MNIST checksum often breaks)
 
 # System and file operations
 import os  # Directory creation and file paths
@@ -49,21 +50,62 @@ class Net(nn.Module):
         return x
 
 
-# Hardware block size — must match the 14×14 systolic array on PYNQ-Z2
-HW_BLOCK = 14
+# Hardware block size — must match the 16×16 systolic array
+HW_BLOCK = 16
 
 
 def layer_block_cfg(name, module):
     """Return block size and minimum keep percentage for each layer.
 
-    All layers use 14×14 blocks to match the hardware systolic array.
+    All layers use 16×16 blocks to match the hardware systolic array.
     Conv weight matrices (reshaped to 2-D via im2col) are zero-padded
-    to multiples of 14 before BSR tiling.
+    to multiples of 16 before BSR tiling.
     """
     if isinstance(module, nn.Conv2d):
-        return (HW_BLOCK, HW_BLOCK), 0.30  # 14×14 blocks, keep >= 30%
+        return (HW_BLOCK, HW_BLOCK), 0.30  # 16×16 blocks, keep >= 30%
     else:  # Linear
-        return (HW_BLOCK, HW_BLOCK), 0.05  # 14×14 blocks, keep >= 5%
+        return (HW_BLOCK, HW_BLOCK), 0.05  # 16×16 blocks, keep >= 5%
+
+
+def _load_idx_images(path):
+    """Read raw MNIST IDX image file (compressed or plain)."""
+    opener = gzip.open if path.endswith('.gz') else open
+    with opener(path, 'rb') as f:
+        magic, n, h, w = struct.unpack('>IIII', f.read(16))
+        data = np.frombuffer(f.read(), dtype=np.uint8).reshape(n, h, w)
+    return data
+
+
+def _load_idx_labels(path):
+    """Read raw MNIST IDX label file (compressed or plain)."""
+    opener = gzip.open if path.endswith('.gz') else open
+    with opener(path, 'rb') as f:
+        magic, n = struct.unpack('>II', f.read(8))
+        labels = np.frombuffer(f.read(), dtype=np.uint8)
+    return labels
+
+
+def _make_mnist_loader(root_dir, train=True, batch_size=64, shuffle=False):
+    """Build a DataLoader from raw IDX files, bypassing torchvision MNIST."""
+    raw = os.path.join(root_dir, 'data', 'MNIST', 'raw')
+    if train:
+        img_file = os.path.join(raw, 'train-images-idx3-ubyte')
+        lbl_file = os.path.join(raw, 'train-labels-idx1-ubyte')
+        if not os.path.exists(img_file):
+            img_file += '.gz'
+            lbl_file += '.gz'
+    else:
+        img_file = os.path.join(raw, 't10k-images-idx3-ubyte')
+        lbl_file = os.path.join(raw, 't10k-labels-idx1-ubyte')
+        if not os.path.exists(img_file):
+            img_file += '.gz'
+            lbl_file += '.gz'
+    images = _load_idx_images(img_file).astype(np.float32) / 255.0
+    images = (images - 0.1307) / 0.3081  # match training normalisation
+    labels = _load_idx_labels(lbl_file).astype(np.int64)
+    t_img = torch.from_numpy(images).unsqueeze(1)  # (N,1,H,W)
+    t_lbl = torch.from_numpy(labels)
+    return DataLoader(TensorDataset(t_img, t_lbl), batch_size=batch_size, shuffle=shuffle, num_workers=0)
 
 
 def load_dense_model() -> Tuple[nn.Module, torch.device, float, Dict[str, torch.Tensor]]:
@@ -269,12 +311,10 @@ def validate_accuracy(model: nn.Module, device: torch.device) -> float:
     Returns:
         Test accuracy as percentage
     """
-    # Set up test data loader
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+    # Set up test data loader (raw IDX — bypasses torchvision MNIST checksum)
     script_dir = os.path.dirname(os.path.abspath(__file__))
     root_dir = os.path.abspath(os.path.join(script_dir, '..', '..', '..'))
-    test_dataset = datasets.MNIST(root=os.path.join(root_dir, "data"), train=False, download=False, transform=transform)
-    test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False, num_workers=0)
+    test_loader = _make_mnist_loader(root_dir, train=False, batch_size=64, shuffle=False)
 
     model.eval()
     correct = 0
@@ -353,12 +393,10 @@ def train_with_group_lasso(
         lr: Learning rate
         current_sparsity: Current sparsity level for regularization scheduling
     """
-    # Set up data loaders (same as original training)
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+    # Set up data loaders (raw IDX — bypasses torchvision MNIST checksum)
     script_dir = os.path.dirname(os.path.abspath(__file__))
     root_dir = os.path.abspath(os.path.join(script_dir, '..', '..', '..'))
-    train_dataset = datasets.MNIST(root=os.path.join(root_dir, "data"), train=True, download=False, transform=transform)
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=0)
+    train_loader = _make_mnist_loader(root_dir, train=True, batch_size=64, shuffle=True)
 
     # Set up optimizer and loss
     optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -487,7 +525,23 @@ if __name__ == "__main__":
     print(f"Sparse accuracy: {final_acc:.2f}%")
     print(f"Accuracy loss: {accuracy_loss:.2f}%")
 
-    # Export to BSR format for hardware
-    export_to_bsr_format(model, "mnist_sparse_90pct.npz")
+    # Save BSR export for hardware
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    root_dir = os.path.abspath(os.path.join(script_dir, '..', '..', '..'))
+    bsr_path = os.path.join(root_dir, 'data', 'bsr_export', 'mnist_sparse_90pct_16x16.npz')
+    os.makedirs(os.path.dirname(bsr_path), exist_ok=True)
+    export_to_bsr_format(model, bsr_path)
 
-    print("\nBlock-sparse training complete! 🎯")
+    # Overwrite canonical checkpoint so gen_dram_init.py picks up sparse weights
+    ckpt_path = os.path.join(root_dir, 'data', 'checkpoints', 'mnist_fp32.pt')
+    # Back up dense checkpoint first (only once)
+    dense_backup = os.path.join(root_dir, 'data', 'checkpoints', 'mnist_fp32_dense_backup.pt')
+    if not os.path.exists(dense_backup):
+        import shutil
+        shutil.copy2(ckpt_path, dense_backup)
+        print(f'Dense model backed up to {dense_backup}')
+    torch.save({'state_dict': model.state_dict(), 'best_acc': final_acc,
+                'sparsity': 0.9, 'block_size': 16}, ckpt_path)
+    print(f'Sparse checkpoint saved to {ckpt_path}')
+
+    print("\nBlock-sparse training complete!")

@@ -603,6 +603,56 @@ module accel_top #(
     wire [31:0] _unused_accum_debug;      // Debug accumulator (unused in prod)
     wire        _unused_perf_done;        // Perf measurement-done (read via CSR)
 
+    // -------------------------------------------------------------------------
+    // Multi-Layer Pipeline Signals
+    // -------------------------------------------------------------------------
+    // Layer configuration (from CSR)
+    wire [7:0]  cfg_layer_total;
+    wire [7:0]  cfg_layer_current;
+    wire        cfg_pool_en;
+    wire [15:0] cfg_output_h;
+    wire [15:0] cfg_output_w;
+
+    // Output BRAM Controller signals
+    wire        obram_ctrl_accum_rd_en;
+    wire [BRAM_ADDR_W-1:0] obram_ctrl_accum_rd_addr;
+    wire        obram_ctrl_bram_wr_en;
+    wire [BRAM_ADDR_W-1:0] obram_ctrl_bram_wr_addr;
+    wire [63:0] obram_ctrl_bram_wr_data;
+    wire        obram_ctrl_bank_sel;
+    wire        obram_ctrl_bram_rd_en;
+    wire [BRAM_ADDR_W-1:0] obram_ctrl_bram_rd_addr;
+    wire [63:0] obram_bram_rd_data;
+    wire        obram_bram_rd_valid;
+    wire        obram_ctrl_fb_we;
+    wire [BRAM_ADDR_W-1:0] obram_ctrl_fb_waddr;
+    wire [N_ROWS*DATA_W-1:0] obram_ctrl_fb_wdata;
+    wire        obram_ctrl_out_dma_trigger;
+    wire        obram_ctrl_layer_done;
+    wire        obram_ctrl_last_layer_done;
+    wire        obram_ctrl_feedback_busy;
+    wire        obram_ctrl_busy;
+
+    // Max-pooling signals (between output_bram_ctrl writes and actual BRAM writes)
+    wire        pool_out_valid;
+    wire [63:0] pool_out_data;
+    wire        pool_in_ready;
+
+    // Post-pooler BRAM write address counter
+    reg [BRAM_ADDR_W-1:0] pool_bram_wr_addr;
+
+    // Accumulator read MUX: output_bram_ctrl (multi-layer) vs out_dma (legacy/last layer)
+    // When obram_ctrl is capturing, it owns the accumulator read port.
+    // When out_dma is draining to DDR (last layer), it reads from BRAM, not accumulator directly.
+    // So the ctrl always reads from accumulator; out_dma reads from BRAM on last layer.
+    wire        mux_accum_rd_en;
+    wire [BRAM_ADDR_W-1:0] mux_accum_rd_addr;
+
+    // Feedback MUX: act_buffer write source (act_dma vs feedback)
+    wire        fb_mux_act_we;
+    wire [BRAM_ADDR_W-1:0] fb_mux_act_waddr;
+    wire [N_ROWS*DATA_W-1:0] fb_mux_act_wdata;
+
     // Row completion detection for BSR mode
     // PEs have clr hardwired to 0 — accumulators persist across all blocks.
     // The full result is available only when sched_done fires.
@@ -617,8 +667,8 @@ module accel_top #(
     // - busy: Any module is actively processing
     // - done: Scheduler has finished all blocks
     // - error: Any DMA reported an error (address fault, bus error, etc.)
-    assign busy  = act_dma_busy | bsr_dma_busy | sched_busy | accum_busy | out_dma_busy;
-    assign done  = out_dma_done;
+    assign busy  = act_dma_busy | bsr_dma_busy | sched_busy | accum_busy | out_dma_busy | obram_ctrl_busy;
+    assign done  = obram_ctrl_last_layer_done | (out_dma_done & ~obram_ctrl_busy);
     assign error = bsr_dma_error | act_dma_error | axi_error;
 
     // Interrupt: assert when computation completes and interrupts are enabled
@@ -823,7 +873,15 @@ module accel_top #(
         .bsr_block_rows         (cfg_bsr_block_rows),
         .bsr_block_cols         (cfg_bsr_block_cols),
         .bsr_ptr_addr           (_unused_bsr_ptr_addr),
-        .bsr_idx_addr           (_unused_bsr_idx_addr)
+        .bsr_idx_addr           (_unused_bsr_idx_addr),
+        // Layer management
+        .layer_total            (cfg_layer_total),
+        .layer_current          (cfg_layer_current),
+        .pool_en                (cfg_pool_en),
+        .output_h               (cfg_output_h),
+        .output_w               (cfg_output_w),
+        .layer_done_in          (obram_ctrl_layer_done),
+        .last_layer_done_in     (obram_ctrl_last_layer_done)
     );
 
     // BSR config register (sched_mode removed — BSR-only architecture)
@@ -1264,7 +1322,17 @@ module accel_top #(
     );
 
     // -------------------------------------------------------------------------
-    // 9b. Activation Double-Buffer Memory (Ping-Pong Banks)
+    // 9b. Feedback MUX (DMA packer vs BRAM ctrl feedback → act_buffer)
+    // -------------------------------------------------------------------------
+    // When feedback_busy, the output_bram_ctrl writes activations from the
+    // previous layer's output BRAM into the act_buffer. Otherwise, the
+    // act_dma packer writes from DDR.
+    assign fb_mux_act_we    = obram_ctrl_feedback_busy ? obram_ctrl_fb_we    : act_pack_we;
+    assign fb_mux_act_waddr = obram_ctrl_feedback_busy ? obram_ctrl_fb_waddr : act_pack_waddr;
+    assign fb_mux_act_wdata = obram_ctrl_feedback_busy ? obram_ctrl_fb_wdata : act_pack_wdata;
+
+    // -------------------------------------------------------------------------
+    // 9c. Activation Double-Buffer Memory (Ping-Pong Banks)
     // -------------------------------------------------------------------------
     act_buffer #(
         .TM         (N_ROWS),       // 14 rows
@@ -1273,11 +1341,10 @@ module accel_top #(
         .clk         (clk),
         .rst_n       (rst_n),
         
-        // DMA Write Port (writes to SAME bank as compute for now)
-        // TODO: Proper double-buffering requires bank flip after DMA, not after compute
-        .we          (act_pack_we),
-        .waddr       (act_pack_waddr),
-        .wdata       (act_pack_wdata),
+        // Write Port: feedback MUX (DMA packer or BRAM ctrl feedback)
+        .we          (fb_mux_act_we),
+        .waddr       (fb_mux_act_waddr),
+        .wdata       (fb_mux_act_wdata),
         .bank_sel_wr (act_bank_sel),  // Same bank as compute reads
         
         // Systolic Array Read Port (reads from active bank)
@@ -1381,9 +1448,9 @@ module accel_top #(
         .scale_factor   (cfg_sa_bits),          // Q16.16 scale from CSR
         // Systolic Array Input
         .systolic_out   (systolic_out_flat),    // 196 × INT32 accumulators
-        // DMA Read Interface (connected to output write DMA)
-        .dma_rd_en      (out_dma_rd_en),
-        .dma_rd_addr    (out_dma_rd_addr),
+        // DMA Read Interface (connected to output_bram_ctrl, not out_dma directly)
+        .dma_rd_en      (mux_accum_rd_en),
+        .dma_rd_addr    (mux_accum_rd_addr),
         .dma_rd_data    (out_dma_rd_data),
         .dma_ready      (out_dma_ready),
         // Status
@@ -1393,11 +1460,126 @@ module accel_top #(
     );
 
     // -------------------------------------------------------------------------
-    // 14. Output Write DMA (Drains Accumulator → DDR via AXI4 Write)
+    // 14a-i. Max Pool 2×2 (Bypassable — Between Ctrl and BRAM)
     // -------------------------------------------------------------------------
-    // Auto-triggered by sched_done. Reads 25 × 64-bit words from the
-    // output accumulator's inactive bank (196 INT8 values, ReLU'd and
-    // quantized) and writes them to DDR at cfg_dma_dst_addr.
+    // When pool_en=1 (CNN layers), applies 2×2 max pooling to the data
+    // flowing from output_bram_ctrl → BRAM. When pool_en=0 (FC layers),
+    // bypasses and passes data through unchanged.
+    //
+    // The ctrl writes data as if there's no pooler (sequential addresses).
+    // We intercept those writes, run them through the pooler, and use a
+    // separate address counter for the actual BRAM writes.
+    max_pool_2x2 #(
+        .DATA_W  (8),
+        .MAX_W   (128),
+        .PACK_W  (64)
+    ) u_max_pool (
+        .clk        (clk),
+        .rst_n      (rst_n),
+        .bypass     (~cfg_pool_en),     // Bypass when pooling disabled
+        .feat_h     (cfg_output_h),     // Pre-pool feature map height
+        .feat_w     (cfg_output_w),     // Pre-pool feature map width
+        .in_valid   (obram_ctrl_bram_wr_en),
+        .in_data    (obram_ctrl_bram_wr_data),
+        .in_ready   (pool_in_ready),
+        .out_valid  (pool_out_valid),
+        .out_data   (pool_out_data),
+        .out_ready  (1'b1),             // BRAM always accepts
+        .pool_active()
+    );
+
+    // Post-pooler BRAM write address counter
+    // Resets when ctrl starts a new capture, increments on each pooler output
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            pool_bram_wr_addr <= {BRAM_ADDR_W{1'b0}};
+        else if (sched_done_pulse)
+            pool_bram_wr_addr <= {BRAM_ADDR_W{1'b0}};  // Reset on new layer
+        else if (pool_out_valid)
+            pool_bram_wr_addr <= pool_bram_wr_addr + {{(BRAM_ADDR_W-1){1'b0}}, 1'b1};
+    end
+
+    // -------------------------------------------------------------------------
+    // 14a-ii. Output BRAM Buffer (Double-Buffered Inter-Layer Storage)
+    // -------------------------------------------------------------------------
+    // Stores quantized INT8 output between layers. Two 8KB banks for
+    // ping-pong: one bank receives current layer output while other
+    // feeds activations back or drains to DDR.
+    // Write port fed from pooler output (bypass mode when no pooling).
+    output_bram_buffer #(
+        .DATA_W (64),
+        .ADDR_W (BRAM_ADDR_W),
+        .DEPTH  (1 << BRAM_ADDR_W)
+    ) u_output_bram (
+        .clk        (clk),
+        .rst_n      (rst_n),
+        .bank_sel   (obram_ctrl_bank_sel),
+        .wr_en      (pool_out_valid),          // Pooler output drives BRAM write
+        .wr_addr    (pool_bram_wr_addr),       // Post-pooler address counter
+        .wr_data    (pool_out_data),            // Pooled (or bypassed) data
+        .rd_en      (obram_ctrl_bram_rd_en | out_dma_rd_en),
+        .rd_addr    (obram_ctrl_bram_rd_en ? obram_ctrl_bram_rd_addr : out_dma_rd_addr),
+        .rd_data    (obram_bram_rd_data),
+        .rd_valid   (obram_bram_rd_valid)
+    );
+
+    // -------------------------------------------------------------------------
+    // 14b. Output BRAM Controller (Multi-Layer FSM)
+    // -------------------------------------------------------------------------
+    // Captures accumulator output → BRAM, then routes to feedback or DDR.
+    output_bram_ctrl #(
+        .DATA_W     (64),
+        .ADDR_W     (BRAM_ADDR_W),
+        .ACT_ADDR_W (BRAM_ADDR_W),
+        .ACT_DATA_W (N_ROWS * DATA_W),  // 112 bits
+        .NUM_ACCS   (N_ROWS * N_COLS)   // 196
+    ) u_obram_ctrl (
+        .clk            (clk),
+        .rst_n          (rst_n),
+        // Layer configuration
+        .layer_total    (cfg_layer_total),
+        .layer_current  (cfg_layer_current),
+        .pool_en        (cfg_pool_en),
+        .output_h       (cfg_output_h),
+        .output_w       (cfg_output_w),
+        // Accumulator read (captures quantized output)
+        .accum_rd_en    (obram_ctrl_accum_rd_en),
+        .accum_rd_addr  (obram_ctrl_accum_rd_addr),
+        .accum_rd_data  (out_dma_rd_data),
+        .accum_ready    (out_dma_ready),
+        // BRAM write
+        .bram_wr_en     (obram_ctrl_bram_wr_en),
+        .bram_wr_addr   (obram_ctrl_bram_wr_addr),
+        .bram_wr_data   (obram_ctrl_bram_wr_data),
+        .bram_bank_sel  (obram_ctrl_bank_sel),
+        // BRAM read (for feedback)
+        .bram_rd_en     (obram_ctrl_bram_rd_en),
+        .bram_rd_addr   (obram_ctrl_bram_rd_addr),
+        .bram_rd_data   (obram_bram_rd_data),
+        .bram_rd_valid  (obram_bram_rd_valid),
+        // Feedback → act_buffer
+        .fb_act_we      (obram_ctrl_fb_we),
+        .fb_act_waddr   (obram_ctrl_fb_waddr),
+        .fb_act_wdata   (obram_ctrl_fb_wdata),
+        // Control
+        .sched_done     (sched_done),
+        .start          (start_pulse),
+        // Out DMA control (last layer)
+        .out_dma_trigger(obram_ctrl_out_dma_trigger),
+        .out_dma_done   (out_dma_done),
+        // Status
+        .layer_done     (obram_ctrl_layer_done),
+        .last_layer_done(obram_ctrl_last_layer_done),
+        .feedback_busy  (obram_ctrl_feedback_busy),
+        .busy           (obram_ctrl_busy)
+    );
+
+    // -------------------------------------------------------------------------
+    // 14c. Output Write DMA (Drains BRAM → DDR via AXI4 Write)
+    // -------------------------------------------------------------------------
+    // Triggered by output_bram_ctrl on LAST LAYER only.
+    // Reads quantized INT8 results from BRAM buffer (not accumulator directly)
+    // and writes them to DDR at cfg_dma_dst_addr.
     //
     // If cfg_dma_dst_addr == 0, the output DMA immediately signals done,
     // preserving the CSR-based readback path.
@@ -1412,15 +1594,15 @@ module accel_top #(
         .clk            (clk),
         .rst_n          (rst_n),
         // Control
-        .start          (sched_done),       // Auto-trigger on compute done
-        .dst_addr       (cfg_dma_dst_addr), // From CSR DMA_DST_ADDR register
+        .start          (obram_ctrl_out_dma_trigger),  // Triggered by BRAM ctrl on last layer
+        .dst_addr       (cfg_dma_dst_addr),
         .done           (out_dma_done),
         .busy           (out_dma_busy),
-        // Output Accumulator Read Interface
+        // BRAM Read Interface (reads from output BRAM, not accumulator directly)
         .accum_rd_en    (out_dma_rd_en),
         .accum_rd_addr  (out_dma_rd_addr),
-        .accum_rd_data  (out_dma_rd_data),
-        .accum_ready    (out_dma_ready),
+        .accum_rd_data  (obram_bram_rd_data),  // Data from BRAM buffer
+        .accum_ready    (1'b1),                // BRAM always ready when ctrl triggers DMA
         // AXI4 Write (direct to top-level, no arbitration)
         .m_axi_awid     (m_axi_awid),
         .m_axi_awaddr   (m_axi_awaddr),

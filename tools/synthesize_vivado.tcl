@@ -3,31 +3,62 @@
 # =============================================================================
 # Author: Joshua Carter
 # Date: February 2026
-# Target: Xilinx Zynq-7020 (PYNQ-Z2) — xc7z020clg400-1
+# Target: Xilinx Zynq UltraScale+ (ZCU104) — xczu7ev-ffvc1156-2-e
 # Tools: Vivado 2023.2+
 #
-# Usage (from hw/ directory):
-#   vivado -mode batch -source ../tools/synthesize_vivado.tcl
+# Usage:
+#   vivado -mode batch -source tools/synthesize_vivado.tcl
 #
 # Outputs:
 #   - vivado_proj/accel_v1.xpr (project file)
 #   - reports/synthesis_utilization.rpt
 #   - reports/synthesis_timing.rpt
 #   - reports/post_route_power.rpt
-#   - accel_v1.bit (FPGA bitstream)
+#   - soc_top_v2.bit (FPGA bitstream)
 # =============================================================================
 
 # =============================================================================
 # Project Configuration
 # =============================================================================
-set proj_name "accel_v1"
-set proj_dir "./vivado_proj"
-set part "xc7z020clg400-1"   # Zynq-7020 (PYNQ-Z2), speed grade -1
-set top_module "accel_top"
-set clk_period_ns 10.0  # 100 MHz target frequency
+set proj_name "accel_v1_soc"
+set script_dir [file dirname [file normalize [info script]]]
+set repo_root [file normalize [file join $script_dir ..]]
+set hw_root [file join $repo_root hw]
+set proj_dir [file join $hw_root vivado_proj]
+set reports_dir [file join $hw_root reports]
+set filelist_path [file join $hw_root sim sv filelist.f]
+set part "xczu7ev-ffvc1156-2-e"   # Zynq UltraScale+ (ZCU104), speed grade -2
+set top_module "zcu104_wrapper"   ;# Board wrapper around soc_top_v2
+set clk_period_ns 20.0  # 50 MHz target frequency (matches RTL CLK_FREQ default)
 
 # Create reports directory
-file mkdir reports
+file mkdir $reports_dir
+
+proc load_verilator_filelist {filelist_path} {
+    set include_dirs {}
+    set rtl_files {}
+    set file_handle [open $filelist_path r]
+
+    while {[gets $file_handle line] >= 0} {
+        set trimmed [string trim $line]
+
+        if {$trimmed eq "" || [string match {//*} $trimmed]} {
+            continue
+        }
+
+        if {[string match "+incdir+*" $trimmed]} {
+            lappend include_dirs [string range $trimmed 8 end]
+            continue
+        }
+
+        if {[string match "*.sv" $trimmed]} {
+            lappend rtl_files $trimmed
+        }
+    }
+
+    close $file_handle
+    return [list [lsort -unique $include_dirs] [lsort -unique $rtl_files]]
+}
 
 # =============================================================================
 # Step 1: Create Project
@@ -52,26 +83,31 @@ puts "========================================="
 puts "Step 2: Adding RTL Sources"
 puts "========================================="
 
-# Add all SystemVerilog files (.sv only — industry standard)
-# Glob paths are relative to hw/ (run from the hw/ directory).
-# Note: rtl/top/deprecated/ is excluded intentionally.
-set rtl_files [glob -nocomplain \
-    rtl/systolic/pe.sv \
-    rtl/systolic/systolic_array_sparse.sv \
-    rtl/mac/*.sv \
-    rtl/buffer/*.sv \
-    rtl/control/*.sv \
-    rtl/dma/*.sv \
-    rtl/monitor/*.sv \
-    rtl/host_iface/*.sv \
-    rtl/top/accel_top.sv \
-    rtl/top/accel_top_dual_clk.sv \
-]
+lassign [load_verilator_filelist $filelist_path] include_dirs rtl_files
+
+if {[llength $rtl_files] == 0} {
+    puts "ERROR: No RTL files found in $filelist_path"
+    exit 1
+}
 
 add_files -fileset sources_1 $rtl_files
+
+# Add the board wrapper (not in filelist.f — it is FPGA-only)
+set wrapper_file [file join $hw_root rtl top zcu104_wrapper.sv]
+if {[file exists $wrapper_file]} {
+    add_files -fileset sources_1 $wrapper_file
+    puts "Added board wrapper: $wrapper_file"
+} else {
+    puts "WARNING: Board wrapper not found — falling back to soc_top_v2 as top"
+    set top_module "soc_top_v2"
+}
+
+set_property include_dirs $include_dirs [current_fileset]
+set_property verilog_define {XILINX_FPGA FPGA_SYNTHESIS} [current_fileset]
 set_property top $top_module [current_fileset]
 
-puts "Added [llength $rtl_files] RTL files"
+puts "Added [llength $rtl_files] RTL files from $filelist_path"
+puts "Added [llength $include_dirs] include directories"
 
 # =============================================================================
 # Step 3: Add Constraints (XDC)
@@ -81,12 +117,13 @@ puts "Step 3: Adding Timing Constraints"
 puts "========================================="
 
 # Create timing constraints file
-set xdc_file "$proj_dir/accel_timing.xdc"
+set xdc_file [file join $proj_dir accel_timing.xdc]
+set board_xdc [file join $hw_root constraints zcu104.xdc]
 set xdc [open $xdc_file w]
 
 puts $xdc "# ==================================================================="
 puts $xdc "# ACCEL-v1 Timing Constraints"
-puts $xdc "# Target: 100 MHz system clock"
+puts $xdc "# Target: 50 MHz system clock (matches RTL CLK_FREQ = 50_000_000)"
 puts $xdc "# ==================================================================="
 puts $xdc ""
 puts $xdc "# Primary clock"
@@ -117,6 +154,12 @@ puts $xdc "# set_multicycle_path -setup 2 -from \[get_pins *reg/C\] -to \[get_pi
 close $xdc
 add_files -fileset constrs_1 $xdc_file
 
+# Add the board-level pin/IO constraints if present
+if {[file exists $board_xdc]} {
+    add_files -fileset constrs_1 $board_xdc
+    puts "Added board XDC: $board_xdc"
+}
+
 puts "Created timing constraints: $xdc_file"
 
 # =============================================================================
@@ -146,12 +189,12 @@ open_run synth_1
 # Generate synthesis reports
 puts "Generating synthesis reports..."
 
-report_utilization -file reports/synthesis_utilization.rpt
-report_timing_summary -file reports/synthesis_timing.rpt -max_paths 10
-report_clock_utilization -file reports/synthesis_clock_utilization.rpt
+report_utilization -file [file join $reports_dir synthesis_utilization.rpt]
+report_timing_summary -file [file join $reports_dir synthesis_timing.rpt] -max_paths 10
+report_clock_utilization -file [file join $reports_dir synthesis_clock_utilization.rpt]
 
 puts "Synthesis complete!"
-puts "Reports generated in reports/ directory"
+puts "Reports generated in $reports_dir"
 
 # =============================================================================
 # Step 5: Check Timing
@@ -212,11 +255,11 @@ open_run impl_1
 # Generate post-implementation reports
 puts "Generating post-implementation reports..."
 
-report_utilization -file reports/impl_utilization.rpt
-report_timing_summary -file reports/impl_timing.rpt -max_paths 20
-report_route_status -file reports/impl_route_status.rpt
-report_drc -file reports/impl_drc.rpt
-report_power -file reports/impl_power.rpt
+report_utilization -file [file join $reports_dir impl_utilization.rpt]
+report_timing_summary -file [file join $reports_dir impl_timing.rpt] -max_paths 20
+report_route_status -file [file join $reports_dir impl_route_status.rpt]
+report_drc -file [file join $reports_dir impl_drc.rpt]
+report_power -file [file join $reports_dir impl_power.rpt]
 
 puts "Implementation complete!"
 
@@ -243,7 +286,7 @@ puts "Post-Route TNS: $pr_tns ns"
 
 if {$pr_wns < 0.0} {
     puts "ERROR: Post-route timing FAILED!"
-    puts "Design will NOT work at 100 MHz"
+    puts "Design will NOT work at 50 MHz"
     exit 1
 } else {
     puts "SUCCESS: Post-route timing MET!"
@@ -267,10 +310,11 @@ set_property CONFIG_MODE SPIx4 [current_design]
 launch_runs impl_1 -to_step write_bitstream -jobs 4
 wait_on_run impl_1
 
-set bitstream_file "$proj_dir/${proj_name}.runs/impl_1/${top_module}.bit"
+set bitstream_file [file join $proj_dir "${proj_name}.runs" impl_1 "${top_module}.bit"]
 if {[file exists $bitstream_file]} {
-    file copy -force $bitstream_file "./accel_v1.bit"
-    puts "SUCCESS: Bitstream generated: accel_v1.bit"
+    set bitstream_copy [file join $hw_root "${top_module}.bit"]
+    file copy -force $bitstream_file $bitstream_copy
+    puts "SUCCESS: Bitstream generated: $bitstream_copy"
 } else {
     puts "ERROR: Bitstream generation failed!"
     exit 1
@@ -287,7 +331,7 @@ set util_rpt [report_utilization -return_string]
 puts $util_rpt
 
 # Also dump a machine-readable JSON summary
-set json_file "reports/synthesis_summary.json"
+set json_file [file join $reports_dir synthesis_summary.json]
 set jf [open $json_file w]
 
 puts $jf "\{"
@@ -306,7 +350,7 @@ puts ""
 puts "==================================================================="
 puts "                    SYNTHESIS SUMMARY"
 puts "==================================================================="
-puts "Target Device:       $part (Zynq-7020 / PYNQ-Z2)"
+puts "Target Device:       $part (Zynq UltraScale+ / ZCU104)"
 puts "Target Frequency:    [expr {1000.0 / $clk_period_ns}] MHz"
 puts "Achieved Frequency:  [expr {1000.0 / ($clk_period_ns - $pr_wns)}] MHz"
 puts "Slack (WNS):         $pr_wns ns"
@@ -314,13 +358,13 @@ puts ""
 puts "Resource Utilization:"
 puts "  (Full breakdown in reports/impl_utilization.rpt)"
 puts ""
-puts "Zynq-7020 Resources: 53,200 LUTs | 106,400 FFs | 140 BRAM36 | 220 DSPs"
+puts "ZCU104 Device:       xczu7ev-ffvc1156-2-e"
 puts ""
-puts "Power (Estimated):   <2W @ 100 MHz"
+puts "Power (Estimated):   <1W @ 50 MHz"
 puts "==================================================================="
 puts ""
 puts "Next Steps:"
-puts "  1. Flash bitstream to FPGA: accel_v1.bit"
+puts "  1. Flash bitstream to FPGA: ${top_module}.bit"
 puts "  2. Run hardware validation tests"
 puts "  3. Measure actual power consumption"
 puts "  4. Benchmark systolic utilization"

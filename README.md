@@ -1,4 +1,24 @@
-# ACCEL-v1: Sparse INT8 CNN Accelerator
+# MNIST-Accel
+
+## Current Entry Points
+
+- FPGA bringup bundle: [handoff/soc_top_v2/fpga_bringup/README.md](handoff/soc_top_v2/fpga_bringup/README.md)
+- FPGA board checklist: [handoff/soc_top_v2/fpga_bringup/docs/SOC_TOP_V2_FPGA_BOARD_INTEGRATION_CHECKLIST.md](handoff/soc_top_v2/fpga_bringup/docs/SOC_TOP_V2_FPGA_BOARD_INTEGRATION_CHECKLIST.md)
+- ASIC bringup bundle: [handoff/soc_top_v2/asic_bringup/README.md](handoff/soc_top_v2/asic_bringup/README.md)
+- Handoff index: [handoff/soc_top_v2/README.md](handoff/soc_top_v2/README.md)
+- Archived legacy host stack: [archive/old_project_done/README.md](archive/old_project_done/README.md)
+
+## Current Status
+
+- The active hardware target in this workspace is `soc_top_v2`.
+- The current full-SoC FPGA bring-up target is ZCU104 via `hw/rtl/top/zcu104_wrapper.sv`.
+- The local repo is already staged to the handoff boundary for both FPGA and ASIC work.
+- Remaining FPGA-only work is board integration, Vivado implementation, and bitstream generation.
+- Remaining ASIC-only work is the external OpenROAD/OpenLane run plus backend signoff outputs.
+
+## Note
+
+The material below is older accelerator-focused project background kept for reference. For the current full-SoC bringup path, use the handoff folders above and the ZCU104 wrapper flow.
 
 <div align="center">
 

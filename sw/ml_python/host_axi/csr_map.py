@@ -58,7 +58,7 @@ DMA_BYTES_XFERRED = 0xB8   #: Bytes transferred (RO)
 # BSR / HYBRID SCHEDULER REGISTERS (0xC0 - 0xDF)
 # ---------------------------------------------------------------------------
 # These registers control the BSR sparse format and scheduler mode selection.
-# The accelerator has two schedulers sharing the same 14×14 systolic array:
+# The accelerator has two schedulers sharing the same 16×16 systolic array:
 #   - BSR Scheduler (bsr_scheduler.sv): For sparse layers with BSR weights
 #   - Dense Scheduler (scheduler.sv): For fully-connected layers (100% dense)
 #

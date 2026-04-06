@@ -53,14 +53,14 @@ static int tests_failed = 0;
 // =============================================================================
 void test_constants() {
     ASSERT_EQ(NUM_BANKS, 2u);
-    ASSERT_EQ(TILE_DIM, 14u);
-    ASSERT_EQ(TILE_ELEMENTS, 196u);
-    ASSERT_EQ(TILE_BYTES_INT8, 196u);
+    ASSERT_EQ(TILE_DIM, 16u);
+    ASSERT_EQ(TILE_ELEMENTS, 256u);
+    ASSERT_EQ(TILE_BYTES_INT8, 256u);
     ASSERT_EQ(ACC_WIDTH, 32u);
 
-    ASSERT_EQ(SYSTOLIC_SIZE, 14u);
-    ASSERT_EQ(BLOCK_SIZE, 196u);
-    ASSERT_EQ(PE_COUNT, 196u);
+    ASSERT_EQ(SYSTOLIC_SIZE, 16u);
+    ASSERT_EQ(BLOCK_SIZE, 256u);
+    ASSERT_EQ(PE_COUNT, 256u);
 
     PASS("constants");
 }
@@ -86,9 +86,9 @@ void test_tile_descriptor() {
     td.n_idx = 2;
     td.k_idx = 5;
     td.wgt_offset = 1000;
-    td.wgt_bytes = 196;
+    td.wgt_bytes = 256;
     td.act_offset = 2000;
-    td.act_bytes = 196;
+    td.act_bytes = 256;
     td.is_first_k = true;
     td.is_last_k = false;
 
@@ -96,7 +96,7 @@ void test_tile_descriptor() {
     ASSERT_EQ(td.n_idx, 2u);
     ASSERT_EQ(td.k_idx, 5u);
     ASSERT_EQ(td.wgt_offset, 1000u);
-    ASSERT_EQ(td.wgt_bytes, 196u);
+    ASSERT_EQ(td.wgt_bytes, 256u);
     ASSERT_TRUE(td.is_first_k);
     ASSERT_TRUE(!td.is_last_k);
 

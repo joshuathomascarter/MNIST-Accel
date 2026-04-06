@@ -16,7 +16,7 @@ BSR format stores only **non-zero blocks** in a compressed format with three com
 
 ### Block Dimensions
 
-- **Standard block size**: 14×14 elements (configurable)
+- **Standard block size**: 16×16 elements (configurable)
 - **Convolution blocks**: 4×4 elements for conv layers
 - **Data type**: INT8 for weights, FP32 for scales
 
@@ -84,7 +84,7 @@ For matrix `C = A @ B`:
 ```
 
 - **Element type**: INT8 (1 byte per element)
-- **Block size**: 196 bytes for 14×14 blocks
+- **Block size**: 256 bytes for 16×16 blocks
 - **Total size**: `num_blocks * block_h * block_w` bytes
 
 ### `.meta.json` File (Metadata)
@@ -125,7 +125,7 @@ IDLE → READ_ROW_PTR → CHECK_EMPTY → READ_COL_IDX → LOAD_BLOCK → COMPUT
 
 2. **For each block in row:**
    - Read `col_idx[block_idx]` to get column position
-   - Read 196-byte block from `data` array at offset `block_idx * 64`
+   - Read 256-byte block from `data` array at offset `block_idx * 64`
    - Read scale from `scales[block_row * 8 : (block_row+1) * 8]`
 
 3. **Systolic array operation:**
@@ -143,7 +143,7 @@ IDLE → READ_ROW_PTR → CHECK_EMPTY → READ_COL_IDX → LOAD_BLOCK → COMPUT
 Input:  9216 features
 Output: 128 neurons
 Sparsity: 90%
-Block size: 14×14
+Block size: 16×16
 ```
 
 ### BSR Dimensions
@@ -159,11 +159,11 @@ Non-zero blocks (10%): ~1,843 blocks
 ### Memory Requirements
 
 ```
-Data array:    1,843 blocks × 196 bytes = 117,952 bytes (~115 KB)
+Data array:    1,843 blocks × 256 bytes = 471,808 bytes (~461 KB)
 Column indices: 1,843 × 4 bytes = 7,372 bytes (~7 KB)
 Row pointers:   17 × 4 bytes = 68 bytes
 Scales:         128 × 4 bytes = 512 bytes
-Total:          ~126 KB (vs 1.15 MB dense → 11× reduction)
+Total:          ~469 KB (vs 1.15 MB dense → 2.5× reduction)
 ```
 
 ### Hardware Scheduler Loop
@@ -179,7 +179,7 @@ for block_row in range(16):
         block_idx = row_ptr[block_row] + i
         block_col = col_idx[block_idx]
         
-        # Load 14×14 block from BRAM
+        # Load 16×16 block from BRAM
         block_data = memory[block_idx * 64 : (block_idx + 1) * 64]
         
         # Compute position in output

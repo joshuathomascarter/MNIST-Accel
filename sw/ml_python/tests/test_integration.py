@@ -254,12 +254,12 @@ class TestTiledGEMM(unittest.TestCase):
         ref = A.astype(np.int32) @ B.astype(np.int32)
         np.testing.assert_array_equal(C, ref)
 
-    def test_14x14_systolic_size(self):
-        """14×14 matches the physical array dimension."""
+    def test_16x16_systolic_size(self):
+        """16×16 matches the physical array dimension."""
         rng = np.random.default_rng(7)
-        A = rng.integers(-128, 127, size=(14, 14), dtype=np.int8)
-        B = rng.integers(-128, 127, size=(14, 14), dtype=np.int8)
-        C = self._tiled_gemm(A, B, 14, 14, 14)
+        A = rng.integers(-128, 127, size=(16, 16), dtype=np.int8)
+        B = rng.integers(-128, 127, size=(16, 16), dtype=np.int8)
+        C = self._tiled_gemm(A, B, 16, 16, 16)
         ref = A.astype(np.int32) @ B.astype(np.int32)
         np.testing.assert_array_equal(C, ref)
 

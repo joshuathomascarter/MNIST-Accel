@@ -1,0 +1,60 @@
+{
+  "generated": "2026-04-05T16:16:06.763653",
+  "description": "MNIST-Accel ASIC v1 Competition Results Summary",
+  "model": {
+    "architecture": "Conv + BSR-FC1 + FC2",
+    "fc1_shape": "140x9216 padded 144x9216",
+    "fc1_sparsity_pct": 91.4,
+    "fc1_nonzero_blocks": 444,
+    "fc1_total_blocks": 5184,
+    "block_size": "16x16",
+    "fc2_shape": "10x140 padded 16x144",
+    "test_accuracy_pct": 99.21
+  },
+  "dram_utilization": {
+    "dense_fc1_words": 331776,
+    "bsr_fc1_words": 28870,
+    "compression_ratio": 11.49,
+    "full_dram_pct": 13.9
+  },
+  "e2e_inr0": {
+    "innet_reduce": 0,
+    "status": "PASS",
+    "predicted": 7,
+    "true": 7,
+    "total_cycles": 1037183,
+    "accel_cycles": 2471,
+    "dram_reads": 2592,
+    "dram_writes": 2304
+  },
+  "e2e_inr1": {
+    "innet_reduce": 1,
+    "status": "PASS",
+    "predicted": 7,
+    "true": 7,
+    "total_cycles": 1037183,
+    "accel_cycles": 2471,
+    "dram_reads": 2592,
+    "dram_writes": 2304
+  },
+  "inr_reduction_tb": {
+    "inr0": {
+      "root_packets": 60,
+      "link_flits": 48,
+      "cycles": 80
+    },
+    "inr1": {
+      "root_packets": 8,
+      "link_flits": 24,
+      "cycles": 84
+    },
+    "root_packet_speedup": 7.5,
+    "link_flit_reduction_pct": 50.0,
+    "status": "PASS both"
+  },
+  "innovations": [
+    "BSR FC1: 11x DRAM reduction (91.4% sparse, 99.21% accuracy)",
+    "INR NoC: 7.5x root packets, 50% link flits in reduction workloads",
+    "Full-stack SoC: RISC-V + caches + TLB + 4x4 systolic array, E2E PASS"
+  ]
+}

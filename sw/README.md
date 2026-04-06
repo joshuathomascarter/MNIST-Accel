@@ -1,4 +1,23 @@
-# ACCEL-v1 Software Stack
+# Software And Bringup
+
+## Current Software Entry Points
+
+- Active firmware bringup path: [fw/main.c](fw/main.c)
+- Tile and NoC firmware interface: [fw/hal_accel.h](fw/hal_accel.h)
+- FPGA bringup bundle: [handoff/soc_top_v2/fpga_bringup/README.md](handoff/soc_top_v2/fpga_bringup/README.md)
+- ASIC bringup bundle: [handoff/soc_top_v2/asic_bringup/README.md](handoff/soc_top_v2/asic_bringup/README.md)
+- Active ML tooling: [sw/ml_python](sw/ml_python)
+- Archived legacy host-side stack: [archive/old_project_done/README.md](archive/old_project_done/README.md)
+
+## Current Status
+
+- The active bringup software path for `soc_top_v2` is the bare-metal firmware in `fw/`.
+- Python ML, export, and golden-model tooling under `sw/ml_python/` remains live.
+- The older host-side driver stack is archived and is not part of the current bringup flow.
+
+## Note
+
+The remainder of this file is historical software-stack material kept for reference.
 
 Host-side software for the ACCEL-v1 sparse CNN accelerator. Includes a C++ driver framework for Zynq deployment and Python tooling for model training, INT8 quantization, BSR export, and golden-model verification.
 
@@ -22,7 +41,7 @@ sw/
 │
 └── ml_python/                     # Python ML & verification tooling
     ├── training/
-    │   ├── export_bsr_14x14.py    #   14×14 BSR weight export (production)
+    │   ├── export_bsr_14x14.py    #   16×16 BSR weight export (production)
     │   ├── export_bsr.py          #   Generic BSR export utilities
     │   └── blocksparse_train.py   #   Block-sparse aware training
     ├── exporters/
@@ -72,7 +91,7 @@ make -j$(nproc)
 |--------|--------|-------------|
 | BSR Encoder | `compute/bsr_encoder.hpp` | Dense-to-BSR conversion, hardware serialization |
 | Golden Model | `compute/golden_model.hpp` | Bit-exact INT8 GEMM reference (dense + BSR) |
-| Tiling | `compute/tiling.hpp` | Matrix tiling for 14×14 systolic array |
+| Tiling | `compute/tiling.hpp` | Matrix tiling for 16×16 systolic array |
 | Accelerator | `driver/accelerator.hpp` | CSR control, layer configuration, inference |
 | DMA | `memory/dma_controller.hpp` | AXI DMA buffer allocation and transfers |
 | Buffer Mgr | `memory/buffer_manager.hpp` | Physically contiguous memory management |
@@ -107,7 +126,7 @@ python train_mnist.py
 cd sw/ml_python/"INT8 quantization"
 python quantize.py
 
-# Export to 14×14 BSR format for hardware
+# Export to 16×16 BSR format for hardware
 cd sw/ml_python/training
 python export_bsr_14x14.py --from-int8
 ```
@@ -142,7 +161,7 @@ The Python host driver (`sw/ml_python/host/accel.py`) targets the PYNQ-Z2 overla
 from host.accel import AccelDriver
 
 driver = AccelDriver(bitstream="accel_top.bit")
-driver.load_bsr_weights("data/bsr_export_14x14/fc1/")
+driver.load_bsr_weights("data/bsr_export_16x16/fc1/")
 driver.load_activations(activation_tensor)
 driver.start()
 driver.wait_done()
@@ -170,10 +189,10 @@ Per-layer files:
 - `{layer}_bias_int8.npy` — INT8 bias values
 - `{layer}_bias_scale.json` — Bias scale metadata
 
-### BSR Export (`data/bsr_export_14x14/`)
+### BSR Export (`data/bsr_export_16x16/`)
 
 Per-layer directories containing:
-- `weights.bsr` — Packed non-zero 14×14 blocks (INT8)
+- `weights.bsr` — Packed non-zero 16×16 blocks (INT8)
 - `row_ptr.npy` — BSR row pointer array
 - `col_idx.npy` — BSR column index array
 - `weights.meta.json` — Block dimensions, sparsity, shape metadata

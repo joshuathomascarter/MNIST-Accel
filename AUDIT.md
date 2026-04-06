@@ -1,6 +1,6 @@
 # ACCEL-v1 Code Audit
 
-> Internal audit of the ACCEL-v1 codebase. Tracks known issues, design trade-offs, and items pending before FPGA deployment.
+> Last updated: April 2026. Ground-truth audit based on current codebase — replaces stale pre-session content.
 
 ---
 
@@ -8,13 +8,13 @@
 
 | Category | Status |
 |----------|--------|
-| RTL Modules (16) | Simulation-verified |
-| SV Testbenches (10) | Passing (Verilator) |
-| Cocotb Tests (2) | Passing |
-| Python ML Stack (33 files) | Functional |
-| C++ Host Driver (28 files) | Framework complete, partial stubs |
-| Data Pipeline | Complete (FP32 → INT8 → BSR 14×14) |
-| FPGA Synthesis | Not yet completed |
+| RTL top module | `soc_top_v2` (4×4 mesh, 16 tiles, 50 MHz single clock) |
+| Legacy tops | `accel_top.sv`, `soc_top.sv` — DEPRECATED, kept for reference |
+| FPGA target | ZCU104 (`xczu7ev-ffvc1156-2-e`), wrapper in `hw/rtl/top/zcu104_wrapper.sv` |
+| Simulation (cocotb) | `test_soc_top_v2_loader_real_fc1_block` — PASSING |
+| Simulation (Verilator e2e) | Framework in place; runs fc2-only (~10 min/run) |
+| FPGA bitstream | Not yet generated — run `vivado -mode batch -source hw/vivado_zcu104.tcl` |
+| OpenLane/OpenROAD | Planning collateral complete; execution not yet started |
 
 ---
 
@@ -22,73 +22,98 @@
 
 ### HIGH Priority
 
-| # | Issue | Location | Notes |
-|---|-------|----------|-------|
-| 1 | Dual-clock wrapper not included | `hw/rtl/top/` | `accel_top_dual_clk.sv` referenced in docs but removed due to compilation issues. Single-clock `accel_top.sv` is verified. |
-| 2 | C++ end-to-end test is a stub | `sw/cpp/tests/test_end_to_end.cpp` | Framework is in place; test body not yet implemented. |
-| 3 | FPGA synthesis not completed | — | Vivado TCL script exists (`tools/synthesize_vivado.tcl`) but no bitstream generated yet. |
+| # | Issue | Location | Status |
+|---|-------|----------|--------|
+| 1 | FPGA bitstream not generated | `hw/vivado_zcu104.tcl` | Script created; needs Vivado 2023.x to run |
+| 2 | Full on-chip inference firmware only at fc1+fc2 | `fw/main_inference_full.c` | Conv layers still pre-computed in Python; fc1+fc2 now on-chip |
+| 3 | OpenLane P&R never run | `hw/openlane/soc_top_v2/` | Planning done; execution pending (see Marcus task list) |
 
 ### MEDIUM Priority
 
-| # | Issue | Location | Notes |
-|---|-------|----------|-------|
-| 4 | `test_integration.py` | `sw/ml_python/tests/test_integration.py` | Fixed — now imports from `host_axi/`. |
-| 5 | `test_csr_pack.py` | `sw/ml_python/tests/test_csr_pack.py` | Fixed — uses `host_axi` CSR helpers. |
-| 6 | DMA 64-bit width mismatch | `hw/rtl/dma/` | 64-bit AXI data bus requires multi-beat transfers for 14-wide (112-bit) activation vectors. Packing module (`dma_pack_112.sv`) exists but adds latency. |
+| # | Issue | Location | Status |
+|---|-------|----------|--------|
+| 4 | Macro LIB/LEF not bound to PDK | `hw/openlane/soc_top_v2/config.tcl` | `sram_1rw_wrapper.sv` is behavioral; foundry SRAM macro needed |
+| 5 | Padring RTL not implemented | `hw/openlane/soc_top_v2/IO_PAD_PLAN.md` | Plan written, no RTL yet |
+| 6 | Scan insertion not implemented | `hw/openlane/soc_top_v2/DFT_SCAN_PLAN.md` | Plan written; RUN_DFT disabled in config.tcl pending |
 
 ### LOW Priority
 
-| # | Issue | Location | Notes |
-|---|-------|----------|-------|
-| 7 | Directory names with spaces | `sw/ml_python/INT8 quantization/`, `sw/ml_python/MNIST CNN/` | Works but can cause issues with shell scripts. |
+| # | Issue | Location | Status |
+|---|-------|----------|--------|
+| 7 | `data/bsr_export_16x16/` directory name referenced in old classify_digit.py | `sw/ml_python/demo/` | Fixed — PYNQ backend removed |
+| 8 | Directory names with spaces | `sw/ml_python/INT8 quantization/` | Works but avoid in shell scripts |
 
 ---
 
-## Design Trade-offs
+## Design Facts (current, correct)
 
-| Decision | Chosen | Alternative | Rationale |
-|----------|--------|-------------|-----------|
-| Array size | 14×14 | 8×8, 16×16 | Maximizes DSP usage on Z7020 (196/220 DSP48E1s) |
-| Block size | 14×14 | 4×4, 8×8 | Matches array dimensions; simplifies control |
-| Dataflow | Weight-stationary | Output-stationary | Maximizes weight reuse; pairs well with BSR sparsity |
-| Quantization | INT8 per-channel | INT8 per-tensor, INT4 | Best accuracy–compression trade-off for MNIST |
-| Sparse format | BSR | CSR, COO | Sequential access pattern; hardware-friendly metadata |
-| Clock | Single 200 MHz (sim) | Dual 50/200 MHz | Dual-clock CDC complexity deferred to FPGA phase |
+| Parameter | Value |
+|-----------|-------|
+| Top module | `soc_top_v2` |
+| FPGA target | ZCU104, `xczu7ev-ffvc1156-2-e` |
+| Clock | 50 MHz (single domain; MMCM from 125 MHz diff on ZCU104) |
+| Systolic array | 16×16 INT8 MAC, weight-stationary |
+| Tile count | 16 (4×4 NoC mesh) |
+| DRAM | 2 MB behavioral SRAM (`dram_phy_simple_mem`); replace with real PHY for FPGA |
+| UART | 115200 baud, PMOD J160 (D7=TX, F8=RX) |
+| Firmware ISA | RV32I+Zicsr (no M-extension; compiles with `riscv64-elf-gcc -march=rv32i_zicsr`) |
+| NoC novelty disabled | `SPARSE_VC_ALLOC=0`, `INNET_REDUCE=0` (for synthesis stability) |
 
 ---
 
 ## Verification Status
 
-### RTL Testbenches
+### Cocotb Tests
 
-| Testbench | DUT | Status |
-|-----------|-----|--------|
-| `pe_tb.sv` | `pe.sv` | PASS |
-| `systolic_tb.sv` | `systolic_array_sparse.sv` | PASS |
-| `bsr_dma_tb.sv` | `bsr_dma.sv` | PASS |
-| `meta_decode_tb.sv` | BSR metadata decode | PASS |
-| `output_accumulator_tb.sv` | `output_accumulator.sv` | PASS |
-| `perf_tb.sv` | `perf.sv` | PASS |
-| `tb_axi_lite_slave_enhanced.sv` | `axi_lite_slave.sv` | PASS |
-| `accel_top_tb.sv` | `accel_top.sv` | PASS |
-| `accel_top_tb_full.sv` | `accel_top.sv` | PASS |
-| `integration_tb.sv` | `accel_top.sv` | PASS |
+| Test | Status |
+|------|--------|
+| `test_soc_top_v2_loader_real_fc1_block` | **PASS** (7.26M ns, 648 s real) |
 
-### Python Golden Models
+### Verilator e2e
 
-| Model | Status |
-|-------|--------|
-| `gemm_bsr_int8.py` — BSR INT8 GEMM | Matches RTL output |
-| `gemm_int8.py` — Dense INT8 GEMM | Reference verified |
-| `golden_mac8.py` — MAC8 unit model | Bit-exact with RTL |
+| Test | Status |
+|------|--------|
+| `tb_e2e_inference.sv` (fc2 on-chip) | Framework running; sim binary exists |
+
+### RTL Testbenches (legacy SV)
+
+| Testbench | Status |
+|-----------|--------|
+| `pe_tb.sv` | PASS |
+| `systolic_tb.sv` | PASS |
+| `accel_top_tb.sv` | PASS (deprecated DUT — `accel_top`) |
 
 ---
 
-## Roadmap (Post-Audit)
+## File Inventory (key files)
 
-1. Complete Vivado synthesis and generate bitstream for Zynq-7020
-2. Validate on PYNQ-Z2 hardware with MNIST inference
-3. Implement dual-clock wrapper with proper CDC
-4. Complete C++ end-to-end test
-5. ~~Fix broken Python test imports~~ (resolved — migrated to `host_axi`)
-6. Power measurement on FPGA vs. estimation
+| File | Purpose |
+|------|---------|
+| `hw/rtl/top/soc_top_v2.sv` | Live top-level SoC |
+| `hw/rtl/top/zcu104_wrapper.sv` | ZCU104 board wrapper (IBUFDS + MMCM + SRAM + UART) |
+| `hw/constraints/zcu104.xdc` | ZCU104 pin constraints |
+| `hw/vivado_zcu104.tcl` | Vivado batch build script |
+| `hw/openlane/soc_top_v2/` | OpenLane/OpenROAD P&R package |
+| `fw/main_inference.c` | fc2-only firmware (fast, used for sim) |
+| `fw/main_inference_full.c` | fc1+fc2 firmware (FPGA hardware use) |
+| `fw/inference_config.h` | Auto-generated by `gen_dram_init.py` |
+| `fw/inference_config_full.h` | Auto-generated by `gen_dram_init.py --full` |
+| `tools/gen_dram_init.py` | Packs MNIST weights + image into DRAM hex |
+| `tools/run_e2e.py` | Full Verilator e2e pipeline runner |
+| `tools/soc_top_v2_uart_host.py` | Python UART host for real ZCU104 hardware |
+| `sw/ml_python/demo/classify_digit.py` | Tkinter drawing GUI (CPU / ZCU104 UART / SoC e2e) |
+| `data/checkpoints/mnist_fp32.pt` | Trained MNIST model (99.02% accuracy) |
+
+---
+
+## Roadmap (remaining work)
+
+1. **Generate FPGA bitstream** — run `hw/vivado_zcu104.tcl` in Vivado 2023.x
+2. **FPGA bringup** — UART ping + block demo via `tools/soc_top_v2_uart_host.py`
+3. **Full on-chip inference on FPGA** — `make full-inference` in `fw/`, run with `firmware_inference_full.hex`
+4. **OpenLane P&R** — follow Marcus task list in `hw/openlane/soc_top_v2/run_openlane.sh`
+5. **Bind SRAM macros** — replace behavioral `sram_1rw_wrapper.sv` with foundry macro LIB+LEF
+6. **Padring RTL** — implement per `IO_PAD_PLAN.md`
+7. **Scan/DFT** — implement per `DFT_SCAN_PLAN.md`
+8. **DRC/LVS signoff**
+

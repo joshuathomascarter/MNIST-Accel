@@ -1,0 +1,36 @@
+{
+  "image_index": 0,
+  "image_path": null,
+  "true_label": 7,
+  "golden_prediction": 7,
+  "golden_logits": [
+    -2.2113897800445557,
+    -1.40341317653656,
+    -0.1294519007205963,
+    0.2108144313097,
+    -1.7610969543457031,
+    -2.1493821144104004,
+    -5.955045223236084,
+    4.388418197631836,
+    -1.9474067687988281,
+    -1.2395601272583008
+  ],
+  "fc2_input_scale": 0.05327512323856354,
+  "fc2_input_nonzero": 47,
+  "fc2_input_total": 140,
+  "dram_layout": {
+    "fc2_weight_offset": 0,
+    "activation_offset": 576,
+    "output_offset": 1152,
+    "metadata_offset": 73110
+  },
+  "fc2_shape": {
+    "M": 10,
+    "K": 140,
+    "M_padded": 16,
+    "K_padded": 144,
+    "num_m_tiles": 1,
+    "num_k_tiles": 9
+  },
+  "mem_words": 524288
+}

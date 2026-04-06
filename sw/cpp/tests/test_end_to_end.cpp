@@ -91,10 +91,10 @@ void test_dense_vs_tiled_small() {
 }
 
 // =============================================================================
-// Test 2: GEMM matching for sizes exceeding 14×14 tile boundary
+// Test 2: GEMM matching for sizes exceeding 16×16 tile boundary
 // =============================================================================
 void test_dense_vs_tiled_multi_tile() {
-    const uint32_t M = 28, N = 14, K = 42;  // 2×1×3 tiles
+    const uint32_t M = 32, N = 16, K = 48;  // 2×1×3 tiles
     std::vector<int8_t> A(M * K), B(K * N);
     fillRandom(A.data(), A.size(), 100);
     fillRandom(B.data(), B.size(), 101);
@@ -113,7 +113,7 @@ void test_dense_vs_tiled_multi_tile() {
 // Test 3: Non-aligned dimensions (requires padding in tiled path)
 // =============================================================================
 void test_dense_vs_tiled_non_aligned() {
-    const uint32_t M = 17, N = 5, K = 23;  // odd sizes, not multiple of 14
+    const uint32_t M = 17, N = 5, K = 23;  // odd sizes, not multiple of 16
     std::vector<int8_t> A(M * K), B(K * N);
     fillRandom(A.data(), A.size(), 200);
     fillRandom(B.data(), B.size(), 201);
@@ -132,7 +132,7 @@ void test_dense_vs_tiled_non_aligned() {
 // Test 4: BSR encode → decode → GEMM matches original
 // =============================================================================
 void test_bsr_roundtrip_gemm() {
-    const uint32_t M = 14, K = 28;
+    const uint32_t M = 16, K = 32;
     const uint32_t N = 1;
     std::vector<int8_t> W(M * K), A(K * N);
     fillRandom(W.data(), W.size(), 300);
@@ -162,12 +162,12 @@ void test_bsr_roundtrip_gemm() {
 // Test 5: Sparse weight matrix → BSR reduces block count
 // =============================================================================
 void test_sparse_bsr_block_savings() {
-    const uint32_t M = 28, K = 28;  // 2×2 = 4 blocks
+    const uint32_t M = 32, K = 32;  // 2×2 = 4 blocks
     std::vector<int8_t> W(M * K, 0);
 
-    // Only fill the top-left 14×14 block
-    for (uint32_t r = 0; r < 14; ++r)
-        for (uint32_t c = 0; c < 14; ++c)
+    // Only fill the top-left 16×16 block
+    for (uint32_t r = 0; r < 16; ++r)
+        for (uint32_t c = 0; c < 16; ++c)
             W[r * K + c] = static_cast<int8_t>(r + c + 1);
 
     BSREncoder encoder;
@@ -185,7 +185,7 @@ void test_sparse_bsr_block_savings() {
 // Test 6: Tiling plan produces correct tile descriptors
 // =============================================================================
 void test_tiling_plan_descriptors() {
-    GEMMShape shape{28, 1, 14};  // 2 M-tiles, 1 N-tile, 1 K-tile
+    GEMMShape shape{32, 1, 16};  // 2 M-tiles, 1 N-tile, 1 K-tile
     auto plan = planDenseGEMM(shape, "test_layer");
 
     ASSERT_EQ(plan.grid.num_m_tiles, 2u);
@@ -215,7 +215,7 @@ void test_tiling_plan_descriptors() {
 // Test 7: Tile-by-tile manual accumulation matches golden GEMM
 // =============================================================================
 void test_tiled_accumulation() {
-    const uint32_t M = 14, N = 1, K = 28;  // 1 M, 1 N, 2 K tiles
+    const uint32_t M = 16, N = 1, K = 32;  // 1 M, 1 N, 2 K tiles
     std::vector<int8_t> A(M * K), B(K * N);
     fillRandom(A.data(), A.size(), 500);
     fillRandom(B.data(), B.size(), 501);
@@ -224,7 +224,7 @@ void test_tiled_accumulation() {
     auto C_golden = GoldenModel::gemmINT8(A.data(), B.data(), M, N, K);
 
     // Manual tile-by-tile accumulation (simulating hardware)
-    uint32_t M_pad = padTo14(M), N_pad = padTo14(N), K_pad = padTo14(K);
+    uint32_t M_pad = padTo16(M), N_pad = padTo16(N), K_pad = padTo16(K);
 
     // Pad A [M×K] → [M_pad×K_pad]
     std::vector<int8_t> A_pad(M_pad * K_pad, 0);
@@ -238,21 +238,21 @@ void test_tiled_accumulation() {
 
     // Accumulate tile-by-tile
     std::vector<int32_t> C_acc(M_pad * N_pad, 0);
-    uint32_t tm = M_pad / 14, tn = N_pad / 14, tk = K_pad / 14;
+    uint32_t tm = M_pad / 16, tn = N_pad / 16, tk = K_pad / 16;
 
     for (uint32_t mi = 0; mi < tm; ++mi) {
         for (uint32_t ni = 0; ni < tn; ++ni) {
             for (uint32_t ki = 0; ki < tk; ++ki) {
-                // Extract 14×14 tiles
-                for (uint32_t r = 0; r < 14; ++r) {
-                    for (uint32_t c = 0; c < 14; ++c) {
+                // Extract 16×16 tiles
+                for (uint32_t r = 0; r < 16; ++r) {
+                    for (uint32_t c = 0; c < 16; ++c) {
                         int32_t sum = 0;
-                        for (uint32_t d = 0; d < 14; ++d) {
-                            int8_t a_val = A_pad[(mi * 14 + r) * K_pad + (ki * 14 + d)];
-                            int8_t b_val = B_pad[(ki * 14 + d) * N_pad + (ni * 14 + c)];
+                        for (uint32_t d = 0; d < 16; ++d) {
+                            int8_t a_val = A_pad[(mi * 16 + r) * K_pad + (ki * 16 + d)];
+                            int8_t b_val = B_pad[(ki * 16 + d) * N_pad + (ni * 16 + c)];
                             sum += static_cast<int32_t>(a_val) * static_cast<int32_t>(b_val);
                         }
-                        C_acc[(mi * 14 + r) * N_pad + (ni * 14 + c)] += sum;
+                        C_acc[(mi * 16 + r) * N_pad + (ni * 16 + c)] += sum;
                     }
                 }
             }
@@ -397,8 +397,8 @@ void test_mnist_shapes() {
 // Test 13: Full pipeline — small GEMM through BSR + tiling + golden
 // =============================================================================
 void test_full_pipeline_small() {
-    // 14×14 × 14×1 GEMM — single tile, simplest case
-    const uint32_t M = 14, N = 1, K = 14;
+    // 16×16 × 16×1 GEMM — single tile, simplest case
+    const uint32_t M = 16, N = 1, K = 16;
     std::vector<int8_t> W(M * K), X(K * N);
     fillRandom(W.data(), W.size(), 777);
     fillRandom(X.data(), X.size(), 778);

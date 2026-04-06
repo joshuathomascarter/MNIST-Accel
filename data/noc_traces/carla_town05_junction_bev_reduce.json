@@ -1,0 +1,81 @@
+{
+  "name": "CARLA Town05 Junction Rush Hour BEV reduction trace",
+  "description": "Six-camera CARLA-style junction scene summary used to generate BEV frame and reduction traces for the competition demo.",
+  "planner_root": 10,
+  "num_bev_cells": 192,
+  "source_scene": "carla_town05_junction_scene.json",
+  "packets": [
+    {
+      "phase": "front_reduce",
+      "src": 1,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "count": 192,
+      "release_cycle": 48,
+      "release_stride": 1,
+      "reduce_group_start": 0,
+      "reduce_group_stride": 1
+    },
+    {
+      "phase": "front_left_reduce",
+      "src": 2,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "count": 192,
+      "release_cycle": 49,
+      "release_stride": 1,
+      "reduce_group_start": 0,
+      "reduce_group_stride": 1
+    },
+    {
+      "phase": "front_right_reduce",
+      "src": 4,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "count": 192,
+      "release_cycle": 50,
+      "release_stride": 1,
+      "reduce_group_start": 0,
+      "reduce_group_stride": 1
+    },
+    {
+      "phase": "rear_left_reduce",
+      "src": 7,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "count": 192,
+      "release_cycle": 51,
+      "release_stride": 1,
+      "reduce_group_start": 0,
+      "reduce_group_stride": 1
+    },
+    {
+      "phase": "rear_reduce",
+      "src": 13,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "count": 192,
+      "release_cycle": 52,
+      "release_stride": 1,
+      "reduce_group_start": 0,
+      "reduce_group_stride": 1
+    },
+    {
+      "phase": "rear_right_reduce",
+      "src": 14,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "count": 192,
+      "release_cycle": 53,
+      "release_stride": 1,
+      "reduce_group_start": 0,
+      "reduce_group_stride": 1
+    }
+  ]
+}

@@ -8,7 +8,7 @@
 #
 # USAGE:
 #   From ANY directory:
-#     bash /path/to/ResNet-Accel-2/tools/run_synthesis.sh
+#     bash /path/to/MNIST-Accel/tools/run_synthesis.sh
 #
 #   Or from the project root:
 #     ./tools/run_synthesis.sh
@@ -16,13 +16,13 @@
 # PREREQUISITES:
 #   - Vivado 2023.2+ installed and on PATH
 #     (or source /opt/Xilinx/Vivado/<version>/settings64.sh first)
-#   - Zynq-7020 part available (included in free WebPack license)
+#   - Vivado install with support for xczu7ev-ffvc1156-2-e (ZCU104)
 #
 # OUTPUTS:
 #   hw/reports/                        — All utilization/timing/power reports
 #   hw/reports/synthesis_summary.json  — Machine-readable summary
 #   hw/vivado_proj/                    — Full Vivado project (can open in GUI)
-#   hw/accel_v1.bit                    — Bitstream (if P&R succeeds)
+#   hw/soc_top_v2.bit                  — Bitstream (if P&R succeeds)
 #   hw/vivado_synth.log                — Full Vivado console log
 #
 # ESTIMATED TIME:
@@ -40,7 +40,7 @@ HW_DIR="$PROJECT_ROOT/hw"
 TCL_SCRIPT="$PROJECT_ROOT/tools/synthesize_vivado.tcl"
 
 echo "============================================="
-echo "  ACCEL-v1 Vivado Synthesis Flow"
+echo "  ACCEL-v1 SoC Vivado Synthesis Flow"
 echo "============================================="
 echo "Project root: $PROJECT_ROOT"
 echo "HW directory: $HW_DIR"
@@ -134,10 +134,10 @@ echo "── Generated Reports ──"
 ls -lh "$HW_DIR/reports/"*.rpt 2>/dev/null || echo "  (no .rpt files found)"
 echo ""
 
-if [[ -f "$HW_DIR/accel_v1.bit" ]]; then
-    BITSIZE=$(ls -lh "$HW_DIR/accel_v1.bit" | awk '{print $5}')
+if [[ -f "$HW_DIR/soc_top_v2.bit" ]]; then
+    BITSIZE=$(ls -lh "$HW_DIR/soc_top_v2.bit" | awk '{print $5}')
     echo "── Bitstream ──"
-    echo "  $HW_DIR/accel_v1.bit ($BITSIZE)"
+    echo "  $HW_DIR/soc_top_v2.bit ($BITSIZE)"
     echo ""
 fi
 
@@ -148,7 +148,7 @@ echo "  Power:       $HW_DIR/reports/impl_power.rpt"
 echo ""
 
 if [[ $VIVADO_EXIT -eq 0 ]]; then
-    echo "Next: copy accel_v1.bit to PYNQ-Z2 and run hardware tests."
+    echo "Next: deploy soc_top_v2.bit to the ZCU104 bring-up flow and run hardware tests."
 fi
 
 exit $VIVADO_EXIT

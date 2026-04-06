@@ -1,6 +1,6 @@
 # =============================================================================
 # MNIST Accelerator C++ Driver
-# 14×14 INT8 Weight-Stationary Systolic Array on PYNQ-Z2 (Zynq 7020)
+# 16×16 INT8 Weight-Stationary Systolic Array
 # =============================================================================
 
 cmake_minimum_required(VERSION 3.16)

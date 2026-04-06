@@ -1,0 +1,65 @@
+[
+  {
+    "module": "noc_innet_reduce",
+    "gates": 0,
+    "ffs": 0,
+    "depth": 3,
+    "depth_source": "heuristic estimate",
+    "fmax_mhz": 285.7,
+    "period_ns": 3.5
+  },
+  {
+    "module": "noc_router",
+    "gates": 0,
+    "ffs": 0,
+    "depth": 3,
+    "depth_source": "heuristic estimate",
+    "fmax_mhz": 285.7,
+    "period_ns": 3.5
+  },
+  {
+    "module": "mac8",
+    "gates": 719,
+    "ffs": 32,
+    "depth": 7,
+    "depth_source": "heuristic estimate",
+    "fmax_mhz": 133.3,
+    "period_ns": 7.5
+  },
+  {
+    "module": "pe",
+    "gates": 719,
+    "ffs": 49,
+    "depth": 5,
+    "depth_source": "heuristic estimate",
+    "fmax_mhz": 181.8,
+    "period_ns": 5.5
+  },
+  {
+    "module": "dram_scheduler_frfcfs",
+    "gates": 15863,
+    "ffs": 39,
+    "depth": 24,
+    "depth_source": "heuristic estimate",
+    "fmax_mhz": 40.8,
+    "period_ns": 24.5
+  },
+  {
+    "module": "axi_crossbar",
+    "gates": 2316,
+    "ffs": 12,
+    "depth": 20,
+    "depth_source": "heuristic estimate",
+    "fmax_mhz": 48.8,
+    "period_ns": 20.5
+  },
+  {
+    "module": "fixedpoint_alu",
+    "gates": 7750,
+    "ffs": 34,
+    "depth": 22,
+    "depth_source": "heuristic estimate",
+    "fmax_mhz": 44.4,
+    "period_ns": 22.5
+  }
+]

@@ -69,14 +69,14 @@ def test_empty_rows():
     print("TEST 1: Empty Rows (Block Rows with No Non-Zero Blocks)")
     print("=" * 60)
 
-    # Create weight matrix: [28, 56] with 14×14 blocks
+    # Create weight matrix: [32, 64] with 16×16 blocks
     # Only block-row 0 col 0, and block-row 1 col 1 are non-zero
-    B = np.zeros((28, 56), dtype=np.float32)
-    B[0:14, 0:14] = np.random.randn(14, 14) * 0.1    # Block (0, 0)
-    B[14:28, 14:28] = np.random.randn(14, 14) * 0.1  # Block (1, 1)
+    B = np.zeros((32, 64), dtype=np.float32)
+    B[0:16, 0:16] = np.random.randn(16, 16) * 0.1    # Block (0, 0)
+    B[16:32, 16:32] = np.random.randn(16, 16) * 0.1  # Block (1, 1)
 
     # Input matrix
-    A = np.random.randn(2, 56).astype(np.float32)
+    A = np.random.randn(2, 64).astype(np.float32)
 
     # Build BSR
     bsr_B = build_bsr_from_dense(B, 14, 14)
@@ -188,11 +188,11 @@ def test_single_block():
     print("TEST 4: Single Block Matrix")
     print("=" * 60)
 
-    # Single 14×14 block
-    B = np.random.randn(14, 14).astype(np.float32) * 0.1
-    A = np.random.randn(1, 14).astype(np.float32)
+    # Single 16×16 block
+    B = np.random.randn(16, 16).astype(np.float32) * 0.1
+    A = np.random.randn(1, 16).astype(np.float32)
 
-    bsr_B = build_bsr_from_dense(B, 14, 14)
+    bsr_B = build_bsr_from_dense(B, 16, 16)
 
     print(f"Weight shape: {B.shape}")
     print(f"BSR blocks: {bsr_B['num_blocks']}")

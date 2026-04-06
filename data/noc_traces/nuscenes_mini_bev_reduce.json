@@ -1,0 +1,80 @@
+{
+  "name": "nuScenes mini BEV reduction trace",
+  "description": "Compressed reduction trace for one six-camera BEV fusion frame. Each camera contributes one sparse partial per BEV cell to root tile 10.",
+  "planner_root": 10,
+  "num_bev_cells": 192,
+  "packets": [
+    {
+      "phase": "cam1_reduce",
+      "src": 1,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "count": 192,
+      "release_cycle": 48,
+      "release_stride": 1,
+      "reduce_group_start": 0,
+      "reduce_group_stride": 1
+    },
+    {
+      "phase": "cam2_reduce",
+      "src": 2,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "count": 192,
+      "release_cycle": 49,
+      "release_stride": 1,
+      "reduce_group_start": 0,
+      "reduce_group_stride": 1
+    },
+    {
+      "phase": "cam4_reduce",
+      "src": 4,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "count": 192,
+      "release_cycle": 50,
+      "release_stride": 1,
+      "reduce_group_start": 0,
+      "reduce_group_stride": 1
+    },
+    {
+      "phase": "cam7_reduce",
+      "src": 7,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "count": 192,
+      "release_cycle": 51,
+      "release_stride": 1,
+      "reduce_group_start": 0,
+      "reduce_group_stride": 1
+    },
+    {
+      "phase": "cam13_reduce",
+      "src": 13,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "count": 192,
+      "release_cycle": 52,
+      "release_stride": 1,
+      "reduce_group_start": 0,
+      "reduce_group_stride": 1
+    },
+    {
+      "phase": "cam14_reduce",
+      "src": 14,
+      "dst": 10,
+      "is_sparse": true,
+      "num_flits": 1,
+      "count": 192,
+      "release_cycle": 53,
+      "release_stride": 1,
+      "reduce_group_start": 0,
+      "reduce_group_stride": 1
+    }
+  ]
+}

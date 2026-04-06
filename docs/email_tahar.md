@@ -11,7 +11,7 @@ I am writing to share an open-source hardware project I have been building and t
 
 Over the past several months I have designed and implemented a complete sparse-matrix ML inference accelerator targeting the Xilinx Zynq-7020 (PYNQ-Z2). The system includes:
 
-- A 14×14 weight-stationary systolic array with INT8 MAC units
+- A 16×16 weight-stationary systolic array with INT8 MAC units
 - Block Sparse Row (BSR) storage with zero-skip logic for structured sparsity
 - An AXI4 DMA bridge for PS–PL data movement
 - A full software stack: PyTorch quantization and BSR export, C++ host driver, and Python golden-model verification

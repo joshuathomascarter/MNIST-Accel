@@ -46,21 +46,21 @@ class Net(nn.Module):
         return x
 
 
-# Hardware block size — must match the 14×14 systolic array on PYNQ-Z2
-HW_BLOCK = 14
+# Hardware block size — must match the 16×16 systolic array on PYNQ-Z2
+HW_BLOCK = 16
 
 
 def layer_block_cfg(name, module):
     """Return block size and minimum keep percentage for each layer.
 
-    All layers use 14×14 blocks to match the hardware systolic array.
+    All layers use 16×16 blocks to match the hardware systolic array.
     Conv weight matrices (reshaped to 2-D via im2col) are zero-padded
-    to multiples of 14 before BSR tiling.
+    to multiples of 16 before BSR tiling.
     """
     if isinstance(module, nn.Conv2d):
-        return (HW_BLOCK, HW_BLOCK), 0.30  # 14×14 blocks
+        return (HW_BLOCK, HW_BLOCK), 0.30  # 16×16 blocks
     else:  # Linear
-        return (HW_BLOCK, HW_BLOCK), 0.05  # 14×14 blocks
+        return (HW_BLOCK, HW_BLOCK), 0.05  # 16×16 blocks
 
 
 # ----------------------------

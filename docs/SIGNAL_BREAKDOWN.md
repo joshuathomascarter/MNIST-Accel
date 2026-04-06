@@ -1,7 +1,7 @@
 # Signal Breakdown — `accel_top.sv` Full Wiring Reference
 
 > Every signal, every wire, every port — origin and destination.  
-> Architecture: 14×14 INT8 BSR-only Sparse Systolic Array Accelerator  
+> Architecture: 16×16 INT8 BSR-only Sparse Systolic Array Accelerator  
 > Target: Zynq xc7z020 (PYNQ-Z2), 100 MHz
 
 ---
@@ -132,7 +132,7 @@ accel_top
 ├── [inline] act_buffer_ram                     — 1024×112-bit activation data
 ├── [inline] BRAM read mux logic                — row_ptr vs col_idx select
 ├── u_bsr_scheduler      (bsr_scheduler)        — BSR sparse block traversal
-├── u_systolic_sparse    (systolic_array_sparse) — 14×14 PE grid
+├── u_systolic_sparse    (systolic_array_sparse) — 16×16 PE grid
 └── u_perf               (perf)                 — Cycle counters
 ```
 
@@ -305,7 +305,7 @@ These signals are driven **directly** by `u_bsr_scheduler` (no mux — dense sch
 
 | Signal | Width | Origin | Destination | Purpose |
 |--------|-------|--------|-------------|---------|
-| `systolic_out_flat` | 6272 | `u_systolic_sparse.c_out_flat` | `u_csr.result_data` (bits [127:0] only) | 196×INT32 accumulators |
+| `systolic_out_flat` | 8192 | `u_systolic_sparse.c_out_flat` | `u_csr.result_data` (bits [127:0] only) | 256×INT32 accumulators |
 
 ### 3.14 Performance Counters
 
@@ -635,11 +635,11 @@ Host CPU (ARM Cortex-A9)
                            │                              │
                            │                    ┌─────────▼──────────┐
                            │                    │ u_systolic_sparse  │
-                           │                    │   14×14 PE Grid    │
-                           │                    │  196 DSP48E1s      │
+                           │                    │   16×16 PE Grid    │
+                           │                    │  256 DSP48E1s      │
                            │                    └─────────┬──────────┘
                            │                              │
-                           │                    systolic_out_flat (6272b)
+                           │                    systolic_out_flat (8192b)
                            │                              │
                            │                    u_csr.result_data[127:0]
                            │                              │
@@ -656,8 +656,8 @@ Host CPU (ARM Cortex-A9)
 4. **Compute:** Host writes `start_pulse` → `u_bsr_scheduler` traverses BSR structure:
    - Reads `row_ptr_bram` for block boundaries
    - Reads `col_idx_bram` for column positions
-   - Drives `load_weight` → loads 14×14 weight block into PEs
-   - Drives `pe_en` → streams 14 activation rows through systolic array
+   - Drives `load_weight` → loads 16×16 weight block into PEs
+   - Drives `pe_en` → streams 16 activation rows through systolic array
    - Drives `accum_en` → accumulates partial products
    - Repeats for all non-zero blocks
 5. **Read Results:** Host reads `result_data` from CSR (first 4 accumulators) and performance counters

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Quick retrain of MNIST CNN with fc1=140 (10×14) to match hardware tiling.
+"""Quick retrain of MNIST CNN with fc1=140 to match hardware tiling.
 Stops as soon as test accuracy hits 99%. Saves to data/checkpoints/mnist_fp32.pt"""
 import torch
 import torch.nn as nn
@@ -13,7 +13,7 @@ class Net(nn.Module):
         super().__init__()
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
         self.conv2 = nn.Conv2d(32, 64, 3, 1)
-        self.fc1 = nn.Linear(64 * 12 * 12, 140)  # 140 = 10×14, tiles perfectly
+        self.fc1 = nn.Linear(64 * 12 * 12, 140)  # 140 outputs, padded to 144 for 16-aligned tiling
         self.fc2 = nn.Linear(140, 10)
 
     def forward(self, x):
@@ -73,7 +73,7 @@ def main():
             torch.save({
                 'state_dict': model.state_dict(),
                 'seed': 42,
-                'hparams': {'fc1_width': 140, 'block_size': 14},
+                'hparams': {'fc1_width': 140, 'block_size': 16},
                 'best_acc': best_acc,
             }, CKPT)
             print(f"  -> Saved checkpoint ({best_acc:.2f}%)")

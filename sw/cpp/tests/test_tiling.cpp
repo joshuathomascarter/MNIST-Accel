@@ -50,18 +50,18 @@ static int tests_failed = 0;
     tests_passed++; } while(0)
 
 // =============================================================================
-// Test: padTo14
+// Test: padTo16
 // =============================================================================
-TEST(padTo14_basic) {
-    ASSERT_EQ(padTo14(1), 14u);
-    ASSERT_EQ(padTo14(14), 14u);
-    ASSERT_EQ(padTo14(15), 28u);
-    ASSERT_EQ(padTo14(28), 28u);
-    ASSERT_EQ(padTo14(0), 0u);
-    ASSERT_EQ(padTo14(13), 14u);
-    ASSERT_EQ(padTo14(196), 196u);
-    ASSERT_EQ(padTo14(197), 210u);
-    PASS("padTo14_basic");
+TEST(padTo16_basic) {
+    ASSERT_EQ(padTo16(1), 16u);
+    ASSERT_EQ(padTo16(16), 16u);
+    ASSERT_EQ(padTo16(17), 32u);
+    ASSERT_EQ(padTo16(32), 32u);
+    ASSERT_EQ(padTo16(0), 0u);
+    ASSERT_EQ(padTo16(15), 16u);
+    ASSERT_EQ(padTo16(256), 256u);
+    ASSERT_EQ(padTo16(257), 272u);
+    PASS("padTo16_basic");
 }
 
 // =============================================================================
@@ -70,9 +70,9 @@ TEST(padTo14_basic) {
 TEST(padded_shape) {
     GEMMShape shape{32, 9, 9};
     auto padded = computePaddedShape(shape);
-    ASSERT_EQ(padded.M_padded, 42u);   // ceil(32/14)*14 = 3*14 = 42
-    ASSERT_EQ(padded.N_padded, 14u);   // ceil(9/14)*14 = 14
-    ASSERT_EQ(padded.K_padded, 14u);   // ceil(9/14)*14 = 14
+    ASSERT_EQ(padded.M_padded, 32u);   // ceil(32/16)*16 = 2*16 = 32
+    ASSERT_EQ(padded.N_padded, 16u);   // ceil(9/16)*16 = 16
+    ASSERT_EQ(padded.K_padded, 16u);   // ceil(9/16)*16 = 16
     PASS("padded_shape");
 }
 
@@ -80,12 +80,12 @@ TEST(padded_shape) {
 // Test: computeTileGrid
 // =============================================================================
 TEST(tile_grid) {
-    PaddedShape padded{42, 14, 14};
+    PaddedShape padded{32, 16, 16};
     auto grid = computeTileGrid(padded);
-    ASSERT_EQ(grid.num_m_tiles, 3u);
+    ASSERT_EQ(grid.num_m_tiles, 2u);
     ASSERT_EQ(grid.num_n_tiles, 1u);
     ASSERT_EQ(grid.num_k_tiles, 1u);
-    ASSERT_EQ(grid.totalTiles(), 3u);
+    ASSERT_EQ(grid.totalTiles(), 2u);
     PASS("tile_grid");
 }
 
@@ -93,7 +93,7 @@ TEST(tile_grid) {
 // Test: planDenseGEMM — small matrix
 // =============================================================================
 TEST(plan_small_gemm) {
-    GEMMShape shape{14, 14, 14};
+    GEMMShape shape{16, 16, 16};
     auto plan = planDenseGEMM(shape, "test_1x1x1");
 
     ASSERT_EQ(plan.grid.num_m_tiles, 1u);
@@ -116,21 +116,21 @@ TEST(plan_small_gemm) {
 // Test: planDenseGEMM — conv1 shape (32×9 weights)
 // =============================================================================
 TEST(plan_conv1_shape) {
-    // conv1: M=32, K=9, N=676 → padded M=42, K=14, N=686
+    // conv1: M=32, K=9, N=676 → padded M=32, K=16, N=688
     GEMMShape shape{32, 676, 9};
     auto plan = planDenseGEMM(shape, "conv1");
 
-    ASSERT_EQ(plan.padded.M_padded, 42u);
-    ASSERT_EQ(plan.padded.K_padded, 14u);
-    ASSERT_EQ(plan.padded.N_padded, 686u);   // ceil(676/14)*14 = 49*14 = 686
+    ASSERT_EQ(plan.padded.M_padded, 32u);
+    ASSERT_EQ(plan.padded.K_padded, 16u);
+    ASSERT_EQ(plan.padded.N_padded, 688u);   // ceil(676/16)*16 = 43*16 = 688
 
-    ASSERT_EQ(plan.grid.num_m_tiles, 3u);
+    ASSERT_EQ(plan.grid.num_m_tiles, 2u);
     ASSERT_EQ(plan.grid.num_k_tiles, 1u);
-    ASSERT_EQ(plan.grid.num_n_tiles, 49u);
+    ASSERT_EQ(plan.grid.num_n_tiles, 43u);
 
-    // Total = 3 × 49 × 1 = 147
-    ASSERT_EQ(plan.totalTiles(), 147u);
-    ASSERT_EQ(plan.tiles.size(), 147u);
+    // Total = 2 × 43 × 1 = 86
+    ASSERT_EQ(plan.totalTiles(), 86u);
+    ASSERT_EQ(plan.tiles.size(), 86u);
 
     // All tiles should have is_first_k=true AND is_last_k=true (only 1 K tile)
     for (const auto& td : plan.tiles) {
@@ -145,8 +145,8 @@ TEST(plan_conv1_shape) {
 // Test: planDenseGEMM — multi-K tiling
 // =============================================================================
 TEST(plan_multi_k) {
-    // M=14, K=42, N=14 → 3 K-tiles
-    GEMMShape shape{14, 14, 42};
+    // M=16, K=48, N=16 → 3 K-tiles
+    GEMMShape shape{16, 16, 48};
     auto plan = planDenseGEMM(shape, "multi_k");
 
     ASSERT_EQ(plan.grid.num_m_tiles, 1u);
@@ -173,18 +173,18 @@ TEST(plan_multi_k) {
 TEST(tile_offsets) {
     // Weight tile at (m=2, k=3) in a grid with 5 K-tiles, base=1000
     uint32_t off = weightTileOffset(2, 3, 5, 1000);
-    // index = 2*5 + 3 = 13, offset = 1000 + 13*196 = 3548
-    ASSERT_EQ(off, 1000u + 13u * 196u);
+    // index = 2*5 + 3 = 13, offset = 1000 + 13*256 = 4328
+    ASSERT_EQ(off, 1000u + 13u * 256u);
 
     // Activation tile at (k=1, n=4) with 7 N-tiles, base=0
     uint32_t act_off = activationTileOffset(1, 4, 7, 0);
-    // index = 1*7 + 4 = 11, offset = 11*196 = 2156
-    ASSERT_EQ(act_off, 11u * 196u);
+    // index = 1*7 + 4 = 11, offset = 11*256 = 2816
+    ASSERT_EQ(act_off, 11u * 256u);
 
     // Output tile at (m=0, n=2) with 3 N-tiles, base=0
     uint32_t out_off = outputTileOffset(0, 2, 3, 0);
-    // index = 0*3 + 2 = 2, offset = 2*196*4 = 1568
-    ASSERT_EQ(out_off, 2u * 196u * 4u);
+    // index = 0*3 + 2 = 2, offset = 2*256*4 = 2048
+    ASSERT_EQ(out_off, 2u * 256u * 4u);
 
     PASS("tile_offsets");
 }
@@ -193,20 +193,20 @@ TEST(tile_offsets) {
 // Test: planDenseGEMM — fc1 weight shape (128×9216)
 // =============================================================================
 TEST(plan_fc1) {
-    // fc1: M=128, K=9216, N=1 → padded M=140, K=9226, N=14
+    // fc1: M=128, K=9216, N=1 → padded M=128, K=9216, N=16
     GEMMShape shape{128, 1, 9216};
     auto plan = planDenseGEMM(shape, "fc1");
 
-    ASSERT_EQ(plan.padded.M_padded, 140u);
-    ASSERT_EQ(plan.padded.K_padded, 9226u);  // ceil(9216/14)*14 = 659*14 = 9226
-    ASSERT_EQ(plan.padded.N_padded, 14u);
+    ASSERT_EQ(plan.padded.M_padded, 128u);
+    ASSERT_EQ(plan.padded.K_padded, 9216u);  // 9216 is already a multiple of 16
+    ASSERT_EQ(plan.padded.N_padded, 16u);
 
-    ASSERT_EQ(plan.grid.num_m_tiles, 10u);
-    ASSERT_EQ(plan.grid.num_k_tiles, 659u);
+    ASSERT_EQ(plan.grid.num_m_tiles, 8u);
+    ASSERT_EQ(plan.grid.num_k_tiles, 576u);
     ASSERT_EQ(plan.grid.num_n_tiles, 1u);
 
-    // Total tiles = 10 × 1 × 659 = 6590
-    ASSERT_EQ(plan.totalTiles(), 6590u);
+    // Total tiles = 8 × 1 × 576 = 4608
+    ASSERT_EQ(plan.totalTiles(), 4608u);
 
     PASS("plan_fc1");
 }
@@ -218,15 +218,15 @@ TEST(plan_fc2) {
     GEMMShape shape{10, 1, 128};
     auto plan = planDenseGEMM(shape, "fc2");
 
-    ASSERT_EQ(plan.padded.M_padded, 14u);
-    ASSERT_EQ(plan.padded.K_padded, 140u);    // ceil(128/14)*14 = 10*14 = 140
-    ASSERT_EQ(plan.padded.N_padded, 14u);
+    ASSERT_EQ(plan.padded.M_padded, 16u);
+    ASSERT_EQ(plan.padded.K_padded, 128u);    // 128 is already a multiple of 16
+    ASSERT_EQ(plan.padded.N_padded, 16u);
 
     ASSERT_EQ(plan.grid.num_m_tiles, 1u);
-    ASSERT_EQ(plan.grid.num_k_tiles, 10u);
+    ASSERT_EQ(plan.grid.num_k_tiles, 8u);
     ASSERT_EQ(plan.grid.num_n_tiles, 1u);
 
-    ASSERT_EQ(plan.totalTiles(), 10u);
+    ASSERT_EQ(plan.totalTiles(), 8u);
 
     PASS("plan_fc2");
 }
@@ -244,12 +244,12 @@ TEST(mnist_all_layers) {
     ASSERT_TRUE(plans[2].layer_name == "fc1");
     ASSERT_TRUE(plans[3].layer_name == "fc2");
 
-    // Verify fc1 matches model_summary (6590 blocks = tiles along m,k)
-    // fc1: M=128, K=9216, N=1 → 10 × 1 × 659 = 6590
-    ASSERT_EQ(plans[2].totalTiles(), 6590u);
+    // Verify fc1 matches model_summary (4608 blocks = tiles along m,k)
+    // fc1: M=128, K=9216, N=1 → 8 × 1 × 576 = 4608
+    ASSERT_EQ(plans[2].totalTiles(), 4608u);
 
-    // Verify fc2 matches model_summary (10 blocks)
-    ASSERT_EQ(plans[3].totalTiles(), 10u);
+    // Verify fc2 matches model_summary (8 blocks)
+    ASSERT_EQ(plans[3].totalTiles(), 8u);
 
     // Print all plans
     for (const auto& p : plans) {
@@ -264,7 +264,7 @@ TEST(mnist_all_layers) {
 // =============================================================================
 TEST(tile_iteration_order) {
     // 2M × 3N × 4K tiles
-    GEMMShape shape{28, 42, 56};
+    GEMMShape shape{32, 48, 64};
     auto plan = planDenseGEMM(shape);
 
     ASSERT_EQ(plan.grid.num_m_tiles, 2u);
@@ -292,23 +292,23 @@ TEST(tile_iteration_order) {
 // Test: TilingPlan metrics
 // =============================================================================
 TEST(plan_metrics) {
-    GEMMShape shape{28, 28, 28};
+    GEMMShape shape{32, 32, 32};
     auto plan = planDenseGEMM(shape, "metrics_test");
 
     // 2×2×2 = 8 tiles
     ASSERT_EQ(plan.totalTiles(), 8u);
 
-    // Weight bytes: 2 * 2 * 196 = 784
-    ASSERT_EQ(plan.totalWeightBytes(), 784u);
+    // Weight bytes: 2 * 2 * 256 = 1024
+    ASSERT_EQ(plan.totalWeightBytes(), 1024u);
 
-    // Activation bytes: 2 * 2 * 196 = 784
-    ASSERT_EQ(plan.totalActivationBytes(), 784u);
+    // Activation bytes: 2 * 2 * 256 = 1024
+    ASSERT_EQ(plan.totalActivationBytes(), 1024u);
 
-    // Output bytes: 2 * 2 * 784 = 3136
-    ASSERT_EQ(plan.totalOutputBytes(), 3136u);
+    // Output bytes: 2 * 2 * 1024 = 4096
+    ASSERT_EQ(plan.totalOutputBytes(), 4096u);
 
-    // Total MACs: 28 * 28 * 28 = 21952
-    ASSERT_EQ(plan.totalMACs(), 21952ull);
+    // Total MACs: 32 * 32 * 32 = 32768
+    ASSERT_EQ(plan.totalMACs(), 32768ull);
 
     PASS("plan_metrics");
 }
@@ -324,9 +324,9 @@ TEST(sparse_fully_dense) {
     bsr.nnz_blocks = 6;  // All blocks present
     bsr.row_ptr = {0, 3, 6};
     bsr.col_idx = {0, 1, 2, 0, 1, 2};
-    bsr.values.resize(6 * 196, 1);  // Dummy non-zero values
+    bsr.values.resize(6 * 256, 1);  // Dummy non-zero values
 
-    GEMMShape shape{28, 14, 42};  // M=28, N=14, K=42
+    GEMMShape shape{32, 16, 48};  // M=32, N=16, K=48
 
     auto sparse_plan = planSparseGEMM(bsr, shape, "full_dense_bsr");
     auto dense_plan  = planWeightStationaryGEMM(shape, "full_dense_ws");
@@ -354,9 +354,9 @@ TEST(sparse_50_percent) {
     bsr.nnz_blocks = 3;  // Only 3 of 9 blocks
     bsr.row_ptr = {0, 1, 2, 3};
     bsr.col_idx = {0, 1, 2};     // Diagonal only
-    bsr.values.resize(3 * 196, 1);
+    bsr.values.resize(3 * 256, 1);
 
-    GEMMShape shape{42, 14, 42};  // M=42, N=14, K=42
+    GEMMShape shape{48, 16, 48};  // M=48, N=16, K=48
 
     auto plan = planSparseGEMM(bsr, shape, "diag_sparse");
 
@@ -389,9 +389,9 @@ TEST(sparse_weight_caching) {
     bsr.nnz_blocks = 2;
     bsr.row_ptr = {0, 2};
     bsr.col_idx = {0, 1};
-    bsr.values.resize(2 * 196, 1);
+    bsr.values.resize(2 * 256, 1);
 
-    GEMMShape shape{14, 28, 28};  // N=28 → 2 N-tiles
+    GEMMShape shape{16, 32, 32};  // N=32 → 2 N-tiles
 
     auto plan = planSparseGEMM(bsr, shape, "wgt_cache_sparse");
 
@@ -430,20 +430,20 @@ TEST(sparse_weight_offsets) {
     bsr.nnz_blocks = 3;
     bsr.row_ptr = {0, 1, 3};
     bsr.col_idx = {2, 0, 3};   // Row 0: col 2.  Row 1: col 0, col 3
-    bsr.values.resize(3 * 196, 1);
+    bsr.values.resize(3 * 256, 1);
 
-    GEMMShape shape{28, 14, 56};
+    GEMMShape shape{32, 16, 64};
     auto plan = planSparseGEMM(bsr, shape, "offset_test", /*wgt_base=*/1000);
 
     // Weight offsets should be sequential in BSR order:
-    //   NZ block 0 (row=0, col=2) → wgt_base + 0*196 = 1000
-    //   NZ block 1 (row=1, col=0) → wgt_base + 1*196 = 1196
-    //   NZ block 2 (row=1, col=3) → wgt_base + 2*196 = 1392
+    //   NZ block 0 (row=0, col=2) → wgt_base + 0*256 = 1000
+    //   NZ block 1 (row=1, col=0) → wgt_base + 1*256 = 1256
+    //   NZ block 2 (row=1, col=3) → wgt_base + 2*256 = 1512
     ASSERT_EQ(plan.tiles[0].wgt_offset, 1000u);          // NZ 0, n=0
     ASSERT_EQ(plan.tiles[0].k_idx, 2u);                  // col_idx[0]=2
-    ASSERT_EQ(plan.tiles[1].wgt_offset, 1000u + 196u);   // NZ 1, n=0
+    ASSERT_EQ(plan.tiles[1].wgt_offset, 1000u + 256u);   // NZ 1, n=0
     ASSERT_EQ(plan.tiles[1].k_idx, 0u);                  // col_idx[1]=0
-    ASSERT_EQ(plan.tiles[2].wgt_offset, 1000u + 2*196u); // NZ 2, n=0
+    ASSERT_EQ(plan.tiles[2].wgt_offset, 1000u + 2*256u); // NZ 2, n=0
     ASSERT_EQ(plan.tiles[2].k_idx, 3u);                  // col_idx[2]=3
 
     PASS("sparse_weight_offsets");
@@ -453,13 +453,13 @@ TEST(sparse_weight_offsets) {
 // Test: planSparseGEMM fc1-scale — 90% sparse fc1
 // =============================================================================
 TEST(sparse_fc1_90pct) {
-    // Simulate fc1: M=128, K=9216, N=28 → padded M=140, K=9226
-    // 10 block-rows × 659 block-cols = 6590 total blocks
-    // At 90% sparsity: ~659 NNZ blocks
+    // Simulate fc1: M=128, K=9216, N=32 → padded M=128, K=9216
+    // 8 block-rows × 576 block-cols = 4608 total blocks
+    // At 90% sparsity: ~576 NNZ blocks
 
-    uint32_t nbr = 10;
-    uint32_t nbc = 659;
-    uint32_t nnz_per_row = 66;  // ~10% of 659 = ~66 blocks per row
+    uint32_t nbr = 8;
+    uint32_t nbc = 576;
+    uint32_t nnz_per_row = 58;  // ~10% of 576 = ~58 blocks per row
 
     BSRMatrix bsr;
     bsr.num_block_rows = nbr;
@@ -475,22 +475,22 @@ TEST(sparse_fc1_90pct) {
         }
     }
     bsr.nnz_blocks = static_cast<uint32_t>(bsr.col_idx.size());
-    bsr.values.resize(bsr.nnz_blocks * 196, 42);  // Dummy values
+    bsr.values.resize(bsr.nnz_blocks * 256, 42);  // Dummy values
 
-    GEMMShape shape{128, 28, 9216};
+    GEMMShape shape{128, 32, 9216};
     auto plan = planSparseGEMM(bsr, shape, "fc1_sparse90");
 
-    // NNZ = 660, N-tiles = 28/14 = 2
-    // Expected tiles = 660 × 2 = 1320
-    ASSERT_EQ(plan.nnz_weight_blocks, 660u);
-    ASSERT_EQ(plan.tiles.size(), 1320u);
+    // NNZ = 464, N-tiles = 32/16 = 2
+    // Expected tiles = 464 × 2 = 928
+    ASSERT_EQ(plan.nnz_weight_blocks, 464u);
+    ASSERT_EQ(plan.tiles.size(), 928u);
 
-    // Dense would be 6590 × 2 = 13180 tiles
+    // Dense would be 4608 × 2 = 9216 tiles
     ASSERT_TRUE(plan.weight_sparsity() > 0.89f);
     ASSERT_TRUE(plan.sparseSpeedup() > 9.0);
 
-    // Weight bytes: only 660 blocks × 196 = 129,360
-    ASSERT_EQ(plan.totalWeightBytes(), 660u * 196u);
+    // Weight bytes: only 464 blocks × 256 = 118,784
+    ASSERT_EQ(plan.totalWeightBytes(), 464u * 256u);
 
     plan.print(std::cout);
 
@@ -508,9 +508,9 @@ TEST(sparse_empty_row) {
     bsr.nnz_blocks = 3;
     bsr.row_ptr = {0, 2, 2, 3};  // Row 1 has 0 NNZ
     bsr.col_idx = {0, 1, 1};     // Row 0: cols 0,1.  Row 2: col 1
-    bsr.values.resize(3 * 196, 1);
+    bsr.values.resize(3 * 256, 1);
 
-    GEMMShape shape{42, 14, 28};
+    GEMMShape shape{48, 16, 32};
     auto plan = planSparseGEMM(bsr, shape, "empty_row");
 
     // 3 NNZ × 1 N-tile = 3 tiles (row 1 contributes nothing)
@@ -535,9 +535,9 @@ TEST(sparse_plan_metrics) {
     bsr.nnz_blocks = 2;
     bsr.row_ptr = {0, 1, 2};
     bsr.col_idx = {1, 3};
-    bsr.values.resize(2 * 196, 1);
+    bsr.values.resize(2 * 256, 1);
 
-    GEMMShape shape{28, 14, 56};
+    GEMMShape shape{32, 16, 64};
     auto plan = planSparseGEMM(bsr, shape, "metrics");
 
     // Dense would be 2 × 4 = 8 blocks, sparse has 2
@@ -546,8 +546,8 @@ TEST(sparse_plan_metrics) {
     ASSERT_TRUE(std::abs(plan.weight_sparsity() - 0.75f) < 0.01f);
     ASSERT_TRUE(std::abs(plan.sparseSpeedup() - 4.0) < 0.1);
 
-    // Weight bytes: 2 × 196 = 392 (not 8 × 196 = 1568)
-    ASSERT_EQ(plan.totalWeightBytes(), 392u);
+    // Weight bytes: 2 × 256 = 512 (not 8 × 256 = 2048)
+    ASSERT_EQ(plan.totalWeightBytes(), 512u);
 
     PASS("sparse_plan_metrics");
 }

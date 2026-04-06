@@ -1,0 +1,14 @@
+TOPLEVEL_LANG = verilog
+TOPLEVEL      = boot_rom
+MODULE        = test_boot_rom
+
+SIM           = verilator
+EXTRA_ARGS   += --trace --trace-structs -Wno-fatal
+EXTRA_ARGS   += -I$(PWD)/../../rtl/top
+EXTRA_ARGS   += -GINIT_FILE=\"$(PWD)/firmware_test.hex\"
+
+VERILOG_SOURCES = \
+    $(PWD)/../../rtl/top/soc_pkg.sv \
+    $(PWD)/../../rtl/memory/boot_rom.sv
+
+include $(shell cocotb-config --makefiles)/Makefile.sim

@@ -1,0 +1,135 @@
+AXI Arbiter: Plain-English Pseudocode
+
+Purpose
+- Decide which master gets access to one shared slave.
+- Keep access fair by remembering whose turn should come next.
+
+Inputs
+- A request list that says which masters want access right now.
+- A completion signal that says whether the currently granted transfer finished.
+- A reset signal.
+- A clock.
+
+Stored State
+- priority pointer
+  This remembers which master should get first chance in the current round.
+
+Outputs
+- grant
+  A winner marker that points to exactly one master, or to nobody if there are no requests.
+- grant index
+  The winning master number written as a normal number.
+
+Derived Values Used Internally
+- masked requests
+  A filtered version of the request list.
+  It keeps only the requesters whose master number is equal to or greater than the priority pointer.
+- masked has request
+  True if the masked request list is not empty.
+- masked winner
+  The first requester found in the masked request list.
+- unmasked winner
+  The first requester found in the full request list.
+
+Main Decision Process
+
+1. Build the masked request list.
+   For each master:
+   - If that master is requesting access, and its master number is at or after the priority pointer, keep it in the masked list.
+   - Otherwise remove it from the masked list.
+
+2. Check whether the masked request list contains at least one requester.
+   - If yes, the arbiter will choose from the masked list.
+   - If no, the arbiter will fall back to the full request list.
+
+3. Find the masked winner.
+   - Start at the lowest master number.
+   - Walk upward through the masked request list.
+   - Pick the first requester you find.
+   - Mark only that master as the winner.
+
+4. Find the unmasked winner.
+   - Start at the lowest master number.
+   - Walk upward through the full request list.
+   - Pick the first requester you find.
+   - Mark only that master as the winner.
+
+5. Choose the final winner.
+   - If the masked request list is not empty, use the masked winner.
+   - Otherwise use the unmasked winner.
+
+6. Produce the grant index.
+   - Look at the final winner marker.
+   - The position of the winning marker becomes the grant index.
+
+Reset Behavior
+- When reset is active, set the priority pointer to master 0.
+
+When the Priority Pointer Changes
+- Do not rotate priority every cycle.
+- Rotate priority only after a real granted transfer finishes.
+- If no master won, do not rotate priority.
+
+Priority Rotation Rule
+- If the winning master was the last master in the list, wrap the priority pointer back to master 0.
+- Otherwise move the priority pointer to the next master number.
+
+What the Arbiter Is Really Doing
+- Give first chance to the part of the request list starting at the current priority pointer.
+- If that part of the list is empty, wrap around and choose from the whole request list.
+- After a transfer completes, move the priority pointer so the next master gets first chance next time.
+
+Why There Are Two Winners Internally
+- masked winner exists to enforce fairness.
+- unmasked winner exists so the slave does not sit idle when nobody in the masked portion is requesting.
+
+Simple Two-Master Example
+
+Initial state
+- Priority pointer starts at master 0.
+
+Case A: both masters keep requesting
+- Round 1:
+  The masked list includes both masters.
+  The first requester is master 0.
+  Master 0 wins.
+- After master 0 finishes:
+  Move the priority pointer to master 1.
+- Round 2:
+  The masked list now starts at master 1.
+  Master 1 gets first chance.
+  Master 1 wins.
+- After master 1 finishes:
+  Wrap the priority pointer back to master 0.
+- Result:
+  The winners alternate fairly between master 0 and master 1.
+
+Case B: only master 0 is requesting while priority points at master 1
+- The masked list is empty, because master 0 is before the current priority pointer.
+- The arbiter falls back to the full request list.
+- Master 0 still wins.
+- Result:
+  The shared slave stays busy instead of waiting for a higher-priority requester that never arrives.
+
+Plain-English Version of the Whole Arbiter
+
+At every moment:
+- Look at who is requesting access.
+- Filter out any requester that comes before the current priority pointer.
+- If at least one filtered requester remains, choose the first one in that filtered list.
+- If no filtered requester remains, choose the first requester in the full list.
+- Report that winner both as a winner marker and as a master number.
+
+At reset:
+- Start with priority at master 0.
+
+After each completed granted transfer:
+- Move priority to the master after the one that just won.
+- If the winning master was the last one, wrap around to master 0.
+
+Bottom Line
+- The arbiter picks one requester.
+- It prefers the requesters at or after the current priority pointer.
+- It wraps around when needed.
+- It only advances the pointer after a real completed transfer.
+- That is what makes it a round-robin arbiter.

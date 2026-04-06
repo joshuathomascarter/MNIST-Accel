@@ -1,0 +1,10 @@
+TOPLEVEL_LANG = verilog
+TOPLEVEL = output_bram_ctrl
+MODULE = test_output_bram_ctrl
+SIM = verilator
+EXTRA_ARGS += --trace -Wno-fatal
+EXTRA_ARGS += --timing
+
+VERILOG_SOURCES = $(PWD)/../../rtl/buffer/output_bram_ctrl.sv
+
+include $(shell cocotb-config --makefiles)/Makefile.sim

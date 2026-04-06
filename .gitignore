@@ -93,6 +93,11 @@ sim_build/
 obj_dir/
 obj_dir_*/
 
+# Build artifacts
+*.o
+*.elf
+a.out
+
 # Verilator output
 V*.cpp
 V*.h

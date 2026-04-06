@@ -1,6 +1,6 @@
 # ACCEL-v1 Architecture Deep Dive
 
-> Technical specification for the 14×14 weight-stationary systolic array accelerator (PYNQ-Z2)
+> Technical specification for the 16×16 weight-stationary systolic array accelerator (PYNQ-Z2)
 
 ---
 
@@ -25,15 +25,15 @@ For C = A × B where:
 - B: Weights [K × N]
 - C: Output [M × N]
 
-The 14×14 array computes a 14×14 output tile per pass:
+The 16×16 array computes a 16×16 output tile per pass:
 
 ```
                     B (weights)
-                    [K × 14]
+                    [K × 16]
                     ↓ ↓ ↓ ↓
               ┌─────────────────┐
    A          │                 │
-[14 × K] ───▶ │  14×14 Systolic │ ───▶ C [14 × 14]
+[16 × K] ───▶ │  16×16 Systolic │ ───▶ C [16 × 16]
               │     Array       │
               │                 │
               └─────────────────┘
@@ -44,35 +44,35 @@ The 14×14 array computes a 14×14 output tile per pass:
 For M=512, N=512, K=512:
 
 ```
-Total tiles = ceil(512/14) × ceil(512/14) × ceil(512/14)
-            = 37 × 37 × 37
-            = 50,653 tile operations
+Total tiles = ceil(512/16) × ceil(512/16) × ceil(512/16)
+            = 32 × 32 × 32
+            = 32,768 tile operations
 
-Each tile: 14 × 14 × 14 = 2,744 MACs
-Total MACs: 50,653 × 2,744 = ~139M (matches M×N×K)
+Each tile: 16 × 16 × 16 = 4,096 MACs
+Total MACs: 32,768 × 4,096 = ~134M (matches M×N×K)
 ```
 
 ### Tile Loop Structure
 
 ```python
 # Pseudocode for tiled GEMM
-for m_tile in range(0, M, 14):      # Output row tiles
-    for n_tile in range(0, N, 14):  # Output col tiles
+for m_tile in range(0, M, 16):      # Output row tiles
+    for n_tile in range(0, N, 16):  # Output col tiles
         # Initialize accumulator tile to 0
-        acc[14][14] = 0
+        acc[16][16] = 0
         
-        for k_tile in range(0, K, 14):  # Reduction tiles
-            # Load 14×14 weight block
-            load_weights(B[k_tile:k_tile+14, n_tile:n_tile+14])
+        for k_tile in range(0, K, 16):  # Reduction tiles
+            # Load 16×16 weight block
+            load_weights(B[k_tile:k_tile+16, n_tile:n_tile+16])
             
-            # Stream 14×14 activation block
-            stream_activations(A[m_tile:m_tile+14, k_tile:k_tile+14])
+            # Stream 16×16 activation block
+            stream_activations(A[m_tile:m_tile+16, k_tile:k_tile+16])
             
             # Accumulate partial products
             acc += systolic_compute()
         
         # Store output tile
-        store_output(C[m_tile:m_tile+14, n_tile:n_tile+14], acc)
+        store_output(C[m_tile:m_tile+16, n_tile:n_tile+16], acc)
 ```
 
 ---
@@ -101,10 +101,10 @@ PE[0,0]:│ w₀ │ a₀ │ a₁ │ a₂ │ a₃ │ a₄ │ a₅ │ a₆ 
 PE[0,1]:│ w₁ │    │ a₀ │ a₁ │ a₂ │ a₃ │ a₄ │ a₅ │...│aₖ₋₂│aₖ₋₁│
 PE[0,2]:│ w₂ │    │    │ a₀ │ a₁ │ a₂ │ a₃ │ a₄ │...│aₖ₋₃│aₖ₋₂│
    :    │    │    │    │    │    │    │    │    │   │     │
-PE[0,13]:│w₁₅│    │    │    │    │    │    │    │...│aₖ₋₁₆│aₖ₋₁₅│
+PE[0,15]:│w₁₅│    │    │    │    │    │    │    │...│aₖ₋₁₆│aₖ₋₁₅│
         │    │    │    │    │    │    │    │    │   │     │
         │◄──load──►│◄──────── K cycles compute ─────────►│◄drain►│
-        │  (14 cyc) │                                    │(14 cyc)│
+        │  (16 cyc) │                                    │(16 cyc)│
 ```
 
 ### PE State Machine
@@ -272,8 +272,8 @@ Example: conv2
   Weight B: [288 × 64]
   Output C: [576 × 64]
   
-  Tiles: ceil(576/14) × ceil(64/14) × ceil(288/14)
-       = 42 × 5 × 21 = 4,410 tile ops
+  Tiles: ceil(576/16) × ceil(64/16) × ceil(288/16)
+       = 36 × 4 × 18 = 2,592 tile ops
 ```
 
 ### Cycle Estimates per Layer
@@ -282,13 +282,13 @@ Assuming 200 MHz, 70% block sparsity:
 
 | Layer | GEMM Shape | Tile-ops (Dense) | Tile-ops (Sparse) | Cycles | Time (µs) |
 |-------|-----------|------------------|-------------------|--------|----------|
-| conv1 | [676×9] × [9×32] | 147 | 44 | 750 | 3.8 |
-| conv2 | [576×288] × [288×64] | 4,410 | 1,323 | 22.5K | 112 |
-| fc1 | [1×9216] × [9216×128] | 6,590 | 1,977 | 33.6K | 168 |
-| fc2 | [1×128] × [128×10] | 10 | 3 | 51 | 0.3 |
-| **TOTAL** | | **11,157** | **3,347** | **~57K** | **~284 µs** |
+| conv1 | [676×9] × [9×32] | 86 | 26 | 440 | 2.2 |
+| conv2 | [576×288] × [288×64] | 2,592 | 778 | 13.2K | 66 |
+| fc1 | [1×9216] × [9216×128] | 4,608 | 1,382 | 23.5K | 118 |
+| fc2 | [1×128] × [128×10] | 8 | 2 | 34 | 0.2 |
+| **TOTAL** | | **7,294** | **2,188** | **~37K** | **~186 µs** |
 
-**Throughput: ~3,500 images/second @ 70% sparsity (200 MHz)**
+**Throughput: ~5,400 images/second @ 70% sparsity (200 MHz)**
 
 ---
 
@@ -314,11 +314,11 @@ Total: ~130 MB/s << Z7020's 4.2 GB/s DDR bandwidth ✓
 
 | Buffer | Size | Purpose |
 |--------|------|---------|
-| Weight BRAM | 12 KB | Current 14×14 block + next (double buffer) |
-| Activation BRAM | 7 KB | 14 rows × 256 cols × 2 banks |
-| Output BRAM | 3 KB | 14×14 × INT32 × 2 banks |
+| Weight BRAM | 16 KB | Current 16×16 block + next (double buffer) |
+| Activation BRAM | 8 KB | 16 rows × 256 cols × 2 banks |
+| Output BRAM | 4 KB | 16×16 × INT32 × 2 banks |
 | BSR Metadata | 2 KB | row_ptr, col_idx for current layer |
-| **Total** | **24 KB** | Fits in Z7020's 560 KB BRAM ✓ |
+| **Total** | **30 KB** | Fits in Z7020's 560 KB BRAM ✓ |
 
 ---
 
@@ -328,14 +328,14 @@ Total: ~130 MB/s << Z7020's 4.2 GB/s DDR bandwidth ✓
 
 | Component | Count | Power/Unit | Total |
 |-----------|-------|------------|-------|
-| DSP48 (MAC) | 196 | 5 mW | 980 mW |
+| DSP48 (MAC) | 256 | 5 mW | 1,280 mW |
 | BRAM | 30 | 10 mW | 300 mW |
 | Logic (LUTs) | 18K | 0.01 mW | 180 mW |
 | Registers | 12K | 0.005 mW | 60 mW |
 | Clocking | - | - | 100 mW |
 | I/O (AXI) | - | - | 50 mW |
 | **Static** | - | - | 200 mW |
-| **Total** | | | **1.87 W** |
+| **Total** | | | **2.17 W** |
 
 ### Energy Efficiency
 
@@ -363,12 +363,12 @@ Comparison:
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
-| Array size | 14×14 | 196 PEs (fits Z7020's 220 DSPs) |
-| Block size | 14×14 | Matches array |
+| Array size | 16×16 | 256 PEs (exceeds Z7020's 220 DSPs) |
+| Block size | 16×16 | Matches array |
 | Data type | INT8 weights, INT8 activations | INT32 accumulators |
 | Clock | 200 MHz target | 5ns period |
-| Throughput | 39.2 GOPS (dense) | 196 MACs × 200 MHz |
-| Throughput | 131 GOPS (70% sparse) | 3.3× speedup |
-| Latency | ~0.28 ms/image | MNIST CNN @ 70% sparse |
-| Power | ~1.7 W | Z7020 @ 200 MHz |
-| Efficiency | 77 GOPS/W | At 70% sparsity |
+| Throughput | 51.2 GOPS (dense) | 256 MACs × 200 MHz |
+| Throughput | 171 GOPS (70% sparse) | 3.3× speedup |
+| Latency | ~0.19 ms/image | MNIST CNN @ 70% sparse |
+| Power | ~2.2 W | Z7020 @ 200 MHz |
+| Efficiency | 78 GOPS/W | At 70% sparsity |

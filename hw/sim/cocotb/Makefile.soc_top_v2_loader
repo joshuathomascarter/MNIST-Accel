@@ -1,0 +1,48 @@
+# =============================================================================
+# Makefile.soc_top_v2_loader — Cocotb testbench for soc_top_v2 UART loader flow
+# =============================================================================
+
+SIM ?= verilator
+TRACE ?= 0
+SIM_UART_DIVISOR ?= 8
+
+TOPLEVEL = soc_top_v2_asic_sim_wrapper
+TOPLEVEL_LANG = verilog
+COCOTB_TEST_MODULES = test_soc_top_v2_loader
+
+FILELIST = $(abspath ../sv/filelist.f)
+BOOT_ROM_HEX = $(abspath ../../../fw/firmware.hex)
+VENV_BIN = $(abspath ../../../.venv/bin)
+VENV_PYTHON = $(VENV_BIN)/python
+PYTHON_BASE = $(shell $(VENV_PYTHON) -c 'import sys; print(sys.base_prefix)')
+VENV_SITE_PACKAGES = $(shell $(VENV_PYTHON) -c 'import site; print(site.getsitepackages()[0])')
+
+VERILOG_SOURCES = $(shell awk '/^\/Users\// { print }' $(FILELIST))
+
+export PYTHONPATH := $(abspath ../../..):$(VENV_SITE_PACKAGES)
+export PATH := $(VENV_BIN):$(PATH)
+export LIBPYTHON_LOC := $(shell $(VENV_PYTHON) -m cocotb_tools.config --libpython)
+export SIM_UART_DIVISOR
+
+SIM_CMD_PREFIX := env PYTHONHOME=$(PYTHON_BASE) PYTHONPATH=$(PYTHONPATH)
+
+EXTRA_ARGS += $(shell awk '/^\+incdir\+/' $(FILELIST))
+EXTRA_ARGS += --timing
+EXTRA_ARGS += -GBOOT_ROM_FILE=\"$(BOOT_ROM_HEX)\"
+
+ifeq ($(SIM),verilator)
+    EXTRA_ARGS += -Wno-fatal -Wno-MULTIDRIVEN -Wno-BLKANDNBLK
+    EXTRA_ARGS += -DVERILATOR
+    COMPILE_ARGS += -CFLAGS "-std=c++17"
+    ifeq ($(TRACE),1)
+        EXTRA_ARGS += --trace --trace-structs
+    endif
+endif
+
+include $(shell $(VENV_PYTHON) -m cocotb_tools.config --makefiles)/Makefile.sim
+
+clean::
+	rm -rf __pycache__ sim_build results.xml
+	rm -rf *.vcd *.fst
+
+.PHONY: clean
