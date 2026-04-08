@@ -292,8 +292,6 @@ module simple_cpu #(
           if (rvalid) begin
             instr <= rdata;
             // synthesis translate_off
-            if ($test$plusargs("CPU_TRACE"))
-              $display("[CPU] PC=%h instr=%h", pc, rdata);
             // synthesis translate_on
             state <= S_EXEC;
           end
@@ -363,7 +361,6 @@ module simple_cpu #(
                       end
                       12'h001: begin // EBREAK
                         // synthesis translate_off
-                        $display("[CPU] EBREAK at PC=%h", pc);
                         // synthesis translate_on
                         pc <= pc + 4; state <= S_FETCH;
                       end
@@ -438,8 +435,6 @@ module simple_cpu #(
         S_MEM: begin
           if (gnt) begin
             // synthesis translate_off
-            if ($test$plusargs("CPU_TRACE"))
-              $display("[CPU-MEM] %s addr=%h data=%h be=%b", mem_we_r ? "ST" : "LD", {mem_addr_r[31:2],2'b00}, mem_wdata_r, mem_be_r);
             // synthesis translate_on
             state <= S_MEM_WAIT;
           end
@@ -499,18 +494,5 @@ module simple_cpu #(
     endcase
   end
 
-  `ifdef SIMULATION
-  initial $display("[CPU-INIT] simple_cpu module loaded");
-  always @(posedge clk) begin
-    if (rst_n && !cpu_reset && $test$plusargs("CPU_TRACE_FULL")) begin
-      if (state == S_FETCH && gnt)
-        $display("[CPU] FETCH pc=%h t=%0t", pc, $time);
-      if (state == S_FETCH_WAIT && rvalid)
-        $display("[CPU] INSTR pc=%h data=%h", pc, rdata);
-      if (state == S_MEM && gnt)
-        $display("[CPU] MEM %s addr=%h data=%h be=%b", mem_we_r?"ST":"LD", {mem_addr_r[31:2],2'b00}, mem_wdata_r, mem_be_r);
-    end
-  end
-  `endif
 
 endmodule : simple_cpu

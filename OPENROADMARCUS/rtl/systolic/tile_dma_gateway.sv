@@ -170,34 +170,13 @@ module tile_dma_gateway
     else begin
       state <= state_next;
 `ifndef SYNTHESIS
-      if ($test$plusargs("GW_TRACE") && state_next != state)
-        $display("[GW] state %0d -> %0d  noc_valid_in=%0b tx_credit=%0d", state, state_next, noc_valid_in, tx_credit_cnt);
 `endif
     end
   end
 
 `ifndef SYNTHESIS
   always_ff @(posedge clk) begin
-    if ($test$plusargs("GW_TRACE") && m_axi_arvalid && m_axi_arready)
-      $display("[GW-AXI] AR addr=%08h len=%0d", m_axi_araddr, m_axi_arlen);
-    if ($test$plusargs("GW_TRACE") && m_axi_rvalid && m_axi_rready)
-      $display("[GW-AXI] R  data=%08h last=%0b count=%0d", m_axi_rdata, m_axi_rlast, rd_buf_count);
-    if ($test$plusargs("GW_TRACE") && tx_flit_sent)
-      $display("[GW-TX] flit sent idx=%0d/%0d dst=%0d credit=%0d", rd_resp_idx, rd_buf_count, noc_flit_out.dst_id, tx_credit_cnt);
-    if ($test$plusargs("GW_TRACE") && noc_credit_in)
-      $display("[GW-CREDIT] credit_in received, cnt=%0d", tx_credit_cnt);
-    if ($test$plusargs("STORE_TRACE") &&
-      (state == G_WR_COLLECT || ((state == G_DECODE) && req_is_write)) &&
       noc_valid_in && noc_credit_out)
-      $display("[GW-WR] collect idx=%0d/%0d data=%08h type=%0d", wr_buf_count, req_burst_len + 1'b1, flit_payload[AXI_DATA_W-1:0], flit_type);
-    if ($test$plusargs("STORE_TRACE") && m_axi_awvalid && m_axi_awready)
-      $display("[GW-WR] AW addr=%08h idx=%0d/%0d", m_axi_awaddr, wr_data_idx, req_burst_len + 1'b1);
-    if ($test$plusargs("STORE_TRACE") && m_axi_wvalid && m_axi_wready)
-      $display("[GW-WR] W  data=%08h last=%0b idx=%0d/%0d", m_axi_wdata, m_axi_wlast, wr_data_idx, req_burst_len + 1'b1);
-    if ($test$plusargs("STORE_TRACE") && m_axi_bvalid && m_axi_bready)
-      $display("[GW-WR] B  idx=%0d/%0d", wr_data_idx, req_burst_len + 1'b1);
-    if ($test$plusargs("STORE_TRACE") && tx_flit_sent && state == G_WR_ACK)
-      $display("[GW-WR] ACK sent dst=%0d", req_src_tile);
   end
 `endif
 

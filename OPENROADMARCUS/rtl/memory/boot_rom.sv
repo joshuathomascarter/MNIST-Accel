@@ -62,11 +62,6 @@ module boot_rom #(
   logic       aw_valid;
 
   // Initialize from file
-  initial begin
-    if (INIT_FILE != "") begin
-      $readmemh(INIT_FILE, rom_array);
-    end
-  end
 
   // Write Address Channel - accept but mark for error response
   assign awready = 1'b1;

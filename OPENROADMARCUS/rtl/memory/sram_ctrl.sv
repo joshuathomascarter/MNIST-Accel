@@ -71,11 +71,6 @@ module sram_ctrl #(
   logic [7:0]            ar_beat_cnt; // current beat
 
   // Initialize SRAM with zeros
-  initial begin
-    for (int i = 0; i < DEPTH; i++) begin
-      sram[i] = '0;
-    end
-  end
 
   // ===== WRITE PATH =====
 

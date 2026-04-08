@@ -178,8 +178,6 @@ module noc_network_interface #(
             tx_state <= TX_WR_HEAD;
           end else if (ar_valid) begin
 `ifndef SYNTHESIS
-            if ($test$plusargs("NI_TRACE"))
-              $display("[NI-%0d-TX] AR addr=%08h len=%0d dst_node=%0d", NODE_ID, ar_addr, ar_len, addr_to_node(ar_addr));
 `endif
             tx_dst   <= addr_to_node(ar_addr);
             tx_vc    <= sparse_hint ? VC_BITS'(NUM_VCS - 1) : '0;
@@ -244,8 +242,6 @@ module noc_network_interface #(
             {tx_addr_reg, tx_len_reg[3:0], tx_id_reg, 8'h0}
           );
 `ifndef SYNTHESIS
-          if ($test$plusargs("STORE_TRACE"))
-            $display("[NI-%0d-TX] WR head addr=%08h len=%0d dst_node=%0d credit=%0d", NODE_ID, tx_addr_reg, tx_len_reg, tx_dst, tx_credits[tx_vc]);
 `endif
         end
       end
@@ -266,8 +262,6 @@ module noc_network_interface #(
           end
           noc_flit_out.payload = PAYLOAD_BITS'(w_data);
 `ifndef SYNTHESIS
-          if ($test$plusargs("STORE_TRACE"))
-            $display("[NI-%0d-TX] WR beat data=%08h last=%0b credit=%0d", NODE_ID, w_data, w_last, tx_credits[tx_vc]);
 `endif
         end
       end
@@ -286,8 +280,6 @@ module noc_network_interface #(
           noc_flit_out.flit_type = FLIT_HEADTAIL;
           ar_ready = 1'b1;
 `ifndef SYNTHESIS
-          if ($test$plusargs("NI_TRACE"))
-            $display("[NI-%0d-TX] FLIT sent src=%0d dst=%0d vc=%0d msg=%0d payload=%012h credit=%0d", NODE_ID, NODE_ID, tx_dst, tx_vc, tx_msg, {tx_addr_reg, tx_len_reg[3:0], tx_id_reg, 8'h0}, tx_credits[tx_vc]);
 `endif
         end
       end
@@ -309,8 +301,6 @@ module noc_network_interface #(
           );
           noc_flit_out.flit_type = FLIT_HEADTAIL;
 `ifndef SYNTHESIS
-          if ($test$plusargs("REDUCE_TRACE"))
-            $display("[NI-%0d-TX] MSG_REDUCE src=%0d dst=%0d id=%02h expect=%0d val=%08h",
                      NODE_ID, NODE_ID, reduce_inj_dst,
                      reduce_inj_id, reduce_inj_expect, reduce_inj_val);
 `endif
@@ -386,8 +376,6 @@ module noc_network_interface #(
             case (noc_flit_in.msg_type)
               MSG_READ_RESP: begin
 `ifndef SYNTHESIS
-                if ($test$plusargs("NI_TRACE"))
-                  $display("[NI-%0d-RX] READ_RESP head data=%08h total=%0d flit_type=%0d", NODE_ID, noc_flit_in.payload[31:0], noc_flit_in.payload[43:36], noc_flit_in.flit_type);
 `endif
                 rx_state      <= RX_RD_DATA;
                 rx_id         <= noc_flit_in.payload[47:44];
@@ -399,8 +387,6 @@ module noc_network_interface #(
               end
               MSG_WRITE_ACK: begin
 `ifndef SYNTHESIS
-                if ($test$plusargs("STORE_TRACE"))
-                  $display("[NI-%0d-RX] WRITE_ACK id=%0d", NODE_ID, noc_flit_in.payload[47:44]);
 `endif
                 rx_state <= RX_WR_RESP;
                 rx_id    <= noc_flit_in.payload[47:44];
@@ -414,8 +400,6 @@ module noc_network_interface #(
           if (rx_hold_valid) begin
             if (r_ready) begin
 `ifndef SYNTHESIS
-              if ($test$plusargs("NI_TRACE"))
-                $display("[NI-%0d-RX] beat %0d hold_data=%08h last=%0b", NODE_ID, rx_beat_cnt, rx_hold_data, rx_hold_last);
 `endif
               rx_beat_cnt   <= rx_beat_cnt + 1'b1;
               if (rx_hold_last) begin
@@ -432,8 +416,6 @@ module noc_network_interface #(
             end
           end else if (noc_valid_in && r_ready) begin
 `ifndef SYNTHESIS
-            if ($test$plusargs("NI_TRACE"))
-              $display("[NI-%0d-RX] beat %0d data=%08h flit_type=%0d", NODE_ID, rx_beat_cnt, noc_flit_in.payload[31:0], noc_flit_in.flit_type);
 `endif
             rx_beat_cnt <= rx_beat_cnt + 1'b1;
             if (noc_flit_in.flit_type == FLIT_TAIL ||

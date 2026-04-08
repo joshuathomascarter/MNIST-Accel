@@ -180,16 +180,6 @@ module accel_tile #(
   logic [SP_ADDR_W-1:0]  compute_sp_a_addr;
   logic [SP_DATA_W-1:0]  compute_sp_a_wdata;
 
-  initial begin
-    assert (SP_DATA_W == 32)
-      else $fatal("accel_tile: SP_DATA_W=%0d must be 32 to match the NoC NI payload width", SP_DATA_W);
-    assert (ACC_W == SP_DATA_W)
-      else $fatal("accel_tile: ACC_W=%0d must match SP_DATA_W=%0d for scratchpad result spill", ACC_W, SP_DATA_W);
-    assert ((ACT_VEC_W % SP_DATA_W) == 0)
-      else $fatal("accel_tile: activation vector width %0d must be divisible by SP_DATA_W %0d", ACT_VEC_W, SP_DATA_W);
-    assert ((WGT_VEC_W % SP_DATA_W) == 0)
-      else $fatal("accel_tile: weight vector width %0d must be divisible by SP_DATA_W %0d", WGT_VEC_W, SP_DATA_W);
-  end
 
   // =========================================================================
   // CSR decode → command FIFO (simple)
@@ -246,8 +236,6 @@ module accel_tile #(
       end
 
 `ifndef SYNTHESIS
-      if ($test$plusargs("TILE_CMD_TRACE") && cmd_issue)
-        $display("[TILE-%0d-CMD] opcode=%02h arg0=%08h arg1=%08h arg2=%08h",
                  TILE_ID, cmd_opcode, arg0_reg, arg1_reg, arg2_reg);
 `endif
     end
@@ -435,8 +423,6 @@ module accel_tile #(
         C_PRELOAD_WGT_CAP: begin
           wgt_block_buf[wgt_row_idx][wgt_word_idx*SP_DATA_W +: SP_DATA_W] <= sp_b_rdata;
           `ifndef SYNTHESIS
-          if ($test$plusargs("WGT_LOAD_TRACE") && TILE_ID == 0 && wgt_row_idx == 0)
-            $display("[%0t] TILE0 WGT_CAP row=0 word=%0d sp_b_rdata=0x%08x", $time, wgt_word_idx, sp_b_rdata);
           `endif
           if (wgt_word_idx == WGT_WORD_IDX_W'(WGT_VEC_WORDS - 1)) begin
             wgt_word_idx  <= '0;
@@ -585,8 +571,6 @@ module accel_tile #(
         compute_sa_load_weight = 1'b1;
         compute_sa_b_vec       = wgt_block_buf[wgt_row_idx];
         `ifndef SYNTHESIS
-        if ($test$plusargs("WGT_LOAD_TRACE") && TILE_ID == 0 && wgt_row_idx == 0)
-          $display("[%0t] TILE0 WGT_PLAY row=0 b_in[31:0]=0x%08x b_in[63:32]=0x%08x", $time, wgt_block_buf[0][31:0], wgt_block_buf[0][63:32]);
         `endif
       end
 

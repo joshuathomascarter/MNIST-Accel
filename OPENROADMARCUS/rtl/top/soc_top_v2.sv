@@ -513,25 +513,6 @@ module soc_top_v2 #(
                      (io_state == IO_R_WAIT && m2_rvalid);
   assign io_rdata  = m2_rdata;
 
-  `ifdef SIMULATION
-  always @(posedge clk_core) begin
-    if ($test$plusargs("IO_TRACE")) begin
-      if (io_req && io_state == IO_IDLE)
-        $display("[IO] %s addr=%h data=%h t=%0t", obi_we ? "WR" : "RD", cpu_phys_addr, obi_wdata, $time);
-      if (io_state == IO_AR && m2_arready)
-        $display("[IO] AR accepted t=%0t", $time);
-      if (io_state == IO_R_WAIT && m2_rvalid)
-        $display("[IO] RD done rdata=%h t=%0t", m2_rdata, $time);
-      if (io_state == IO_B_WAIT && m2_bvalid)
-        $display("[IO] WR done t=%0t", $time);
-      if (io_state == IO_WR)
-        $display("[IO-WR] awv=%b awr=%b aw_done=%b wv=%b wr=%b w_done=%b t=%0t",
-                 m2_awvalid, m2_awready, io_aw_done, m2_wvalid, m2_wready, io_w_done, $time);
-      if (io_state == IO_B_WAIT && !m2_bvalid && $time > 2100000 && $time < 2300000)
-        $display("[IO-BW] bvalid=%b t=%0t", m2_bvalid, $time);
-    end
-  end
-  `endif
 
   // AXI write
   assign m2_awvalid = (io_state == IO_WR) && !io_aw_done;
