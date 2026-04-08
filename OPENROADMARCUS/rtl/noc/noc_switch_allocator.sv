@@ -51,7 +51,7 @@ module noc_switch_allocator #(
   logic [$clog2(TOTAL)-1:0] flat_idx_c;
   integer rotated_c;
   logic   done_c;
-  logic [$clog2(NUM_PORTS)-1:0] selected_op_c;
+  logic [$clog2(NUM_PORTS+1)-1:0] selected_op_c; // +1 so max value < NUM_PORTS avoids OOB
   integer winner_c;
 
   // Phase 1 intermediate grants
@@ -109,13 +109,16 @@ module noc_switch_allocator #(
     for (int ip = 0; ip < NUM_PORTS; ip++) begin
       done_c = 1'b0;
       for (int r = 0; r < NUM_PORTS; r++) begin
-        selected_op_c = $clog2(NUM_PORTS)'((int'(ip_rr[ip]) + r) % NUM_PORTS);
-        if (!done_c && p1_grant_valid[selected_op_c] && (p1_grant_ip[selected_op_c] == PORT_BITS'(ip))) begin
-          // Accept this output's grant
-          sa_grant[ip][p1_grant_iv[selected_op_c]] = 1'b1;
-          xbar_sel[selected_op_c]                  = PORT_BITS'(ip);
-          xbar_valid[selected_op_c]                = 1'b1;
-          done_c                                   = 1'b1;
+        selected_op_c = $clog2(NUM_PORTS+1)'((int'(ip_rr[ip]) + r) % NUM_PORTS);
+        // Use explicit per-port comparison to avoid dynamic part-select OOB warnings
+        for (int opo = 0; opo < NUM_PORTS; opo++) begin
+          if (!done_c && (opo == int'(selected_op_c)) &&
+              p1_grant_valid[opo] && (p1_grant_ip[opo] == PORT_BITS'(ip))) begin
+            sa_grant[ip][p1_grant_iv[opo]] = 1'b1;
+            xbar_sel[opo]                  = PORT_BITS'(ip);
+            xbar_valid[opo]                = 1'b1;
+            done_c                         = 1'b1;
+          end
         end
       end
     end

@@ -23,7 +23,7 @@
 module dram_scheduler_frfcfs #(
     parameter int NUM_BANKS   = 8,
     parameter int QUEUE_DEPTH = 16,
-    parameter int ADDR_W      = 28,
+    parameter int ADDR_W      = 29, // BANK_BITS+ROW_BITS+COL_BITS+2 byte offset
     parameter int ROW_BITS    = 14,
     parameter int COL_BITS    = 10,
     parameter int BANK_BITS   = 3,

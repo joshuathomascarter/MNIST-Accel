@@ -55,7 +55,14 @@ module boot_rom #(
   localparam int unsigned BYTE_DEPTH = 2**ADDR_WIDTH;
 
   // ROM storage — byte-addressed to match objcopy -O verilog output
+  // Default to zero; firmware loaded externally for ASIC tapeout
   logic [7:0] rom_array [0:BYTE_DEPTH-1];
+  genvar _ri;
+  generate
+    for (_ri = 0; _ri < BYTE_DEPTH; _ri++) begin : gen_rom_init
+      assign rom_array[_ri] = 8'h0;
+    end
+  endgenerate
 
   // Write response registers (always return error)
   logic [3:0] aw_id;
