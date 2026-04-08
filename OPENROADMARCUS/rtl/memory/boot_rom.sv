@@ -8,7 +8,7 @@ import soc_pkg::*;
 module boot_rom #(
   parameter int unsigned ADDR_WIDTH = 12,  // 4KB = 2^12 bytes
   parameter int unsigned DATA_WIDTH = 32,
-  parameter string INIT_FILE = "firmware.hex"
+  parameter        INIT_FILE = "firmware.hex"
 ) (
   input  logic                    clk,
   input  logic                    rst_n,

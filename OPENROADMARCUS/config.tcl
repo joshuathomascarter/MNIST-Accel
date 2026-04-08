@@ -6,30 +6,24 @@ set ::env(BASE_SDC_FILE) $::env(DESIGN_DIR)/constraints/soc_top_v2.sdc
 
 set ::env(VERILOG_FILES) [concat \
   [list \
-    $::env(DESIGN_DIR)/src/rtl/top/soc_pkg.sv \
-    $::env(DESIGN_DIR)/src/rtl/noc/noc_pkg.sv \
-    $::env(DESIGN_DIR)/src/rtl/memory/coherence_pkg.sv \
+    $::env(DESIGN_DIR)/rtl/top/soc_pkg.sv \
+    $::env(DESIGN_DIR)/rtl/noc/noc_pkg.sv \
   ] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/src/rtl/buffer/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/src/rtl/cache/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/src/rtl/control/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/src/rtl/dma/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/src/rtl/dram/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/src/rtl/hft/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/src/rtl/host_iface/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/src/rtl/mac/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/src/rtl/memory/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/src/rtl/monitor/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/src/rtl/noc/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/src/rtl/periph/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/src/rtl/systolic/*.sv]] \
+  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/cache/*.sv]] \
+  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/control/*.sv]] \
+  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/dram/*.sv]] \
+  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/mac/*.sv]] \
+  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/memory/*.sv]] \
+  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/monitor/*.sv]] \
+  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/noc/*.sv]] \
+  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/periph/*.sv]] \
+  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/systolic/*.sv]] \
   [list \
-    $::env(DESIGN_DIR)/src/rtl/top/axi_addr_decoder.sv \
-    $::env(DESIGN_DIR)/src/rtl/top/axi_arbiter.sv \
-    $::env(DESIGN_DIR)/src/rtl/top/axi_crossbar.sv \
-    $::env(DESIGN_DIR)/src/rtl/top/obi_to_axi.sv \
-    $::env(DESIGN_DIR)/src/rtl/top/simple_cpu.sv \
-    $::env(DESIGN_DIR)/src/rtl/top/soc_top_v2.sv \
+    $::env(DESIGN_DIR)/rtl/top/axi_addr_decoder.sv \
+    $::env(DESIGN_DIR)/rtl/top/axi_arbiter.sv \
+    $::env(DESIGN_DIR)/rtl/top/axi_crossbar.sv \
+    $::env(DESIGN_DIR)/rtl/top/simple_cpu.sv \
+    $::env(DESIGN_DIR)/rtl/top/soc_top_v2.sv \
   ] \
 ]
 

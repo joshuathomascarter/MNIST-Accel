@@ -29,7 +29,7 @@
 import soc_pkg::*;
 
 module soc_top_v2 #(
-  parameter string BOOT_ROM_FILE = "firmware.hex",
+  parameter        BOOT_ROM_FILE = "firmware.hex",
   parameter int unsigned CLK_FREQ = 50_000_000,
   parameter int unsigned UART_BAUD = 115_200,
   // Tile array config
