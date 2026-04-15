@@ -603,8 +603,6 @@ module accel_tile #(
   always @(posedge clk) begin
     if (compute_sp_a_en && sp_a_en)
       $error("accel_tile: compute spill collided with controller scratchpad access");
-    if (sp_b_en)
-    if (compute_sp_a_en)
   end
 
   systolic_array_sparse #(

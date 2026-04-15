@@ -104,6 +104,18 @@ V*.h
 V*.mk
 *.dat
 
+# OpenROAD/OpenLane synthesis run outputs (large netlists, intermediate files)
+OPENROADMARCUS/runs/
+OPENROADMARCUS/rtl_v2k/
+OPENROADMARCUS/rtl_stripped/
+OPENROADMARCUS/flow_run.log
+OPENROADMARCUS/flow_run_resynth.log
+OPENROADMARCUS/sta_native_*.log
+OPENROADMARCUS/tmp_*.tcl
+OPENROADMARCUS/tmp_*.log
+OPENROADMARCUS/tmp_*.exit
+OPENROADMARCUS/zero_wireload.lib
+
 # FPGA/EDA tools
 *.qpf
 *.qsf

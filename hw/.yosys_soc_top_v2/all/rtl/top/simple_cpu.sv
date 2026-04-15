@@ -257,7 +257,7 @@ module simple_cpu #(
   // Main FSM
   // -----------------------------------------------------------------------
   always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n || cpu_reset) begin
+    if (!rst_n) begin
       state        <= S_FETCH;
       pc           <= 32'h0;
       instr        <= 32'h00000013; // NOP
