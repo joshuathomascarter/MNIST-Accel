@@ -67,7 +67,7 @@
 - **16 accelerator tiles** connected via a **4×4 2D wormhole NoC mesh** — 4,096 total MACs/cycle
 - **In-Network Reduction (INR)** — partial sums collapsed at intermediate routers, reducing CPU readback bandwidth for multi-tile parallel layers
 - **Sparsity-aware VC allocator** (`noc_vc_allocator_sparse`) — exploits weight-zero skip patterns to reduce NoC contention
-- **RISC-V 5-stage pipeline** with L1 instruction and data caches, TLB, and DRAM controller tightly coupled to the NoC
+- **RISC-V multi-cycle RV32I CPU** with L1 instruction and data caches, TLB, page table walker, and DRAM controller tightly coupled to the NoC
 - **Wormhole routing** with 2 virtual channels per port, XY dimension-order routing, separable round-robin switch allocator
 - **DMA-driven tile loading** — firmware issues `OP_COMPUTE` commands; DMA pulls weights + activations from DRAM scratchpad via the NoC autonomously
 - **sky130 synthesized** — 5.6M cells, Yosys technology-mapped, timing verified with OpenSTA (pre-CTS ZeroWL)
@@ -87,7 +87,7 @@
   │  ┌──────────────┐   ┌──────────┐   ┌──────────┐             │
   │  │  RISC-V CPU  │   │ Boot ROM │   │   UART   │             │
   │  │  (simple_cpu │   │  (8 KB)  │   │  115200  │             │
-  │  │  5-stage)    │   └──────────┘   └──────────┘             │
+  │  │  multi-cycle)│   └──────────┘   └──────────┘             │
   │  │  + L1 I+D$   │                                           │
   │  └──────┬───────┘   ┌──────────┐   ┌──────────┐             │
   │         │           │   PLIC   │   │   GPIO   │             │
@@ -172,17 +172,18 @@ The mesh interface is defined in `noc_pkg.sv`. Each router (`noc_router.sv`) ins
 
 ### RISC-V CPU
 
-`simple_cpu.sv` implements a **32-bit RV32IM** 5-stage pipeline:
+`simple_cpu.sv` implements a **32-bit RV32I** multi-cycle state machine:
 
-| Stage | Function |
+| State | Function |
 |-------|---------|
-| IF | PC + 8 KB boot ROM fetch |
-| ID | Register file read (`sram_1rw_wrapper` blackbox for synthesis) |
-| EX | ALU, branch, load/store address |
-| MEM | L1 D-cache access (write-through, 4-way set-associative) |
-| WB | Register writeback |
+| FETCH | Issue instruction read request to L1 I-cache |
+| FETCH_WAIT | Wait for cache `rvalid` |
+| EXEC | Decode + ALU execute (combinational, 1 cycle) |
+| MEM | Load/store: issue address + data to L1 D-cache |
+| MEM_WAIT | Wait for cache response (or DRAM if miss) |
+| WB | Register file write; branch PC update; return to FETCH |
 
-L1 caches (`l1_dcache_top`, `l1_cache_ctrl`) use PLRU replacement with a write-through policy. TLB and page table walker are present for full virtual-memory support. Branch prediction is static not-taken; the pipeline stalls on cache misses and issues DRAM transactions via the AXI crossbar.
+One instruction completes fully before the next begins — no forwarding or hazard detection required. Machine-mode CSRs (`mtvec`, `mcause`, `mstatus`, `mie`, `mepc`) and `WFI`/`MRET`/`EBREAK` are implemented for PLIC interrupt handling. L1 caches use write-through policy with PLRU replacement. TLB and page table walker are present; the bare-metal firmware runs in physical address space and does not exercise virtual memory translation.
 
 ### Memory Hierarchy
 
@@ -210,12 +211,16 @@ The network is a **3-layer CNN**:
 
 ```
 Input (28×28×1)
-  → Conv2d(1→32, 3×3) + ReLU   [pre-computed on host / golden reference]
-  → Conv2d(32→64, 3×3) + ReLU
-  → Flatten → FC1(9216→140) + ReLU   [sparse BSR; pre-computed in this demo]
-  → FC2(140→10)                       [runs on HW accelerator tile array]
+  → Conv2d(1→32, 3×3) + ReLU   [pre-computed, result stored in DRAM init]
+  → Conv2d(32→64, 3×3) + ReLU  [pre-computed, result stored in DRAM init]
+  → Flatten → FC1(9216→140) + ReLU   [pre-computed, result stored in DRAM init]
+  → FC2(140→10)                       [runs on HW accelerator tile array ← this is what the demo exercises]
   → Softmax → argmax
 ```
+
+**What runs on hardware:** FC2 — a 140×10 INT8 matrix multiply, the final classification layer. The firmware loads the pre-computed FC1 activation vector from DRAM, tiles it across the systolic array, and reads back 10 INT32 output logits. This proves the complete data path (DRAM → NoC → tile DMA → systolic MAC → readback → UART) end to end.
+
+Conv and FC1 are pre-computed in Python and baked into `data/dram_init.hex`. The tile array has full capacity to run all layers — FC2 is the demo configuration because it fits in a single firmware image within the 8 KB boot ROM. The 204.8 GOPS figure is the theoretical peak of the 4,096-MAC tile array at 50 MHz; the FC2 demo exercises a 140×10 slice of that capacity.
 
 **Quantization scheme:**
 - Weights and activations quantized to INT8 (symmetric, per-channel scale factors)
@@ -515,7 +520,7 @@ sta sta_prects.tcl     # requires OpenSTA in PATH
 
 ## Firmware
 
-The RISC-V firmware lives in `fw/` and is compiled for RV32IM (no FPU, no OS):
+The RISC-V firmware lives in `fw/` and is compiled for RV32I (no M-ext, no FPU, no OS):
 
 | File | Description |
 |------|-------------|
