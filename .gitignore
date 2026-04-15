@@ -138,4 +138,28 @@ output_files/
 simulation/
 work/
 transcript
-vsim.wlfhw/reports/yosys_soc_top_v2.json
+vsim.wlf
+
+# Large synthesis artifacts
+hw/reports/yosys_soc_top_v2.json
+hw/reports/*.json
+
+# Verilator build dirs
+obj_dir_tb_*/
+
+# Simulation logs
+logs/
+runs/
+
+# Stale firmware copies at root / hw level
+firmware.hex
+hw/firmware.hex
+hw/continue
+hw/r
+
+# Personal / internal docs
+docs/email_tahar.md
+
+# Old yosys runlogs at hw level
+hw/*.log
+
