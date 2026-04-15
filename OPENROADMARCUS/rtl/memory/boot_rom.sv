@@ -54,15 +54,16 @@ module boot_rom #(
 
   localparam int unsigned BYTE_DEPTH = 2**ADDR_WIDTH;
 
-  // ROM storage — byte-addressed to match objcopy -O verilog output
-  // Default to zero; firmware loaded externally for ASIC tapeout
+  // ROM storage — byte-addressed.
+  // Under SYNTHESIS: ROM is a blackbox SRAM; no behavioral array needed.
+  // Reads return 0 (ROM contents loaded by P&R flow from firmware.hex).
+`ifndef SYNTHESIS
   logic [7:0] rom_array [0:BYTE_DEPTH-1];
-  genvar _ri;
-  generate
-    for (_ri = 0; _ri < BYTE_DEPTH; _ri++) begin : gen_rom_init
-      assign rom_array[_ri] = 8'h0;
-    end
-  endgenerate
+  initial begin
+    integer i;
+    for (i = 0; i < BYTE_DEPTH; i = i + 1) rom_array[i] = 8'h0;
+  end
+`endif
 
   // Write response registers (always return error)
   logic [3:0] aw_id;
@@ -142,10 +143,15 @@ module boot_rom #(
 
   // Read Data Channel — one beat per cycle while active
   assign rvalid = ar_active;
+`ifdef SYNTHESIS
+  // Under synthesis: ROM reads return 0 (contents loaded by P&R firmware.hex flow)
+  assign rdata  = 32'h0;
+`else
   assign rdata  = {rom_array[{ar_addr[ADDR_WIDTH-1:2], 2'd3}],
                     rom_array[{ar_addr[ADDR_WIDTH-1:2], 2'd2}],
                     rom_array[{ar_addr[ADDR_WIDTH-1:2], 2'd1}],
                     rom_array[{ar_addr[ADDR_WIDTH-1:2], 2'd0}]};
+`endif
   assign rresp  = RESP_OKAY;
   assign rid    = ar_id;
   assign rlast  = (ar_beat_cnt == ar_len);

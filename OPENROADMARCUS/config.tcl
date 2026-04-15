@@ -4,27 +4,9 @@ set ::env(CLOCK_PERIOD) 20.0
 set ::env(VERILOG_DEFINES) [list SYNTHESIS ASIC_SYNTHESIS]
 set ::env(BASE_SDC_FILE) $::env(DESIGN_DIR)/constraints/soc_top_v2.sdc
 
-set ::env(VERILOG_FILES) [concat \
-  [list \
-    $::env(DESIGN_DIR)/rtl/top/soc_pkg.sv \
-    $::env(DESIGN_DIR)/rtl/noc/noc_pkg.sv \
-  ] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/cache/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/control/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/dram/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/mac/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/memory/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/monitor/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/noc/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/periph/*.sv]] \
-  [lsort [glob -nocomplain $::env(DESIGN_DIR)/rtl/systolic/*.sv]] \
-  [list \
-    $::env(DESIGN_DIR)/rtl/top/axi_addr_decoder.sv \
-    $::env(DESIGN_DIR)/rtl/top/axi_arbiter.sv \
-    $::env(DESIGN_DIR)/rtl/top/axi_crossbar.sv \
-    $::env(DESIGN_DIR)/rtl/top/simple_cpu.sv \
-    $::env(DESIGN_DIR)/rtl/top/soc_top_v2.sv \
-  ] \
+set ::env(VERILOG_FILES) [list \
+    $::env(DESIGN_DIR)/macros/sram_1rw_wrapper_bb.v \
+    $::env(DESIGN_DIR)/rtl_v2k/soc_top_v2_all.v \
 ]
 
 # ── Floorplan ────────────────────────────────────────────────────────────────
@@ -42,8 +24,11 @@ set ::env(PL_TARGET_DENSITY) 0.45
 set ::env(EXTRA_LEFS) [list $::env(DESIGN_DIR)/macros/sram_1rw_wrapper.lef]
 set ::env(EXTRA_LIBS) [list $::env(DESIGN_DIR)/macros/sram_1rw_wrapper.lib]
 
-# Tell Yosys to treat any cell found in EXTRA_LIBS as a black box (no mapping)
-set ::env(SYNTH_READ_BLACKBOX_LIB) 1
+# Tell Yosys to treat sram_1rw_wrapper as a black box via the Verilog stub
+# (sram_1rw_wrapper_bb.v, prepended to VERILOG_FILES).  The Liberty file is
+# consumed only by OpenSTA for timing arcs — disable Liberty-based blackboxing
+# so Yosys does not create a conflicting parameterless cell from the .lib.
+set ::env(SYNTH_READ_BLACKBOX_LIB) 0
 set ::env(SYNTH_ELABORATE_ONLY)    0
 
 # ── Power delivery network ───────────────────────────────────────────────────
@@ -73,3 +58,8 @@ set ::env(FP_IO_MODE) 1    ;# matched-length, no pads yet
 set ::env(RUN_KLAYOUT) 0
 set ::env(RUN_MAGIC)   0
 set ::env(RUN_LVS)     0    ;# enable after macro LIB/LEF are bound
+set ::env(QUIT_ON_LINTER_ERRORS) 0
+
+# Keep module hierarchy during synthesis — prevents OOM during FLATTEN on large SoCs.
+# OpenROAD P&R works fine with hierarchical netlists.
+set ::env(SYNTH_FLAT_TOP) 0

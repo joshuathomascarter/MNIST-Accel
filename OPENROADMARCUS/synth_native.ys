@@ -1,0 +1,21 @@
+# Native Yosys synthesis script for soc_top_v2
+# Runs outside Docker to avoid 3.8 GB RAM cap.
+# Target: sky130_fd_sc_hd, 50 MHz (20 ns)
+
+# Read blackbox stub first so SRAM instantiations resolve correctly
+read_verilog -sv macros/sram_1rw_wrapper_bb.v
+
+# Read the sv2v-converted design (Verilog-2005, SYNTHESIS define already applied)
+read_verilog -sv rtl_v2k/soc_top_v2_all.v
+
+# Synthesize — keep hierarchy to avoid OOM during flatten
+synth -top soc_top_v2
+
+# Map to sky130_fd_sc_hd standard cells
+dfflibmap -liberty runs/timing_run/issue_reproducible/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib
+abc -fast -liberty runs/timing_run/issue_reproducible/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib
+
+# Write out the gate-level netlist
+write_verilog -noattr runs/timing_run/results/synthesis/soc_top_v2.v
+
+stat -liberty runs/timing_run/issue_reproducible/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib

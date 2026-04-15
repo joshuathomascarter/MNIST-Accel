@@ -35,6 +35,7 @@ module simple_cpu #(
   typedef enum logic [2:0] {
     S_FETCH,        // request instruction read
     S_FETCH_WAIT,   // wait for rvalid
+    S_RF_READ,      // 1-cycle register file read bubble
     S_EXEC,         // decode + execute (1 cycle)
     S_MEM,          // load/store: issue request
     S_MEM_WAIT,     // load/store: wait for response
@@ -47,21 +48,65 @@ module simple_cpu #(
   logic [31:0] instr;
 
   // -----------------------------------------------------------------------
-  // Synthesizable 2R1W Register File (x0 hardwired to 0)
+  // Register File — 32×32b, 2R1W
+  // Read addresses captured in S_FETCH_WAIT; data valid in S_EXEC (+1 cycle).
+  // Under SYNTHESIS: 2× sram_1rw_wrapper blackboxes (no behavioral array).
+  // Otherwise:       behavioral registered-read RF (Verilator / FPGA).
   // -----------------------------------------------------------------------
-  logic [31:0] rf [1:31];  // x1..x31; x0 is always 0
   logic [4:0]  rf_wa;      // write address
   logic [31:0] rf_wd;      // write data
   logic        rf_we;      // write enable
+  logic [4:0]  rf_rd_a;    // RS1 read address (latched from instr in S_FETCH_WAIT)
+  logic [4:0]  rf_rd_b;    // RS2 read address (latched from instr in S_FETCH_WAIT)
+  logic [31:0] rf_rs1;     // RS1 read data (valid in S_EXEC)
+  logic [31:0] rf_rs2;     // RS2 read data (valid in S_EXEC)
+
+`ifdef SYNTHESIS
+  // Two 1RW SRAM blackboxes: read in S_RF_READ, write in S_EXEC/S_MEM_WAIT.
+  // FSM state ensures no simultaneous read+write on the same cycle.
+  wire        rf_do_read = (state == S_RF_READ);
+  wire [11:0] rf_a_addr  = rf_do_read ? {7'h0, rf_rd_a} : {7'h0, rf_wa};
+  wire [11:0] rf_b_addr  = rf_do_read ? {7'h0, rf_rd_b} : {7'h0, rf_wa};
+  wire        rf_do_we   = !rf_do_read && rf_we && (rf_wa != 5'd0);
+  wire [31:0] rf_rs1_raw, rf_rs2_raw;
+
+  sram_1rw_wrapper u_rf_a (
+    .clk   (clk), .rst_n (rst_n),
+    .en    (1'b1),
+    .we    (rf_do_we),
+    .addr  (rf_a_addr),
+    .wdata (rf_wd),
+    .rdata (rf_rs1_raw)
+  );
+  sram_1rw_wrapper u_rf_b (
+    .clk   (clk), .rst_n (rst_n),
+    .en    (1'b1),
+    .we    (rf_do_we),
+    .addr  (rf_b_addr),
+    .wdata (rf_wd),
+    .rdata (rf_rs2_raw)
+  );
+  assign rf_rs1 = (rf_rd_a == 5'd0) ? 32'h0 : rf_rs1_raw;
+  assign rf_rs2 = (rf_rd_b == 5'd0) ? 32'h0 : rf_rs2_raw;
+`else
+  // Behavioral registered-read RF for Verilator / FPGA simulation.
+  logic [31:0] rf_mem [0:31];
 
   always_ff @(posedge clk) begin
     if (rf_we && rf_wa != 5'd0)
-      rf[rf_wa] <= rf_wd;
+      rf_mem[rf_wa] <= rf_wd;
   end
 
-  // Synchronous read (combinational for multi-cycle — reads registered values)
-  wire [31:0] rf_rs1 = (rs1 == 5'd0) ? 32'h0 : rf[rs1];
-  wire [31:0] rf_rs2 = (rs2 == 5'd0) ? 32'h0 : rf[rs2];
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      rf_rs1 <= 32'h0;
+      rf_rs2 <= 32'h0;
+    end else begin
+      rf_rs1 <= (rf_rd_a == 5'd0) ? 32'h0 : rf_mem[rf_rd_a];
+      rf_rs2 <= (rf_rd_b == 5'd0) ? 32'h0 : rf_mem[rf_rd_b];
+    end
+  end
+`endif
 
   // CSRs (Machine mode subset)
   logic [31:0] csr_mtvec;
@@ -77,21 +122,34 @@ module simple_cpu #(
   logic [4:0]  mem_rd_r;     // destination register for loads
   logic [2:0]  mem_funct3_r; // for load sign/zero extension
 
-  // Interrupt pending
+  // Interrupt inputs — registered to break PLIC→CPU cross-module combinational path.
+  // 1-cycle interrupt latency is architecturally acceptable.
+  logic irq_ext_r, irq_tmr_r;
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      irq_ext_r <= 1'b0;
+      irq_tmr_r <= 1'b0;
+    end else begin
+      irq_ext_r <= irq_external;
+      irq_tmr_r <= irq_timer;
+    end
+  end
+
+  // Interrupt pending (uses registered inputs)
   logic irq_pending;
-  assign irq_pending = (csr_mstatus[3]) &&   // MIE bit
-                       (  (irq_external && csr_mie[11])   // MEIE
-                       || (irq_timer    && csr_mie[7]) ); // MTIE
+  assign irq_pending = (csr_mstatus[3]) &&
+                       (  (irq_ext_r && csr_mie[11])
+                       || (irq_tmr_r && csr_mie[7]) );
 
   // -----------------------------------------------------------------------
   // Instruction decode helpers
   // -----------------------------------------------------------------------
-  wire [6:0]  opcode  = instr[6:0];
-  wire [4:0]  rd      = instr[11:7];
-  wire [2:0]  funct3  = instr[14:12];
-  wire [4:0]  rs1     = instr[19:15];
-  wire [4:0]  rs2     = instr[24:20];
+  wire [6:0]  opcode   = instr[6:0];
+  wire [4:0]  rd       = instr[11:7];
+  wire [2:0]  funct3   = instr[14:12];
   wire        funct7_5 = instr[30];
+  wire [4:0]  rs1      = instr[19:15];  // RS1 field (address; used for CSR checks)
+  wire [4:0]  rs2      = instr[24:20];  // RS2 field (address)
 
   // Immediates
   wire [31:0] imm_i = {{20{instr[31]}}, instr[31:20]};
@@ -257,7 +315,7 @@ module simple_cpu #(
   // Main FSM
   // -----------------------------------------------------------------------
   always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n || cpu_reset) begin
+    if (!rst_n) begin
       state        <= S_FETCH;
       pc           <= 32'h0;
       instr        <= 32'h00000013; // NOP
@@ -275,6 +333,28 @@ module simple_cpu #(
       rf_we        <= 1'b0;
       rf_wa        <= '0;
       rf_wd        <= '0;
+      rf_rd_a      <= '0;
+      rf_rd_b      <= '0;
+    end else if (cpu_reset) begin
+      state        <= S_FETCH;
+      pc           <= 32'h0;
+      instr        <= 32'h00000013; // NOP
+      csr_mtvec    <= 32'h0;
+      csr_mcause   <= 32'h0;
+      csr_mstatus  <= 32'h0;
+      csr_mie      <= 32'h0;
+      csr_mepc     <= 32'h0;
+      mem_addr_r   <= '0;
+      mem_wdata_r  <= '0;
+      mem_be_r     <= '0;
+      mem_we_r     <= 1'b0;
+      mem_rd_r     <= '0;
+      mem_funct3_r <= '0;
+      rf_we        <= 1'b0;
+      rf_wa        <= '0;
+      rf_wd        <= '0;
+      rf_rd_a      <= '0;
+      rf_rd_b      <= '0;
     end else begin
       // Default: no register write
       rf_we <= 1'b0;
@@ -287,14 +367,20 @@ module simple_cpu #(
           end
         end
 
-        // ---- FETCH_WAIT: capture instruction ----
+        // ---- FETCH_WAIT: capture instruction, latch RF read addresses ----
         S_FETCH_WAIT: begin
           if (rvalid) begin
-            instr <= rdata;
-            // synthesis translate_off
-            // synthesis translate_on
-            state <= S_EXEC;
+            instr   <= rdata;
+            rf_rd_a <= rdata[19:15];  // RS1 addr → drives RF read in S_RF_READ
+            rf_rd_b <= rdata[24:20];  // RS2 addr → drives RF read in S_RF_READ
+            state   <= S_RF_READ;
           end
+        end
+
+        // ---- RF_READ: 1-cycle bubble for registered RF read ----
+        // SRAM/behavioral RF presents rf_rd_{a,b} this cycle; output valid next.
+        S_RF_READ: begin
+          state <= S_EXEC;
         end
 
         // ---- EXEC: decode + execute + writeback (or start mem access) ----
@@ -302,7 +388,7 @@ module simple_cpu #(
           // Check for pending interrupt before executing
           if (irq_pending) begin
             csr_mepc   <= pc;
-            csr_mcause <= irq_external ? 32'h8000000B : 32'h80000007;
+            csr_mcause <= irq_ext_r ? 32'h8000000B : 32'h80000007;
             csr_mstatus[3] <= 1'b0; // clear MIE
             csr_mstatus[7] <= csr_mstatus[3]; // save MIE to MPIE
             pc    <= csr_mtvec;

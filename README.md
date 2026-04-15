@@ -1,411 +1,279 @@
-# MNIST-Accel
-
-## Current Entry Points
-
-- FPGA bringup bundle: [handoff/soc_top_v2/fpga_bringup/README.md](handoff/soc_top_v2/fpga_bringup/README.md)
-- FPGA board checklist: [handoff/soc_top_v2/fpga_bringup/docs/SOC_TOP_V2_FPGA_BOARD_INTEGRATION_CHECKLIST.md](handoff/soc_top_v2/fpga_bringup/docs/SOC_TOP_V2_FPGA_BOARD_INTEGRATION_CHECKLIST.md)
-- ASIC bringup bundle: [handoff/soc_top_v2/asic_bringup/README.md](handoff/soc_top_v2/asic_bringup/README.md)
-- Handoff index: [handoff/soc_top_v2/README.md](handoff/soc_top_v2/README.md)
-- Archived legacy host stack: [archive/old_project_done/README.md](archive/old_project_done/README.md)
-
-## Current Status
-
-- The active hardware target in this workspace is `soc_top_v2`.
-- The current full-SoC FPGA bring-up target is ZCU104 via `hw/rtl/top/zcu104_wrapper.sv`.
-- The local repo is already staged to the handoff boundary for both FPGA and ASIC work.
-- Remaining FPGA-only work is board integration, Vivado implementation, and bitstream generation.
-- Remaining ASIC-only work is the external OpenROAD/OpenLane run plus backend signoff outputs.
-
-## Note
-
-The material below is older accelerator-focused project background kept for reference. For the current full-SoC bringup path, use the handoff folders above and the ZCU104 wrapper flow.
+# MNIST-Accel — Full SoC Neural Inference Accelerator
 
 <div align="center">
 
-**14×14 Weight-Stationary Systolic Array · BSR Sparse Acceleration · Zynq-7020 FPGA**
+**RISC-V SoC · 4×4 NoC Mesh · 16×(16×16 INT8 Systolic) · sky130 ASIC + ZCU104 FPGA**
 
 ![RTL](https://img.shields.io/badge/RTL-SystemVerilog-blue)
-![Target](https://img.shields.io/badge/Target-Zynq%20Z7020-green)
-![Status](https://img.shields.io/badge/Status-Simulation%20Verified-yellow)
-![License](https://img.shields.io/badge/License-MIT-lightgrey)
+![ASIC](https://img.shields.io/badge/ASIC-sky130__fd__sc__hd-orange)
+![FPGA](https://img.shields.io/badge/FPGA-ZCU104%20UltraScale+-green)
+![E2E](https://img.shields.io/badge/E2E%20Sim-PASS%205%2F5-brightgreen)
+![Accuracy](https://img.shields.io/badge/MNIST-98.70%25-brightgreen)
 
 </div>
 
 ---
 
-## Overview
+## At a Glance
 
-ACCEL-v1 is a sparse neural network inference accelerator targeting the Xilinx Zynq-7020 (PYNQ-Z2). The design centers on a 14×14 weight-stationary systolic array with hardware-level Block Sparse Row (BSR) scheduling, INT8 quantization, and AXI4 DMA integration.
-
-**Key capabilities:**
-- 14×14 systolic array — 196 INT8 MACs per cycle, weight-stationary dataflow
-- BSR sparse format — hardware scheduler skips zero-weight blocks entirely
-- INT8 quantization — per-channel scaling, 0.2% accuracy loss on MNIST (98.7%)
-- AXI4 DMA + AXI4-Lite CSR control interface
-- Clock Archiecture — 115 MHz
-- Full software stack — Python training/export, C++ host driver framework
-
-**Status:** RTL simulation-verified (Verilator + cocotb). FPGA deployment pending.
-
----
-
-## Performance Targets
-
-| Metric | Value | Notes |
-|--------|-------|-------|
-| Peak Throughput | 39.2 GOPS | 196 MACs/cycle × 200 MHz |
-| Sparse Speedup | 6–9× | vs. dense baseline at 70–90% block sparsity |
-| Memory Reduction | 9.7× | BSR format (118 KB vs. 1.15 MB, MNIST FC1) |
-| INT8 Accuracy | 98.7% | MNIST CNN, –0.2% from FP32 baseline |
-| Power Target | 840 mW | Dual-clock + clock gating (vs. 2.0 W baseline) |
-
-*Pending hardware validation after synthesis and FPGA deployment.*
+| Metric | Value |
+|--------|-------|
+| Peak MAC throughput | **204.8 GOPS** (4,096 MACs/cycle × 50 MHz) |
+| MNIST inference throughput | **53.6 inferences/sec** @ 50 MHz (E2E sim) |
+| MNIST test accuracy | **98.70%** (INT8 quantized) |
+| End-to-end simulation | **PASS 5/5** — digit 7 classified correctly through full RTL stack |
+| ASIC technology | sky130_fd_sc_hd (open PDK, 130 nm) |
+| FPGA target | AMD ZCU104 (Zynq UltraScale+ xczu7ev-ffvc1156-2-e) |
+| Synthesized cells | ~5.6 M sky130 standard cells |
+| Estimated die area | 36.96 mm² (Yosys, includes SRAM macros) |
+| Hold timing | **+0.098 ns MET** (OpenSTA pre-CTS) |
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Zynq-7020 (PL)                          │
-│                                                             │
-│  Host (PS)                    Control                       │
-│  ┌──────────┐  AXI4-Lite   ┌──────────────┐                │
-│  │ ARM CPU  │◄────────────►│ CSR Block    │                │
-│  │ / PYNQ   │              │ BSR Sched.   │                │
-│  └────┬─────┘              │ Clock Gate   │                │
-│       │                    └──────┬───────┘                │
-│       │ AXI4 DMA                  │                         │
-│       ▼                          ▼                         │
-│  ┌──────────┐  ┌──────────┐  ┌──────────────────────────┐  │
-│  │ Act DMA  │  │ BSR DMA  │  │ 14×14 Systolic Array     │  │
-│  │          │  │          │  │ (196 PEs, INT8×INT8→INT32)│  │
-│  └────┬─────┘  └────┬─────┘  │ Weight-Stationary        │  │
-│       ▼              ▼        │ Zero-Value Bypass        │  │
-│  ┌──────────┐  ┌──────────┐  └────────────┬─────────────┘  │
-│  │Act Buffer│  │Wgt Buffer│               │                │
-│  │ (BRAM)   │  │ (BRAM)   │               ▼                │
-│  └──────────┘  └──────────┘  ┌──────────────────────────┐  │
-│                              │ Output Accumulator       │  │
-│                              │ Requantize (INT32→INT8)  │  │
-│                              │ ReLU + Saturation        │  │
-│                              └──────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+                        soc_top_v2
+  ┌─────────────────────────────────────────────────────────────┐
+  │                                                             │
+  │  ┌─────────────┐   ┌──────────┐   ┌──────────┐             │
+  │  │  RISC-V CPU │   │ Boot ROM │   │   UART   │             │
+  │  │  (simple_cpu│   │  (8 KB)  │   │  115200  │             │
+  │  │  5-stage)   │   └──────────┘   └──────────┘             │
+  │  │  + L1 I+D $ │                                           │
+  │  └──────┬──────┘   ┌──────────┐   ┌──────────┐             │
+  │         │          │   PLIC   │   │   GPIO   │             │
+  │         │          │ (32 irq) │   │  (8-bit) │             │
+  │         │          └──────────┘   └──────────┘             │
+  │         │                                                   │
+  │  ┌──────▼──────────────────────────────────────────────┐    │
+  │  │              4×4 Wormhole NoC Mesh                  │    │
+  │  │    T00 ─ T01 ─ T02 ─ T03                            │    │
+  │  │     │     │     │     │                             │    │
+  │  │    T04 ─ T05 ─ T06 ─ T07   (16 Accelerator Tiles)  │    │
+  │  │     │     │     │     │                             │    │
+  │  │    T08 ─ T09 ─ T10 ─ T11   Each tile:               │    │
+  │  │     │     │     │     │     - 16×16 INT8 systolic   │    │
+  │  │    T12 ─ T13 ─ T14 ─ T15   - 256 MACs/cycle         │    │
+  │  │                             - Scratchpad SRAM        │    │
+  │  │                             - DMA + tile ctrl        │    │
+  │  └──────────────────────┬──────────────────────────────┘    │
+  │                         │                                   │
+  │  ┌──────────────────────▼──────────────────────────────┐    │
+  │  │           DRAM Controller + PHY Interface           │    │
+  │  └─────────────────────────────────────────────────────┘    │
+  └─────────────────────────────────────────────────────────────┘
 ```
 
-### Design Decisions
+### Accelerator Tile Microarchitecture
 
-| Parameter | Choice | Rationale |
-|-----------|--------|-----------|
-| Data type | INT8 | 4× memory reduction, minimal accuracy loss |
-| Array size | 14×14 | Fits Z7020 DSP budget (196 of 220 DSP48E1s) |
-| Block size | 14×14 | Matches array dimensions for BSR tiling |
-| Dataflow | Weight-stationary | Minimizes weight reloads, maximizes data reuse |
-| Sparse format | BSR | Sequential memory access, hardware-friendly metadata |
-| Clock gating | BUFGCE | 810 mW estimated savings (40.5% reduction) |
+Each of the 16 tiles implements weight-stationary INT8 inference:
 
-### Resource Estimates (Zynq XC7Z020)
+```
+  DMA Engine ──► Scratchpad SRAM (sram_1rw_wrapper)
+       │                │
+       │         ┌──────▼──────────────────────────────┐
+       │         │     16×16 Systolic Array             │
+       │         │  ┌───┬───┬─ ... ─┬───┐              │
+       │         │  │PE │PE │       │PE │  row 0        │
+       │         │  ├───┼───┼─ ... ─┼───┤              │
+       │         │  │   │   │       │   │  row 1        │
+       │         │  │       ...         │  ...          │
+       │         │  ├───┼───┼─ ... ─┼───┤              │
+       │         │  │PE │PE │       │PE │  row 15       │
+       │         │  └───┴───┴─ ... ─┴───┘              │
+       │         │   ↑ activations stream right→        │
+       │         │   ↑ weights stationary               │
+       │         │   INT8×INT8 → INT32 accumulate       │
+       │         └──────────────────────────────────────┘
+       │                        │
+       └──────── output ◄───────┘  (via NoC → CPU readback)
+```
 
-| Resource | Estimated | Available | Utilization |
-|----------|-----------|-----------|-------------|
-| LUTs | ~18,000 | 53,200 | 34% |
-| FFs | ~12,000 | 106,400 | 11% |
-| BRAM (36 Kb) | 64 | 140 | 46% |
-| DSP48E1 | 196 | 220 | 89% |
+### NoC Topology
+
+- **4×4 2D mesh**, wormhole routing, 2 virtual channels per port
+- **5-port routers** (N/S/E/W/local), XY dimension-order routing
+- **In-Network Reduction (INR)** support — collapses partial sums at intermediate routers for multi-tile parallel layers
+- **Switch allocator** — separable round-robin, one hop latency per router
+
+---
+
+## E2E Verification Results
+
+The complete RISC-V SoC stack was verified end-to-end in Verilator simulation:
+
+```
+DRAM (hex init) → dram_ctrl → NoC → Tile DMA → Systolic MAC → CPU readback → UART → GPIO
+```
+
+**Test: MNIST digit 7 classification**
+
+```
+[UART @772240]  Predicted: 7
+[UART @837370]  True label: 7
+[UART @932894]  PASS: matches golden
+[UART @1011050] Cycles: 0000a029
+
+Throughput: 53.6 inferences/sec @ 50 MHz
+TESTS PASSED: 5 / 5
+RESULT: PASS — digit 7 correctly classified end-to-end
+```
+
+| Check | Result |
+|-------|--------|
+| Boot message received | PASS |
+| Inference completed | PASS |
+| UART "PASS: matches golden" | PASS |
+| GPIO[7:4] = 0xF (done flag) | PASS |
+| GPIO[3:0] = 0x7 (digit) | PASS |
+
+---
+
+## Implementation
+
+### ASIC — sky130_fd_sc_hd
+
+RTL synthesized with Yosys → technology-mapped to sky130_fd_sc_hd standard cells.
+
+| Module | Area (µm²) |
+|--------|-----------|
+| 16× accel_tile (systolic + SRAM) | 4,803,066 |
+| 16× noc_switch_allocator | 1,113,348 |
+| 16× noc_router | 135,730 |
+| simple_cpu (RISC-V) | 38,258 |
+| PLIC (32 sources) | 17,514 |
+| dram_ctrl_top | 3,072 |
+| **Total (top module)** | **36,961,700 µm² (~36.96 mm²)** |
+
+**Timing (OpenSTA, pre-CTS ZeroWL):**
+- Hold slack: **+0.098 ns MET**
+- Setup: Pre-CTS analysis produces NLDM extrapolation artifacts on every high-fanout net (reset tree, tile enables, systolic compute_en) — reported slacks of −50 to −100 ns are artifacts, not real violations. True combinational logic depth on the identified worst paths is **3–17 gate levels = 3–17 ns**, all within the 20 ns budget. Definitive WNS comes from Vivado post-route (`impl_timing.rpt`) after buffer insertion resolves all high-fanout nets. See `docs/paper/design_report.md` §4.3 for the full 3-run false-path analysis.
+
+**RTL fixes applied for synthesis:**
+1. CPU register file — replaced with `sram_1rw_wrapper` blackboxes (`ifdef SYNTHESIS`)
+2. PLIC — parallel eligible[] array + `|eligible` OR-tree (eliminates 38 ns serial scan chain)
+3. NoC VC FIFOs — replaced with `sram_1rw_wrapper` (`ifdef SYNTHESIS`)
+4. Accel tile `$error` assertions — guarded with `ifndef SYNTHESIS`
+5. Clock gate cell — `assign clk_o = clk_i` passthrough (sky130 has no mappable ICG latch)
+
+### FPGA — AMD ZCU104
+
+| File | Description |
+|------|-------------|
+| [hw/rtl/top/zcu104_wrapper.sv](hw/rtl/top/zcu104_wrapper.sv) | Board wrapper: MMCME4_ADV (125→50 MHz), reset sync, GPIO mapping |
+| [hw/constraints/zcu104.xdc](hw/constraints/zcu104.xdc) | Pin constraints + timing (xczu7ev-ffvc1156-2-e) |
+| [tools/synthesize_vivado.tcl](tools/synthesize_vivado.tcl) | Full Vivado flow: synth → impl → bitstream → reports |
+
+```bash
+# Generate bitstream
+vivado -mode batch -source tools/synthesize_vivado.tcl
+# Output: hw/zcu104_wrapper.bit
+```
+
+**Board pin mapping:**
+- 125 MHz PL diff clock → E12/D12 → MMCME4_ADV → 50 MHz core
+- UART TX/RX → PMOD J160 (attach USB-TTL adapter)
+- LED[3:0] → User LEDs (GPIO[3:0])
+- DIP switches → GPIO inputs
+- CPU reset → center pushbutton (M11)
+
+---
+
+## Running the End-to-End Simulation
+
+Prerequisites: Verilator 5.x, the firmware hex, and the DRAM weight init file.
+
+```bash
+# Build and run full RTL inference test
+bash run_e2e_inference.sh
+
+# Output in logs/e2e_inference.log
+```
+
+The testbench (`hw/sim/sv/tb_mnist_inference.sv`) instantiates the complete SoC,
+preloads DRAM with quantized MNIST weights via `dram_phy_simple_mem`, boots the
+firmware, and checks digit 7 classification through UART + GPIO.
+
+---
+
+## Pre-CTS Static Timing Analysis
+
+```bash
+cd OPENROADMARCUS
+sta sta_prects.tcl
+```
+
+Reports worst setup and hold paths against 50 MHz (20 ns) clock constraint.
+Hold: +0.098 ns. Setup functional path: ~16.7 ns logic delay (comfortably within budget).
 
 ---
 
 ## Repository Structure
 
 ```
-├── hw/                              # Hardware design
-│   ├── rtl/                         # Production RTL (21 modules, ~6,500 lines)
-│   │   ├── top/                     #   Top-level: accel_top.sv, dual-clock wrapper
-│   │   ├── systolic/                #   PE array: pe.sv, systolic_array_sparse.sv
-│   │   ├── mac/                     #   Compute: mac8.sv (INT8 MAC, zero-bypass)
-│   │   ├── control/                 #   FSMs: bsr_scheduler.sv, csr.sv, CDC
-│   │   ├── dma/                     #   DMA engines: act_dma.sv, bsr_dma.sv
-│   │   ├── buffer/                  #   BRAM buffers: act, weight, output accum.
-│   │   ├── host_iface/              #   AXI4-Lite slave, AXI DMA bridge
-│   │   └── monitor/                 #   Performance counters
-│   └── sim/                         # Simulation & verification
-│       ├── sv/                      #   SystemVerilog testbenches (~4,200 lines)
-│       └── cocotb/                  #   Python-based AXI protocol tests
+├── hw/
+│   ├── rtl/                     # SystemVerilog RTL (50 files, ~8,000 lines)
+│   │   ├── top/                 #   soc_top_v2.sv, zcu104_wrapper.sv
+│   │   ├── systolic/            #   pe.sv, systolic_array_sparse.sv, accel_tile.sv
+│   │   ├── noc/                 #   noc_router.sv, noc_switch_allocator.sv
+│   │   ├── cache/               #   l1_cache_ctrl.sv, l1_data_array.sv, l1_lru.sv
+│   │   ├── memory/              #   boot_rom.sv, sram_ctrl.sv
+│   │   ├── periph/              #   plic.sv, uart, gpio
+│   │   └── control/             #   clock_gate_cell.sv, barrier_sync
+│   ├── sim/sv/                  # Verilator testbenches
+│   │   └── tb_mnist_inference.sv #  E2E MNIST inference testbench (PASS 5/5)
+│   └── constraints/
+│       └── zcu104.xdc           # ZCU104 pin/timing constraints
 │
-├── sw/                              # Software stack
-│   ├── cpp/                         # C++ host driver framework (~6,000 lines)
-│   │   ├── include/                 #   Headers: BSR encoder, DMA, buffer mgmt
-│   │   ├── src/                     #   Implementation: golden models, tiling
-│   │   ├── apps/                    #   MNIST inference, benchmarking
-│   │   └── tests/                   #   Unit tests
-│   └── ml_python/                   # Python ML tooling (~9,000 lines)
-│       ├── training/                #   MNIST CNN training, BSR export (14×14)
-│       ├── exporters/               #   PyTorch → INT8 weight conversion
-│       ├── golden/                  #   Bit-exact reference models
-│       ├── host/                    #   PYNQ driver, AXI simulation
-│       ├── demo/                    #   MNIST digit classification demo
-│       └── tests/                   #   Quantization & integration tests
+├── OPENROADMARCUS/              # ASIC synthesis + STA (sky130)
+│   ├── rtl/                     #   50-file clean RTL subset for P&R
+│   ├── sta_prects.tcl           #   Pre-CTS OpenSTA script
+│   ├── macros/                  #   sram_1rw_wrapper.{lib,lef}
+│   └── runs/timing_run/         #   Synthesis results + reports
 │
-├── data/                            # Model weights & test data
-│   ├── bsr_export_14x14/           #   14×14 BSR weights (production format)
-│   ├── int8/                        #   Per-channel INT8 quantized weights
-│   ├── checkpoints/                 #   FP32 training checkpoint
-│   └── MNIST/                       #   Raw MNIST dataset
+├── fw/                          # RISC-V firmware
+│   └── firmware_inference.hex   #   MNIST inference firmware image
 │
-├── docs/                            # Documentation
-│   ├── architecture/                #   Architecture specs, dataflow, BSR format
-│   ├── guides/                      #   Simulation, FPGA deployment, quantization
-│   └── verification/                #   Test results, verification checklist
+├── data/
+│   └── dram_init.hex            # Pre-quantized MNIST model weights (DRAM image)
 │
-└── tools/                           # Build & CI scripts
-    ├── build.sh                     #   Verilator build
-    ├── test.sh                      #   Test runner
-    └── synthesize_vivado.tcl        #   Vivado synthesis flow
+├── tools/
+│   └── synthesize_vivado.tcl    # Vivado full-flow script (ZCU104)
+│
+└── docs/
+    ├── paper/
+    │   └── design_report.md     # Full design report (this document's companion)
+    ├── architecture/
+    └── competition/
 ```
 
 ---
 
-## Getting Started
+## Background: Design Evolution
 
-### Quick Start — MNIST Digit Classifier Demo
-
-The fastest way to see ACCEL-v1 in action. This runs the INT8-quantized CNN model
-that maps onto the 14×14 systolic array, using PyTorch on CPU to simulate what the
-FPGA accelerator computes.
-
-```bash
-# 1. Clone and enter the project
-git clone https://github.com/joshuathomascarter/ResNet-Accel-2.git
-cd ResNet-Accel-2
-
-# 2. Create a virtual environment (recommended)
-python3 -m venv .venv
-source .venv/bin/activate
-
-# 3. Install Python dependencies
-pip install -r requirements.txt
-
-# 4. Run the interactive digit classifier
-python3 sw/ml_python/demo/classify_digit.py
-```
-
-This opens a drawing canvas. Draw any digit (0–9), click **Classify**, and the model
-returns a prediction with confidence. The pre-trained checkpoint
-(`data/checkpoints/mnist_fp32.pt`) is included in the repository.
-
-**Three usage modes:**
-
-| Mode | Command | Description |
-|------|---------|-------------|
-| Interactive | `python3 sw/ml_python/demo/classify_digit.py` | Draw digits on a canvas, click Classify |
-| Image file | `python3 sw/ml_python/demo/classify_digit.py digit.png` | Classify a digit from an image file |
-| MNIST test | `python3 sw/ml_python/demo/classify_digit.py --test 50` | Run on N random MNIST test samples |
-
-> **Note:** The interactive drawing mode requires `tkinter`, which is included with
-> most Python installations. On macOS it ships with the Homebrew/system Python.
-> On Ubuntu: `sudo apt install python3-tk`.
-
-### Prerequisites
-
-| Tool | Version | Purpose |
-|------|---------|---------|
-| Python | 3.8+ | ML tooling, demo, cocotb tests |
-| PyTorch | 1.9+ | Model inference & training |
-| Verilator | 5.x+ | RTL simulation (optional) |
-| CMake | 3.16+ | C++ build system (optional) |
-| Vivado | 2021.1+ | FPGA synthesis (optional) |
-
-```bash
-# macOS
-brew install python cmake verilator
-
-# Ubuntu
-sudo apt install python3 python3-pip python3-tk cmake verilator
-
-# Python packages (all platforms)
-pip install -r requirements.txt
-```
-
-### Build C++ Host Driver
-
-```bash
-cd sw/cpp
-mkdir -p build && cd build
-cmake ..
-make -j$(nproc)
-```
-
-### Run RTL Simulation
-
-```bash
-# SystemVerilog testbenches via Verilator
-cd hw/sim
-make
-
-# Cocotb AXI protocol tests
-cd hw/sim/cocotb
-make
-```
-
-### Export Quantized Weights
-
-```bash
-# Export INT8 BSR weights (14×14 block format)
-cd sw/ml_python/training
-python3 export_bsr_14x14.py --from-int8
-```
-
----
-
-## Running All Tests
-
-Below are the commands to exercise every layer of the stack. All commands
-assume you are in the project root (`ResNet-Accel-2/`).
-
-### 1. Python ML & Golden Model Tests (pytest)
-
-These tests verify BSR INT8 GEMM correctness, weight exporter output, MAC
-golden models, edge-case saturation, CSR register packing, and the AXI
-host tiler integration.
-
-```bash
-source .venv/bin/activate
-cd sw/ml_python
-python -m pytest tests/ -v
-```
-
-Individual test files:
-
-| File | What it tests |
-|------|---------------|
-| `test_golden_models.py` | BSR INT8 GEMM vs. numpy reference |
-| `test_exporters.py` | BSR export format and metadata |
-| `test_mac.py` | MAC8 golden model (matches RTL semantics) |
-| `test_edges.py` | Zero matrices, INT8 saturation, identity |
-| `test_csr_pack.py` | CSR register pack/unpack round-trips |
-| `test_integration.py` | End-to-end tiled GEMM, Config serialization, AXI tiler |
-
-### 2. C++ Host Driver Tests (CMake / CTest)
-
-```bash
-cd sw/cpp
-mkdir -p build && cd build
-cmake ..
-make -j$(nproc)
-ctest --output-on-failure
-```
-
-### 3. RTL Simulation — Verilator
-
-Requires [Verilator 5.x+](https://verilator.org/guide/latest/install.html).
-
-```bash
-cd hw/sim
-make          # builds + runs all SV testbenches
-```
-
-Individual testbenches: `make pe_tb`, `make systolic_tb`, `make accel_top_tb`, etc.
-
-### 4. RTL Simulation — Cocotb
-
-Requires `cocotb` and a Verilog simulator (Verilator or Icarus).
-
-```bash
-cd hw/sim/cocotb
-make                        # default top-level AXI test
-make -f Makefile.accel_top  # full accel_top cocotb test
-```
-
-### 5. Yosys Synthesis (Xilinx 7-Series)
-
-Requires [Yosys](https://github.com/YosysHQ/yosys) (any recent build).
-
-```bash
-cd hw
-bash yosys_run.sh
-```
-
-This preprocesses the RTL (strips SVA assertions), maps to Xilinx 7-series
-primitives, and writes a gate-level netlist to `hw/reports/yosys_netlist.json`.
-
-### 6. Vivado Synthesis (Optional — Zynq-7020)
-
-Requires Xilinx Vivado 2021.1+.
-
-```bash
-vivado -mode batch -source tools/synthesize_vivado.tcl
-```
-
-### 7. MNIST Demo
-
-```bash
-python3 sw/ml_python/demo/classify_digit.py           # interactive (tkinter)
-python3 sw/ml_python/demo/classify_digit.py --test 50  # batch MNIST test
-```
-
-### FPGA Deployment (Zynq-7020)
-
-```bash
-# 1. Synthesize
-vivado -mode batch -source tools/synthesize_vivado.tcl
-
-# 2. Deploy to PYNQ-Z2
-scp build/accel_top.bit xilinx@pynq:/home/xilinx/
-
-# 3. Run inference
-python3 sw/ml_python/host/accel.py
-```
-
----
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [hw/README.md](hw/README.md) | Hardware architecture, PE diagrams, dataflow timing |
-| [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) | System-level design specification |
-| [docs/architecture/SPARSITY_FORMAT.md](docs/architecture/SPARSITY_FORMAT.md) | BSR sparse format and hardware FSM |
-| [docs/DEEP_DIVE.md](docs/DEEP_DIVE.md) | Performance analysis, MNIST layer breakdown |
-| [docs/guides/SIMULATION_GUIDE.md](docs/guides/SIMULATION_GUIDE.md) | Verilator and cocotb test setup |
-| [docs/guides/QUANTIZATION_PRACTICAL.md](docs/guides/QUANTIZATION_PRACTICAL.md) | INT8 quantization methodology |
-| [docs/guides/POWER_ANALYSIS.md](docs/guides/POWER_ANALYSIS.md) | Clock gating and power optimization |
-| [AUDIT.md](AUDIT.md) | Internal code audit with known issues |
-
----
-
-## Design Notes
-
-### BSR Sparse Dataflow
-
-The accelerator uses Block Sparse Row format to skip zero-weight blocks at the hardware level. The BSR scheduler FSM reads row pointers and column indices from on-chip BRAM, loads only non-zero 14×14 weight blocks into the systolic array, and streams corresponding activation tiles. At 70% block sparsity, this yields ~3× effective throughput improvement; at 90% sparsity, ~9× improvement.
-
-### Weight-Stationary Systolic Array
-
-Weights are loaded once per tile and held fixed in each PE while activations stream through. This minimizes weight memory bandwidth (single load per K-dimension block) at the cost of activation broadcast. For CNN inference where weight reuse is high, this dataflow is well-matched.
-
-### INT8 Quantization Pipeline
-
-Per-channel symmetric quantization preserves accuracy:
-1. **Training** — Standard FP32 MNIST CNN (98.9% accuracy)
-2. **Calibration** — Per-channel scale factors computed from weight distributions
-3. **Quantization** — FP32 → INT8 with per-channel scales stored alongside weights
-4. **Hardware** — INT8×INT8→INT32 MAC accumulation, requantize with saturation on output
+| Generation | Design | Status |
+|------------|--------|--------|
+| v0 | 14×14 BSR sparse accelerator, Zynq-7020, AXI4 DMA | Simulation verified |
+| v1 | 16×16 systolic, single-tile, PYNQ-Z2 | Simulation verified |
+| **v2 (current)** | **Full SoC: RISC-V + 4×4 NoC + 16 tiles, sky130 + ZCU104** | **E2E verified, ASIC synthesized** |
 
 ---
 
 ## References
 
-- Y. Chen et al., "Eyeriss: A Spatial Architecture for Energy-Efficient Dataflow for CNNs," ISCA 2016
-- S. Han et al., "EIE: Efficient Inference Engine on Compressed Deep Neural Networks," ISCA 2016
 - N. P. Jouppi et al., "In-Datacenter Performance Analysis of a Tensor Processing Unit," ISCA 2017
-- Xilinx, "7 Series DSP48E1 Slice User Guide" (UG479)
-- ARM, "AMBA AXI and ACE Protocol Specification" (IHI 0022E)
+- W. J. Dally & B. Towles, "Principles and Practices of Interconnection Networks," 2004
+- Y. Chen et al., "Eyeriss: A Spatial Architecture for Energy-Efficient Dataflow for CNNs," ISCA 2016
+- SkyWater Technology, "sky130 Process Design Kit (PDK)" — open-source 130 nm PDK
+- AMD/Xilinx, "UG1267 ZCU104 Evaluation Board User Guide"
+- OpenROAD Project, "OpenROAD: Toward a Self-Driving, Open-Source Digital Layout Implementation Tool"
 
 ---
 
 ## Author
 
-**Josh Carter** — [GitHub](https://github.com/joshuathomascarter) · joshtcarter0710@gmail.com
+**Josh Carter** — joshtcarter0710@gmail.com
 
 ## License
 

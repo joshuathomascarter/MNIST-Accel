@@ -51,17 +51,17 @@ module systolic_array_sparse #(
         assign a_in[0] = a_in_raw[0];
       end else begin : DELAY
         // Row i: i cycles of delay via shift register
-        reg signed [DATA_W-1:0] skew_sr [0:i-1];
-        integer j;
+        // Packed array: variable index → mux tree (Yosys-safe, no $bitselwrite)
+        reg [i-1:0][DATA_W-1:0] skew_sr;
+        integer k;
 
         always_ff @(posedge clk or negedge rst_n) begin
           if (!rst_n) begin
-            for (j = 0; j < i; j = j + 1)
-              skew_sr[j] <= 0;
+            skew_sr <= '0;
           end else if (clk_en) begin
+            for (k = i-1; k >= 1; k = k - 1)
+              skew_sr[k] <= skew_sr[k-1];
             skew_sr[0] <= a_in_raw[i];
-            for (j = 1; j < i; j = j + 1)
-              skew_sr[j] <= skew_sr[j-1];
           end
         end
 

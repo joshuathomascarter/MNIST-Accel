@@ -594,6 +594,7 @@ module accel_tile #(
     endcase
   end
 
+`ifndef SYNTHESIS
   always @(posedge clk) begin
     if (compute_sp_a_en && sp_a_en)
       $error("accel_tile: compute spill collided with controller scratchpad access");
@@ -604,6 +605,7 @@ module accel_tile #(
       assert (int'(compute_sp_a_addr) < SP_DEPTH)
         else $error("accel_tile: compute write address %0d out of range", compute_sp_a_addr);
   end
+`endif
 
   systolic_array_sparse #(
     .N_ROWS (N_ROWS),

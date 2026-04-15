@@ -33,30 +33,46 @@ module accel_scratchpad #(
   output logic [DATA_WIDTH-1:0]  b_rdata
 );
 
-  // Simple dual-port RAM inference
-`ifdef XILINX_FPGA
-  (* ram_style = "block" *) logic [DATA_WIDTH-1:0] mem [DEPTH];
-`else
-  logic [DATA_WIDTH-1:0] mem [DEPTH];
-`endif
+  // -------------------------------------------------------------------------
+  // Dual-port scratchpad using two sram_1rw_wrapper blackbox instances.
+  // Port A (RW) drives the write side; both ports share reads via separate
+  // macros (write-through coherence handled in the controller).
+  // -------------------------------------------------------------------------
 
-  // Port A: read/write
-  always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-      a_rdata <= '0;
-    end else if (clk_en && a_en) begin
-      if (a_we)
-        mem[a_addr] <= a_wdata;
-      a_rdata <= mem[a_addr];
+  // Blackbox declaration — body excluded during synthesis
+`ifndef SYNTHESIS
+  // simulation stub: infer simple arrays when not synthesizing
+  logic [DATA_WIDTH-1:0] _sim_mem [DEPTH];
+  always_ff @(posedge clk) begin
+    if (clk_en && a_en) begin
+      if (a_we) _sim_mem[a_addr] <= a_wdata;
+      a_rdata <= _sim_mem[a_addr];
     end
+    if (clk_en && b_en) b_rdata <= _sim_mem[b_addr];
   end
+`else
+  // No module-level parameters — sram_1rw_wrapper is non-parameterized to
+  // match the flat Liberty cell that Yosys reads from EXTRA_LIBS.
+  // Widths are fixed: DATA_W=32, ADDR_W=12 (DEPTH=4096 always in this design).
+  sram_1rw_wrapper u_sram_a (
+    .clk   (clk),
+    .rst_n (rst_n),
+    .en    (clk_en & a_en),
+    .we    (a_we),
+    .addr  (a_addr),
+    .wdata (a_wdata),
+    .rdata (a_rdata)
+  );
 
-  // Port B: read-only
-  always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-      b_rdata <= '0;
-    end else if (clk_en && b_en)
-      b_rdata <= mem[b_addr];
-  end
+  sram_1rw_wrapper u_sram_b (
+    .clk   (clk),
+    .rst_n (rst_n),
+    .en    (clk_en & b_en),
+    .we    (1'b0),
+    .addr  (b_addr),
+    .wdata (32'b0),
+    .rdata (b_rdata)
+  );
+`endif
 
 endmodule

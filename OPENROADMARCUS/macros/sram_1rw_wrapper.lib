@@ -28,6 +28,14 @@ library (sram_1rw_wrapper) {
   current_unit : "1mA";
   pulling_resistance_unit : "1kohm";
   leakage_power_unit : "1nW";
+  input_threshold_pct_rise : 50.0;
+  output_threshold_pct_rise : 50.0;
+  slew_lower_threshold_pct_rise : 20.0;
+  slew_upper_threshold_pct_rise : 80.0;
+  input_threshold_pct_fall : 50.0;
+  output_threshold_pct_fall : 50.0;
+  slew_lower_threshold_pct_fall : 20.0;
+  slew_upper_threshold_pct_fall : 80.0;
   capacitive_load_unit (1, pf);
 
   nom_process : 1.0;
@@ -59,9 +67,27 @@ library (sram_1rw_wrapper) {
   /* NOTE: Because the Verilog module is parameterized (DATA_W, ADDR_W,
    *       DEPTH), Yosys will blackbox it without emitting uniquified names
    *       when SYNTH_READ_BLACKBOX_LIB=1 and SYNTH_ELABORATE_ONLY=0.
-   *       This cell entry covers the nominal 128-bit × 128-entry instance
-   *       used by wgt_buffer, act_buffer, and output_bram_buffer at TN=TM=16,
-   *       ADDR_WIDTH=7. */
+ *       This cell entry covers the nominal 32-bit × 4096-entry instance
+ *       used by the SRAM controller banks in this design,
+ *       ADDR_WIDTH=12. */
+
+  /* ── Bus type declarations (must precede cell) ───────────────────────── */
+  type (ADDR12) {
+    base_type : array;
+    data_type : bit;
+    bit_width : 12;
+    bit_from  : 11;
+    bit_to    : 0;
+    downto    : true;
+  }
+  type (DATA32) {
+    base_type : array;
+    data_type : bit;
+    bit_width : 32;
+    bit_from  : 31;
+    bit_to    : 0;
+    downto    : true;
+  }
 
   cell (sram_1rw_wrapper) {
 
@@ -70,8 +96,8 @@ library (sram_1rw_wrapper) {
     is_macro_cell  : true;
     memory () {
       type : ram;
-      address_width : 7;    /* ADDR_W — override for other instances */
-      word_width    : 128;  /* DATA_W — override for other instances */
+      address_width : 12;   /* ADDR_W — override for other instances */
+      word_width    : 32;   /* DATA_W — override for other instances */
     }
 
     /* ── Clock pin ─────────────────────────────────────────────────────── */
@@ -144,7 +170,7 @@ library (sram_1rw_wrapper) {
 
     /* ── Address bus ───────────────────────────────────────────────────── */
     bus (addr) {
-      bus_type : ADDR7;
+      bus_type : ADDR12;
       direction : input;
       capacitance : 0.008;
       timing () {
@@ -171,7 +197,7 @@ library (sram_1rw_wrapper) {
 
     /* ── Write-data bus ────────────────────────────────────────────────── */
     bus (wdata) {
-      bus_type : DATA128;
+      bus_type : DATA32;
       direction : input;
       capacitance : 0.008;
       timing () {
@@ -198,7 +224,7 @@ library (sram_1rw_wrapper) {
 
     /* ── Read-data bus (clk→Q) ─────────────────────────────────────────── */
     bus (rdata) {
-      bus_type : DATA128;
+      bus_type : DATA32;
       direction : output;
       capacitance : 0.0;
       timing () {
@@ -220,23 +246,5 @@ library (sram_1rw_wrapper) {
     }
 
   } /* end cell */
-
-  /* ── Bus type declarations ───────────────────────────────────────────── */
-  type (ADDR7) {
-    base_type : array;
-    data_type : bit;
-    bit_width : 7;
-    bit_from  : 6;
-    bit_to    : 0;
-    downto    : true;
-  }
-  type (DATA128) {
-    base_type : array;
-    data_type : bit;
-    bit_width : 128;
-    bit_from  : 127;
-    bit_to    : 0;
-    downto    : true;
-  }
 
 } /* end library */

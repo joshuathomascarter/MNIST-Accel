@@ -24,29 +24,23 @@ module pe #(
 
     logic signed [7:0] weight_reg;
 
-    // Weight register + systolic load_weight propagation
+    // Weight register
     always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            weight_reg      <= 8'sd0;
-            load_weight_out <= 1'b0;
-        end else if (clk_en) begin
-            load_weight_out <= load_weight;
-            if (load_weight)
-                weight_reg <= b_in;
-        end
+        if (!rst_n)                   weight_reg <= 8'sd0;
+        else if (clk_en && load_weight) weight_reg <= b_in;
     end
 
-    // Activation pipeline (horizontal forwarding)
-    generate
-        if (PIPE) begin : gen_pipe
-            always_ff @(posedge clk or negedge rst_n) begin
-                if (!rst_n) a_out <= 8'sd0;
-                else if (clk_en) a_out <= a_in;
-            end
-        end else begin : gen_comb
-            always_comb a_out = a_in;
-        end
-    endgenerate
+    // Systolic load_weight propagation
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n)        load_weight_out <= 1'b0;
+        else if (clk_en)   load_weight_out <= load_weight;
+    end
+
+    // Activation pipeline (horizontal forwarding) — PIPE=1 always (PIPE=0 unused)
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n)      a_out <= 8'sd0;
+        else if (clk_en) a_out <= a_in;
+    end
 
     // MAC unit
     mac8 u_mac (

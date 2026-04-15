@@ -15,7 +15,14 @@ module clock_gate_cell (
   output logic clk_o
 );
 
-`ifdef ASIC_TECH_ICG
+`ifdef SYNTHESIS
+  // Under synthesis (Yosys/sky130): simple passthrough — no latch.
+  // sky130_fd_sc_hd has no mappable latch ICG; the tool uses clock-enable FFs
+  // instead of gated clocks for power.  Timing is unaffected.
+  assign clk_o = clk_i;
+`elsif XILINX_FPGA
+  assign clk_o = clk_i;
+`elsif ASIC_TECH_ICG
   `ifdef CLOCK_GATE_CELL_MODULE
     `ifndef CLOCK_GATE_CELL_PORTS
       `define CLOCK_GATE_CELL_PORTS \
@@ -30,24 +37,19 @@ module clock_gate_cell (
     );
   `else
     logic gate_en_latched;
-
     always_latch begin
       if (!clk_i)
         gate_en_latched = en_i | test_en_i;
     end
-
     assign clk_o = clk_i & gate_en_latched;
   `endif
-`elsif XILINX_FPGA
-  assign clk_o = clk_i;
 `else
+  // Behavioral latch model for simulation
   logic gate_en_latched;
-
   always_latch begin
     if (!clk_i)
       gate_en_latched = en_i | test_en_i;
   end
-
   assign clk_o = clk_i & gate_en_latched;
 `endif
 

@@ -37,7 +37,7 @@ module l1_lru #(
   //  On access: set bits to point AWAY from the accessed way.
   // -----------------------------------------------------------------------
 
-  logic [2:0] lru_bits [NUM_SETS];
+  logic [NUM_SETS-1:0][2:0] lru_bits;
 
   // -----------------------------------------------------------------------
   // Victim selection (combinational) — follow tree from root
@@ -73,9 +73,7 @@ module l1_lru #(
   // -----------------------------------------------------------------------
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-      for (int i = 0; i < NUM_SETS; i++) begin
-        lru_bits[i] <= 3'b000;
-      end
+      lru_bits <= '0;
     end else if (access_valid) begin
       case (access_way)
         2'd0: begin

@@ -80,7 +80,7 @@ module noc_router #(
   logic [VC_BITS-1:0]     vca_release_id  [NUM_PORTS][NUM_VCS];
 
   // Output VC state tracking
-  logic [NUM_VCS-1:0]     out_vc_busy     [NUM_PORTS];
+  logic [NUM_PORTS-1:0][NUM_VCS-1:0] out_vc_busy;
   logic [VC_BITS-1:0]     out_vc_owner_vc [NUM_PORTS][NUM_VCS]; // which input VC owns this output VC
 
   // Switch allocator
@@ -110,7 +110,7 @@ module noc_router #(
 
   // Per-(ip,iv) allocated output VC  (registered after VC alloc grant)
   logic [NUM_PORTS-1:0][NUM_VCS-1:0][VC_BITS-1:0] alloc_out_vc;
-  logic                   alloc_valid     [NUM_PORTS][NUM_VCS]; // VC allocation is active
+  logic [NUM_PORTS-1:0][NUM_VCS-1:0] alloc_valid; // VC allocation is active
 
   // =========================================================================
   // 1. Input Ports
@@ -235,8 +235,11 @@ module noc_router #(
           if (vca_grant[ip][iv]) begin
             alloc_valid[ip][iv]  <= 1'b1;
             alloc_out_vc[ip][iv] <= vca_grant_vc[ip][iv];
-            // Mark output VC as busy
-            out_vc_busy[vca_req_port[ip][iv]][vca_grant_vc[ip][iv]] <= 1'b1;
+            // Mark output VC as busy (explicit loop avoids nested variable-index write)
+            for (int op2 = 0; op2 < NUM_PORTS; op2++)
+              for (int ov2 = 0; ov2 < NUM_VCS; ov2++)
+                if (op2 == vca_req_port[ip][iv] && ov2 == vca_grant_vc[ip][iv])
+                  out_vc_busy[op2][ov2] <= 1'b1;
           end
 
       // Release → clear allocation on TAIL

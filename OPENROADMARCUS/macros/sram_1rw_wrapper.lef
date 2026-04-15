@@ -92,7 +92,7 @@ MACRO sram_1rw_wrapper
     END
   END we
 
-  # ── Address bus [6:0] ─────────────────────────────────────────────────
+  # ── Address bus [11:0] ─────────────────────────────────────────────────
   PIN addr[0]
     DIRECTION INPUT ; USE SIGNAL ;
     PORT LAYER met2 ; RECT  18.0 295.0  20.0 297.0 ; END
@@ -121,20 +121,287 @@ MACRO sram_1rw_wrapper
     DIRECTION INPUT ; USE SIGNAL ;
     PORT LAYER met2 ; RECT  42.0 295.0  44.0 297.0 ; END
   END addr[6]
+  PIN addr[7]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met2 ; RECT  46.0 295.0  48.0 297.0 ; END
+  END addr[7]
+  PIN addr[8]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met2 ; RECT  50.0 295.0  52.0 297.0 ; END
+  END addr[8]
+  PIN addr[9]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met2 ; RECT  54.0 295.0  56.0 297.0 ; END
+  END addr[9]
+  PIN addr[10]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met2 ; RECT  58.0 295.0  60.0 297.0 ; END
+  END addr[10]
+  PIN addr[11]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met2 ; RECT  62.0 295.0  64.0 297.0 ; END
+  END addr[11]
 
-  # ── Write data bus [127:0] — abbreviated (pins at 2-um pitch on top) ──
-  # Full bus: replace with complete 128-pin expansion from real macro LEF.
+  # ── Write data bus [31:0] ─────────────────────────────────────────────
   PIN wdata[0]
     DIRECTION INPUT ; USE SIGNAL ;
     PORT LAYER met3 ; RECT  2.0 290.0  4.0 292.0 ; END
   END wdata[0]
-
-  # ── Read data bus [127:0] — abbreviated ──────────────────────────────
+  PIN wdata[1]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT  6.0 290.0  8.0 292.0 ; END
+  END wdata[1]
+  PIN wdata[2]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 10.0 290.0 12.0 292.0 ; END
+  END wdata[2]
+  PIN wdata[3]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 14.0 290.0 16.0 292.0 ; END
+  END wdata[3]
+  PIN wdata[4]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 18.0 290.0 20.0 292.0 ; END
+  END wdata[4]
+  PIN wdata[5]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 22.0 290.0 24.0 292.0 ; END
+  END wdata[5]
+  PIN wdata[6]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 26.0 290.0 28.0 292.0 ; END
+  END wdata[6]
+  PIN wdata[7]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 30.0 290.0 32.0 292.0 ; END
+  END wdata[7]
+  PIN wdata[8]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 34.0 290.0 36.0 292.0 ; END
+  END wdata[8]
+  PIN wdata[9]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 38.0 290.0 40.0 292.0 ; END
+  END wdata[9]
+  PIN wdata[10]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 42.0 290.0 44.0 292.0 ; END
+  END wdata[10]
+  PIN wdata[11]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 46.0 290.0 48.0 292.0 ; END
+  END wdata[11]
+  PIN wdata[12]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 50.0 290.0 52.0 292.0 ; END
+  END wdata[12]
+  PIN wdata[13]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 54.0 290.0 56.0 292.0 ; END
+  END wdata[13]
+  PIN wdata[14]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 58.0 290.0 60.0 292.0 ; END
+  END wdata[14]
+  PIN wdata[15]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 62.0 290.0 64.0 292.0 ; END
+  END wdata[15]
+  PIN wdata[16]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 66.0 290.0 68.0 292.0 ; END
+  END wdata[16]
+  PIN wdata[17]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 70.0 290.0 72.0 292.0 ; END
+  END wdata[17]
+  PIN wdata[18]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 74.0 290.0 76.0 292.0 ; END
+  END wdata[18]
+  PIN wdata[19]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 78.0 290.0 80.0 292.0 ; END
+  END wdata[19]
+  PIN wdata[20]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 82.0 290.0 84.0 292.0 ; END
+  END wdata[20]
+  PIN wdata[21]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 86.0 290.0 88.0 292.0 ; END
+  END wdata[21]
+  PIN wdata[22]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 90.0 290.0 92.0 292.0 ; END
+  END wdata[22]
+  PIN wdata[23]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 94.0 290.0 96.0 292.0 ; END
+  END wdata[23]
+  PIN wdata[24]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 98.0 290.0 100.0 292.0 ; END
+  END wdata[24]
+  PIN wdata[25]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 102.0 290.0 104.0 292.0 ; END
+  END wdata[25]
+  PIN wdata[26]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 106.0 290.0 108.0 292.0 ; END
+  END wdata[26]
+  PIN wdata[27]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 110.0 290.0 112.0 292.0 ; END
+  END wdata[27]
+  PIN wdata[28]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 114.0 290.0 116.0 292.0 ; END
+  END wdata[28]
+  PIN wdata[29]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 118.0 290.0 120.0 292.0 ; END
+  END wdata[29]
+  PIN wdata[30]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 122.0 290.0 124.0 292.0 ; END
+  END wdata[30]
+  PIN wdata[31]
+    DIRECTION INPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 126.0 290.0 128.0 292.0 ; END
+  END wdata[31]
+  
+  # ── Read data bus [31:0] — abbreviated ──────────────────────────────
   PIN rdata[0]
     DIRECTION OUTPUT ; USE SIGNAL ;
     PORT LAYER met3 ; RECT  2.0  4.0  4.0  6.0 ; END
   END rdata[0]
-
+  PIN rdata[1]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT  6.0  4.0  8.0  6.0 ; END
+  END rdata[1]
+  PIN rdata[2]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 10.0  4.0 12.0  6.0 ; END
+  END rdata[2]
+  PIN rdata[3]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 14.0  4.0 16.0  6.0 ; END
+  END rdata[3]
+  PIN rdata[4]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 18.0  4.0 20.0  6.0 ; END
+  END rdata[4]
+  PIN rdata[5]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 22.0  4.0 24.0  6.0 ; END
+  END rdata[5]
+  PIN rdata[6]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 26.0  4.0 28.0  6.0 ; END
+  END rdata[6]
+  PIN rdata[7]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 30.0  4.0 32.0  6.0 ; END
+  END rdata[7]
+  PIN rdata[8]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 34.0  4.0 36.0  6.0 ; END
+  END rdata[8]
+  PIN rdata[9]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 38.0  4.0 40.0  6.0 ; END
+  END rdata[9]
+  PIN rdata[10]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 42.0  4.0 44.0  6.0 ; END
+  END rdata[10]
+  PIN rdata[11]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 46.0  4.0 48.0  6.0 ; END
+  END rdata[11]
+  PIN rdata[12]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 50.0  4.0 52.0  6.0 ; END
+  END rdata[12]
+  PIN rdata[13]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 54.0  4.0 56.0  6.0 ; END
+  END rdata[13]
+  PIN rdata[14]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 58.0  4.0 60.0  6.0 ; END
+  END rdata[14]
+  PIN rdata[15]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 62.0  4.0 64.0  6.0 ; END
+  END rdata[15]
+  PIN rdata[16]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 66.0  4.0 68.0  6.0 ; END
+  END rdata[16]
+  PIN rdata[17]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 70.0  4.0 72.0  6.0 ; END
+  END rdata[17]
+  PIN rdata[18]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 74.0  4.0 76.0  6.0 ; END
+  END rdata[18]
+  PIN rdata[19]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 78.0  4.0 80.0  6.0 ; END
+  END rdata[19]
+  PIN rdata[20]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 82.0  4.0 84.0  6.0 ; END
+  END rdata[20]
+  PIN rdata[21]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 86.0  4.0 88.0  6.0 ; END
+  END rdata[21]
+  PIN rdata[22]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 90.0  4.0 92.0  6.0 ; END
+  END rdata[22]
+  PIN rdata[23]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 94.0  4.0 96.0  6.0 ; END
+  END rdata[23]
+  PIN rdata[24]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 98.0  4.0 100.0  6.0 ; END
+  END rdata[24]
+  PIN rdata[25]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 102.0  4.0 104.0  6.0 ; END
+  END rdata[25]
+  PIN rdata[26]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 106.0  4.0 108.0  6.0 ; END
+  END rdata[26]
+  PIN rdata[27]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 110.0  4.0 112.0  6.0 ; END
+  END rdata[27]
+  PIN rdata[28]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 114.0  4.0 116.0  6.0 ; END
+  END rdata[28]
+  PIN rdata[29]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 118.0  4.0 120.0  6.0 ; END
+  END rdata[29]
+  PIN rdata[30]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 122.0  4.0 124.0  6.0 ; END
+  END rdata[30]
+  PIN rdata[31]
+    DIRECTION OUTPUT ; USE SIGNAL ;
+    PORT LAYER met3 ; RECT 126.0  4.0 128.0  6.0 ; END
+  END rdata[31]
+  
   # ── Obstruction (full cell body) ─────────────────────────────────────
   OBS
     LAYER met1 ;

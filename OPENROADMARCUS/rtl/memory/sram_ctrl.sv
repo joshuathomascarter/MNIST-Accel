@@ -1,5 +1,10 @@
 // SRAM Controller - AXI-Lite Slave with Byte Enables
 // 32KB SRAM for CPU stack, globals, and working data
+//
+// Uses two sram_1rw_wrapper blackbox macros (32-bit × 4096-word = 16KB each)
+// for synthesis/P&R.  Bank 0 = lower 16KB (word-addr[12]=0),
+// Bank 1 = upper 16KB (word-addr[12]=1).
+// Synchronous SRAM adds 1-cycle read latency; rvalid is delayed accordingly.
 
 /* verilator lint_off IMPORTSTAR */
 /* verilator lint_off UNUSEDSIGNAL */
@@ -52,66 +57,46 @@ module sram_ctrl #(
   output logic                    rlast
 );
 
-  localparam int unsigned DEPTH = 2**(ADDR_WIDTH - 2);  // Word-addressable
+  // Word-address width: 13 bits (8192 words × 4 bytes = 32KB)
+  // Each bank: 12 bits (4096 words × 4 bytes = 16KB)
+  localparam int unsigned WORD_W = ADDR_WIDTH - 2;  // 13
 
-  // Dual-port SRAM
-  logic [DATA_WIDTH-1:0] sram [0:DEPTH-1];
-  
-  // Write path
-  logic [ADDR_WIDTH-3:0] aw_addr_cur;  // burst-aware write address (increments per beat)
-  logic [3:0]            aw_id;
-  logic                  aw_valid;
-  logic                  w_valid;
-  
-  // Read path
-  logic [ADDR_WIDTH-3:0] ar_addr;
-  logic [3:0]           ar_id;
-  logic                  ar_valid;
-  logic [7:0]            ar_len;     // burst length (0-based)
-  logic [7:0]            ar_beat_cnt; // current beat
+  // ── Write path ──────────────────────────────────────────────────────────
+  logic [WORD_W-1:0] aw_addr_cur;
+  logic [3:0]        aw_id;
+  logic              aw_valid;
 
-  // Initialize SRAM with zeros
-
-  // ===== WRITE PATH =====
-
-  // Write Address Channel
   assign awready = !aw_valid;
 
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-      aw_valid   <= 1'b0;
+      aw_valid    <= 1'b0;
       aw_addr_cur <= '0;
-      aw_id      <= '0;
+      aw_id       <= '0;
     end else begin
       if (awvalid && awready) begin
         aw_valid    <= 1'b1;
-        aw_addr_cur <= awaddr[ADDR_WIDTH-1:2];  // latch word-aligned base
+        aw_addr_cur <= awaddr[ADDR_WIDTH-1:2];
         aw_id       <= awid;
       end else if (wvalid && wready) begin
-        // Advance write address each accepted beat (INCR burst support)
         aw_addr_cur <= aw_addr_cur + 1;
-        if (wlast) aw_valid <= 1'b0;            // release after final beat
+        if (wlast) aw_valid <= 1'b0;
       end
     end
   end
 
-  // Write Data Channel
-  // wready = aw_valid: slave is ready as soon as AW is registered,
-  // decoupled from wvalid to avoid a combinatorial loop through the
-  // crossbar's wready back-propagation path.
   assign wready = aw_valid;
 
-  always_ff @(posedge clk) begin
-    if (wvalid && wready) begin               // AXI W handshake
-      for (int i = 0; i < DATA_WIDTH/8; i++) begin
-        if (wstrb[i]) begin
-          sram[aw_addr_cur][i*8+:8] <= wdata[i*8+:8];
-        end
-      end
-    end
-  end
+  // SRAM write enables per bank
+  logic        sram_we;
+  logic        sram_w_bank;   // which bank the write targets
+  logic [11:0] sram_waddr;
 
-  // Write Response Channel
+  assign sram_we     = wvalid && wready;
+  assign sram_w_bank = aw_addr_cur[12];
+  assign sram_waddr  = aw_addr_cur[11:0];
+
+  // Write response
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       bvalid <= 1'b0;
@@ -127,9 +112,13 @@ module sram_ctrl #(
   end
   assign bresp = RESP_OKAY;
 
-  // ===== READ PATH =====
+  // ── Read path ────────────────────────────────────────────────────────────
+  logic [WORD_W-1:0] ar_addr;
+  logic [3:0]        ar_id;
+  logic              ar_valid;
+  logic [7:0]        ar_len;
+  logic [7:0]        ar_beat_cnt;
 
-  // Read Address Channel
   assign arready = !ar_valid;
 
   always_ff @(posedge clk or negedge rst_n) begin
@@ -146,22 +135,71 @@ module sram_ctrl #(
         ar_id       <= arid;
         ar_len      <= arlen;
         ar_beat_cnt <= '0;
-      end else if (ar_valid && rready) begin
+      end else if (ar_valid && rready && rvalid) begin
         if (ar_beat_cnt == ar_len) begin
           ar_valid <= 1'b0;
         end else begin
           ar_beat_cnt <= ar_beat_cnt + 1;
-          ar_addr     <= ar_addr + 1;  // INCR burst: next word
+          ar_addr     <= ar_addr + 1;
         end
       end
     end
   end
 
-  // Read Data Channel - burst capable
-  assign rvalid = ar_valid;
-  assign rdata  = sram[ar_addr];
+  // SRAM read enable per bank
+  logic        sram_r_bank;
+  logic [11:0] sram_raddr;
+
+  assign sram_r_bank = ar_addr[12];
+  assign sram_raddr  = ar_addr[11:0];
+
+  // ── SRAM macro instances ─────────────────────────────────────────────────
+  logic [DATA_WIDTH-1:0] sram0_rdata, sram1_rdata;
+
+  sram_1rw_wrapper u_sram_bank0 (
+    .clk   (clk),
+    .rst_n (rst_n),
+    .en    ((ar_valid && !sram_r_bank) | (sram_we && !sram_w_bank)),
+    .we    (sram_we && !sram_w_bank),
+    .addr  ((sram_we && !sram_w_bank) ? sram_waddr : sram_raddr),
+    .wdata (wdata),
+    .rdata (sram0_rdata)
+  );
+
+  sram_1rw_wrapper u_sram_bank1 (
+    .clk   (clk),
+    .rst_n (rst_n),
+    .en    ((ar_valid && sram_r_bank) | (sram_we && sram_w_bank)),
+    .we    (sram_we && sram_w_bank),
+    .addr  ((sram_we && sram_w_bank) ? sram_waddr : sram_raddr),
+    .wdata (wdata),
+    .rdata (sram1_rdata)
+  );
+
+  // ── Read output pipeline (1-cycle SRAM latency) ──────────────────────────
+  logic        rvalid_r;
+  logic [3:0]  rid_r;
+  logic        rlast_r;
+  logic        rbank_r;   // registered bank select tracks data output
+
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      rvalid_r <= 1'b0;
+      rid_r    <= '0;
+      rlast_r  <= 1'b0;
+      rbank_r  <= 1'b0;
+    end else begin
+      rvalid_r <= ar_valid;
+      rid_r    <= ar_id;
+      rlast_r  <= (ar_beat_cnt == ar_len);
+      rbank_r  <= sram_r_bank;
+    end
+  end
+
+  assign rvalid = rvalid_r;
+  assign rdata  = rbank_r ? sram1_rdata : sram0_rdata;
   assign rresp  = RESP_OKAY;
-  assign rid    = ar_id;
-  assign rlast  = (ar_beat_cnt == ar_len);
+  assign rid    = rid_r;
+  assign rlast  = rlast_r;
 
 endmodule : sram_ctrl

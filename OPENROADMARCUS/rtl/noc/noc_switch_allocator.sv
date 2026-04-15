@@ -46,7 +46,7 @@ module noc_switch_allocator #(
   logic [NUM_PORTS*NUM_VCS-1:0] op_req_flat [NUM_PORTS];
 
   // Round-robin pointers per output port
-  logic [$clog2(NUM_PORTS*NUM_VCS)-1:0] op_rr [NUM_PORTS];
+  logic [NUM_PORTS-1:0][$clog2(NUM_PORTS*NUM_VCS)-1:0] op_rr;
   localparam int TOTAL = NUM_PORTS * NUM_VCS;
   logic [$clog2(TOTAL)-1:0] flat_idx_c;
   integer rotated_c;
@@ -94,7 +94,7 @@ module noc_switch_allocator #(
   // ---------------------------------------------------------------------------
   // Phase 2: Input arbitration — each input port accepts at most one grant
   // ---------------------------------------------------------------------------
-  logic [$clog2(NUM_PORTS)-1:0] ip_rr [NUM_PORTS]; // per-input RR pointer
+  logic [NUM_PORTS-1:0][$clog2(NUM_PORTS)-1:0] ip_rr; // per-input RR pointer
 
   always_comb begin
     for (int ip = 0; ip < NUM_PORTS; ip++) begin
@@ -129,8 +129,8 @@ module noc_switch_allocator #(
   // ---------------------------------------------------------------------------
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-      for (int op = 0; op < NUM_PORTS; op++) op_rr[op] <= '0;
-      for (int ip = 0; ip < NUM_PORTS; ip++) ip_rr[ip] <= '0;
+      op_rr <= '0;
+      ip_rr <= '0;
     end else begin
       // Output port pointers: advance past the winner
       for (int op = 0; op < NUM_PORTS; op++) begin
